@@ -1,8 +1,8 @@
 export type SiteConfig = typeof siteConfig;
 
 export const siteConfig = {
-  name: "GOST",
-  description: "GOST 代理管理系统",
+  name: "哆啦A梦",
+  description: "哆啦A梦",
   navItems: [],
   navMenuItems: [],
   links: {

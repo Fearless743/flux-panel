@@ -259,7 +259,7 @@ export default function AdminLayout({
            <div className="flex items-center gap-3">
              <Logo size={28} />
              <div>
-               <h1 className="text-base font-bold text-foreground">GOST 管理后台</h1>
+               <h1 className="text-base font-bold text-foreground">哆啦A梦</h1>
                <p className="text-xs text-default-500">v1.0.2</p>
              </div>
            </div>

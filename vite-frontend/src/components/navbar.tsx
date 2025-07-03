@@ -19,7 +19,7 @@ export const Navbar = () => {
             href="/"
           >
             <Logo />
-            <p className="font-bold text-inherit">GOST</p>
+            <p className="font-bold text-inherit">哆啦A梦</p>
           </Link>
         </NavbarBrand>
       </NavbarContent>

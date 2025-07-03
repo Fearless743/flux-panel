@@ -4,7 +4,7 @@ FROM node:20.19.0 AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install --frozen-lockfile
 
 COPY . .
 RUN npm run build
