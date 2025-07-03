@@ -9,7 +9,7 @@ import TunnelPage from "@/pages/tunnel";
 import NodePage from "@/pages/node";
 import UserPage from "@/pages/user";
 import LimitPage from "@/pages/limit";
-import PageWrapper from "@/components/page-wrapper";
+
 import { isLoggedIn } from "@/utils/auth";
 
 // 路由保护组件 - 使用useNavigate避免循环渲染

@@ -145,6 +145,30 @@ generate_random() {
   LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c16
 }
 
+# UI选择函数
+select_ui() {
+  echo "🎨 请选择前端UI："
+  echo "1. 新UI"
+  echo "2. 旧UI"
+  read -p "请输入选项 (1-2，默认2): " ui_choice
+  case $ui_choice in
+    1)
+      USE_NEW_UI=true
+      ;;
+    *)
+      USE_NEW_UI=false
+      ;;
+  esac
+}
+
+# 配置前端镜像
+configure_frontend_image() {
+  if [[ "$USE_NEW_UI" == "true" ]]; then
+    sed -i.bak 's|bqlpfy/vue-frontend|bqlpfy/vite-frontend|g' docker-compose.yml
+    rm -f docker-compose.yml.bak
+  fi
+}
+
 # 获取用户输入的配置参数
 get_config_params() {
   echo "🔧 请输入配置参数："
@@ -184,6 +208,12 @@ install_panel() {
   curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
   curl -L -o gost.sql "$GOST_SQL_URL"
   echo "✅ 下载完成"
+
+  # UI选择
+  select_ui
+  
+  # 根据UI选择修改docker-compose.yml中的前端镜像
+  configure_frontend_image
 
   # 自动检测并配置 IPv6 支持
   if check_ipv6_support; then
@@ -227,6 +257,12 @@ update_panel() {
   echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
   curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
   echo "✅ 下载完成"
+
+  # UI选择
+  select_ui
+  
+  # 根据UI选择修改docker-compose.yml中的前端镜像
+  configure_frontend_image
 
   # 自动检测并配置 IPv6 支持
   if check_ipv6_support; then

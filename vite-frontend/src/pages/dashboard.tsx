@@ -441,7 +441,7 @@ export default function DashboardPage() {
     const ips = ipString.split(',').map(ip => ip.trim()).filter(ip => ip);
     
     if (ips.length <= 1) {
-      copyToClipboard(formatInAddress(ipString, port), title);
+              copyToClipboard(formatInAddress(ipString, port));
       return;
     }
     
@@ -471,7 +471,7 @@ export default function DashboardPage() {
     const addresses = remoteAddr.split(',').map(addr => addr.trim()).filter(addr => addr);
     
     if (addresses.length <= 1) {
-      copyToClipboard(remoteAddr, title);
+              copyToClipboard(remoteAddr);
       return;
     }
     
@@ -489,7 +489,7 @@ export default function DashboardPage() {
     setAddressModalOpen(true);
   };
 
-  const copyToClipboard = async (text: string, label: string = '内容') => {
+  const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
       toast.success(`已复制`);
@@ -503,7 +503,7 @@ export default function DashboardPage() {
       setAddressList(prev => prev.map(item => 
         item.id === addressItem.id ? { ...item, copying: true } : item
       ));
-      await copyToClipboard(addressItem.address, '地址');
+      await copyToClipboard(addressItem.address);
     } catch (error) {
       toast.error('复制失败');
     } finally {
@@ -516,7 +516,7 @@ export default function DashboardPage() {
   const copyAllAddresses = async () => {
     if (addressList.length === 0) return;
     const allAddresses = addressList.map(item => item.address).join('\n');
-    await copyToClipboard(allAddresses, '所有地址');
+    await copyToClipboard(allAddresses);
   };
 
   const calculateForwardBillingFlow = (forward: Forward): number => {

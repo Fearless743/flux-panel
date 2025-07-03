@@ -49,7 +49,7 @@ import {
   getSpeedLimitList
 } from '@/api';
 import { SearchIcon, PlusIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
-import { CalendarDate, parseDate } from "@internationalized/date";
+import { parseDate } from "@internationalized/date";
 import AdminLayout from "@/layouts/admin";
 
 // 工具函数
