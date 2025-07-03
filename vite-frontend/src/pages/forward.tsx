@@ -587,68 +587,67 @@ export default function ForwardPage() {
                   <CardBody className="pt-0 pb-3">
                     <div className="space-y-2">
                       {/* 地址信息 */}
-                      <div className="space-y-1.5">
+                      <div className="space-y-1">
                         <div 
-                          className={`cursor-pointer p-2 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
+                          className={`cursor-pointer px-2 py-1 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
                             hasMultipleAddresses(forward.inIp) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
                           }`}
                           onClick={() => showAddressModal(forward.inIp, forward.inPort, '入口地址')}
                           title={formatInAddress(forward.inIp, forward.inPort)}
                         >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-default-600">入口</span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium text-default-600">入口:</span>
+                              <code className="text-xs font-mono text-foreground truncate">
+                                {formatInAddress(forward.inIp, forward.inPort)}
+                              </code>
+                            </div>
                             {hasMultipleAddresses(forward.inIp) && (
-                              <svg className="w-3 h-3 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                               </svg>
                             )}
                           </div>
-                          <code className="text-xs font-mono text-foreground block truncate">
-                            {formatInAddress(forward.inIp, forward.inPort)}
-                          </code>
                         </div>
                         
-                        <div className="text-center py-0.5">
-                          <svg className="w-3 h-3 text-default-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                          </svg>
-                        </div>
+
                         
                         <div 
-                          className={`cursor-pointer p-2 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
+                          className={`cursor-pointer px-2 py-1 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
                             hasMultipleAddresses(forward.remoteAddr) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
                           }`}
                           onClick={() => showAddressModal(forward.remoteAddr, null, '目标地址')}
                           title={formatRemoteAddress(forward.remoteAddr)}
                         >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-default-600">目标</span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium text-default-600">目标:</span>
+                              <code className="text-xs font-mono text-foreground truncate">
+                                {formatRemoteAddress(forward.remoteAddr)}
+                              </code>
+                            </div>
                             {hasMultipleAddresses(forward.remoteAddr) && (
-                              <svg className="w-3 h-3 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                               </svg>
                             )}
                           </div>
-                          <code className="text-xs font-mono text-foreground block truncate">
-                            {formatRemoteAddress(forward.remoteAddr)}
-                          </code>
                         </div>
                       </div>
 
                       {/* 统计信息 */}
-                      <div className="flex justify-between items-center pt-2 border-t border-divider">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-default-500">策略:</span>
-                          <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
-                            {strategyDisplay.text}
+                      <div className="flex items-center justify-between pt-2 border-t border-divider">
+                        <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
+                          {strategyDisplay.text}
+                        </Chip>
+                        <Chip variant="flat" size="sm" className="text-xs">
+                          {formatFlow((forward.inFlow || 0) + (forward.outFlow || 0))}
+                        </Chip>
+                        {forward.userName && (
+                          <Chip variant="flat" size="sm" className="text-xs">
+                            {forward.userName}
                           </Chip>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-default-500">流量</div>
-                          <div className="text-xs font-medium text-foreground">
-                            {formatFlow((forward.inFlow || 0) + (forward.outFlow || 0))}
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                     

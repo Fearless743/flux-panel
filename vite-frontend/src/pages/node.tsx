@@ -589,10 +589,6 @@ export default function NodePage() {
                   {/* 基础信息 */}
                   <div className="space-y-2 mb-4">
                     <div className="flex justify-between text-sm">
-                      <span className="text-default-600">服务器</span>
-                      <span className="font-mono text-xs">{node.serverIp}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
                       <span className="text-default-600">入口IP</span>
                       <div className="text-right text-xs">
                         {node.ip ? (
