@@ -114,8 +114,8 @@ export default function NodePage() {
       closeWebSocket();
     }
     
-    // 构建WebSocket URL，将HTTP协议转换为WS协议
-    let baseUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+    // 构建WebSocket URL，使用与API相同的地址逻辑
+    let baseUrl = import.meta.env.VITE_API_BASE || window.location.origin;
     const wsUrl = baseUrl.replace(/^http/, 'ws') + `/system-info?type=0&secret=${localStorage.getItem('token')}`;
     
     try {
