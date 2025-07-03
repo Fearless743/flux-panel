@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
+import { Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
@@ -36,6 +37,7 @@ interface Forward {
   serviceRunning: boolean;
   createdTime: string;
   userName?: string;
+  userId?: number;
 }
 
 interface Tunnel {
@@ -47,6 +49,7 @@ interface Tunnel {
 
 interface ForwardForm {
   id?: number;
+  userId?: number;
   name: string;
   tunnelId: number | null;
   inPort: number | null;
@@ -190,6 +193,7 @@ export default function ForwardPage() {
     setIsEdit(true);
     setForm({
       id: forward.id,
+      userId: forward.userId,
       name: forward.name,
       tunnelId: forward.tunnelId,
       inPort: forward.inPort,
@@ -264,18 +268,27 @@ export default function ForwardPage() {
       
       let res;
       if (isEdit) {
-        res = await updateForward({
-          ...form,
+        // 更新时确保包含必要字段
+        const updateData = {
+          id: form.id,
+          userId: form.userId,
+          name: form.name,
+          tunnelId: form.tunnelId,
+          inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : 'fifo'
-        });
+        };
+        res = await updateForward(updateData);
       } else {
-        const { id, ...createData } = form;
-        res = await createForward({
-          ...createData,
+        // 创建时不需要id和userId（后端会自动设置）
+        const createData = {
+          name: form.name,
+          tunnelId: form.tunnelId,
+          inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : 'fifo'
-        });
+        };
+        res = await createForward(createData);
       }
       
       if (res.code === 0) {
@@ -545,14 +558,14 @@ export default function ForwardPage() {
               const strategyDisplay = getStrategyDisplay(forward.strategy);
               
               return (
-                <Card key={forward.id} className="shadow-sm border border-gray-200 dark:border-gray-700">
-                  <CardHeader className="pb-3">
+                <Card key={forward.id} className="shadow-sm border border-divider hover:shadow-md transition-shadow duration-200">
+                  <CardHeader className="pb-2">
                     <div className="flex justify-between items-start w-full">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-foreground truncate">{forward.name}</h3>
-                        <p className="text-sm text-default-500 truncate mt-1">{forward.tunnelName}</p>
+                        <h3 className="font-semibold text-foreground truncate text-sm">{forward.name}</h3>
+                        <p className="text-xs text-default-500 truncate">{forward.tunnelName}</p>
                       </div>
-                      <div className="flex items-center gap-2 ml-2">
+                      <div className="flex items-center gap-1.5 ml-2">
                         <Switch
                           size="sm"
                           isSelected={forward.serviceRunning}
@@ -563,71 +576,91 @@ export default function ForwardPage() {
                           color={statusDisplay.color as any} 
                           variant="flat" 
                           size="sm"
+                          className="text-xs"
                         >
                           {statusDisplay.text}
                         </Chip>
                       </div>
                     </div>
                   </CardHeader>
-                  <CardBody className="pt-0">
-                    <div className="space-y-3">
+                  
+                  <CardBody className="pt-0 pb-3">
+                    <div className="space-y-2">
                       {/* 地址信息 */}
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <div 
-                          className={`cursor-pointer p-2 bg-green-50 dark:bg-green-500/10 rounded border border-green-200 dark:border-green-500/20 ${
-                            hasMultipleAddresses(forward.inIp) ? 'hover:bg-green-100 dark:hover:bg-green-500/20' : ''
+                          className={`cursor-pointer p-2 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
+                            hasMultipleAddresses(forward.inIp) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
                           }`}
                           onClick={() => showAddressModal(forward.inIp, forward.inPort, '入口地址')}
                           title={formatInAddress(forward.inIp, forward.inPort)}
                         >
-                          <div className="text-xs text-green-600 dark:text-green-400 mb-1">入口地址</div>
-                          <code className="text-xs font-mono text-green-700 dark:text-green-300 truncate block">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-default-600">入口</span>
+                            {hasMultipleAddresses(forward.inIp) && (
+                              <svg className="w-3 h-3 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </div>
+                          <code className="text-xs font-mono text-foreground block truncate">
                             {formatInAddress(forward.inIp, forward.inPort)}
                           </code>
                         </div>
                         
-                        <div className="text-center text-default-400 text-xs">↓</div>
+                        <div className="text-center py-0.5">
+                          <svg className="w-3 h-3 text-default-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                          </svg>
+                        </div>
                         
                         <div 
-                          className={`cursor-pointer p-2 bg-blue-50 dark:bg-blue-500/10 rounded border border-blue-200 dark:border-blue-500/20 ${
-                            hasMultipleAddresses(forward.remoteAddr) ? 'hover:bg-blue-100 dark:hover:bg-blue-500/20' : ''
+                          className={`cursor-pointer p-2 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
+                            hasMultipleAddresses(forward.remoteAddr) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
                           }`}
                           onClick={() => showAddressModal(forward.remoteAddr, null, '目标地址')}
                           title={formatRemoteAddress(forward.remoteAddr)}
                         >
-                          <div className="text-xs text-blue-600 dark:text-blue-400 mb-1">目标地址</div>
-                          <code className="text-xs font-mono text-blue-700 dark:text-blue-300 truncate block">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-default-600">目标</span>
+                            {hasMultipleAddresses(forward.remoteAddr) && (
+                              <svg className="w-3 h-3 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </div>
+                          <code className="text-xs font-mono text-foreground block truncate">
                             {formatRemoteAddress(forward.remoteAddr)}
                           </code>
                         </div>
                       </div>
 
-                      {/* 策略和流量 */}
-                      <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-default-200">
-                        <div className="text-center flex-1">
-                          <div className="text-xs text-default-500 mb-1">策略</div>
-                          <Chip color={strategyDisplay.color as any} variant="flat" size="sm">
+                      {/* 统计信息 */}
+                      <div className="flex justify-between items-center pt-2 border-t border-divider">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-default-500">策略:</span>
+                          <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
                             {strategyDisplay.text}
                           </Chip>
                         </div>
-                        <div className="text-center flex-1">
-                          <div className="text-xs text-default-500 mb-1">总流量</div>
-                          <div className="text-xs font-medium text-primary">
+                        <div className="text-right">
+                          <div className="text-xs text-default-500">流量</div>
+                          <div className="text-xs font-medium text-foreground">
                             {formatFlow((forward.inFlow || 0) + (forward.outFlow || 0))}
                           </div>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="flex gap-2 mt-4">
+                    <div className="flex gap-1.5 mt-3">
                       <Button
                         size="sm"
                         variant="flat"
                         color="primary"
                         onPress={() => handleEdit(forward)}
-                        className="flex-1"
+                        className="flex-1 min-h-8"
                         startContent={
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
                           </svg>
                         }
@@ -639,9 +672,9 @@ export default function ForwardPage() {
                         variant="flat"
                         color="danger"
                         onPress={() => handleDelete(forward)}
-                        className="flex-1"
+                        className="flex-1 min-h-8"
                         startContent={
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clipRule="evenodd" />
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z" clipRule="evenodd" />
                           </svg>
@@ -719,7 +752,7 @@ export default function ForwardPage() {
                       variant="bordered"
                     >
                       {tunnels.map((tunnel) => (
-                        <SelectItem key={tunnel.id} value={tunnel.id}>
+                        <SelectItem key={tunnel.id} >
                           {tunnel.name}
                         </SelectItem>
                       ))}
@@ -744,15 +777,17 @@ export default function ForwardPage() {
                       }
                     />
                     
-                    <Input
+                    <Textarea
                       label="远程地址"
-                      placeholder="请输入远程地址，多个地址用换行分隔"
+                      placeholder="请输入远程地址，多个地址用换行分隔&#10;例如:&#10;192.168.1.100:8080&#10;example.com:3000"
                       value={form.remoteAddr}
                       onChange={(e) => setForm(prev => ({ ...prev, remoteAddr: e.target.value }))}
                       isInvalid={!!errors.remoteAddr}
                       errorMessage={errors.remoteAddr}
                       variant="bordered"
                       description="格式: IP:端口 或 域名:端口，支持多个地址（每行一个）"
+                      minRows={3}
+                      maxRows={6}
                     />
                     
                     {getAddressCount(form.remoteAddr) > 1 && (
@@ -767,9 +802,9 @@ export default function ForwardPage() {
                         variant="bordered"
                         description="多个目标地址的负载均衡策略"
                       >
-                        <SelectItem key="fifo" value="fifo">主备模式 - 自上而下</SelectItem>
-                        <SelectItem key="round" value="round">轮询模式 - 依次轮换</SelectItem>
-                        <SelectItem key="rand" value="rand">随机模式 - 随机选择</SelectItem>
+                        <SelectItem key="fifo" >主备模式 - 自上而下</SelectItem>
+                        <SelectItem key="round" >轮询模式 - 依次轮换</SelectItem>
+                        <SelectItem key="rand" >随机模式 - 随机选择</SelectItem>
                       </Select>
                     )}
                   </div>

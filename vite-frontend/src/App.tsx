@@ -5,6 +5,9 @@ import IndexPage from "@/pages/index";
 import ChangePasswordPage from "@/pages/change-password";
 import DashboardPage from "@/pages/dashboard";
 import ForwardPage from "@/pages/forward";
+import TunnelPage from "@/pages/tunnel";
+import NodePage from "@/pages/node";
+import UserPage from "@/pages/user";
 import LimitPage from "@/pages/limit";
 import PageWrapper from "@/components/page-wrapper";
 import { isLoggedIn } from "@/utils/auth";
@@ -80,9 +83,7 @@ function App() {
         path="/tunnel" 
         element={
           <ProtectedRoute>
-            <PageWrapper title="隧道管理" description="此页面正在开发中...">
-              <div></div>
-            </PageWrapper>
+            <TunnelPage />
           </ProtectedRoute>
         } 
       />
@@ -90,9 +91,7 @@ function App() {
         path="/node" 
         element={
           <ProtectedRoute>
-            <PageWrapper title="节点监控" description="此页面正在开发中...">
-              <div></div>
-            </PageWrapper>
+            <NodePage />
           </ProtectedRoute>
         } 
       />
@@ -100,9 +99,7 @@ function App() {
         path="/user" 
         element={
           <ProtectedRoute>
-            <PageWrapper title="用户管理" description="此页面正在开发中...">
-              <div></div>
-            </PageWrapper>
+            <UserPage />
           </ProtectedRoute>
         } 
       />
