@@ -66,6 +66,11 @@ export default function NodePage() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   
+  // 安装命令相关状态
+  const [installCommandModal, setInstallCommandModal] = useState(false);
+  const [installCommand, setInstallCommand] = useState('');
+  const [currentNodeName, setCurrentNodeName] = useState('');
+  
   const websocketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -409,17 +414,35 @@ export default function NodePage() {
     try {
       const res = await getNodeInstallCommand(node.id);
       if (res.code === 0 && res.data) {
-        await navigator.clipboard.writeText(res.data);
-        toast.success('安装命令已复制到剪贴板');
+        try {
+          await navigator.clipboard.writeText(res.data);
+          toast.success('安装命令已复制到剪贴板');
+        } catch (copyError) {
+          // 复制失败，显示安装命令模态框
+          setInstallCommand(res.data);
+          setCurrentNodeName(node.name);
+          setInstallCommandModal(true);
+        }
       } else {
         toast.error(res.msg || '获取安装命令失败');
       }
     } catch (error) {
-      toast.error('复制失败，请手动复制');
+      toast.error('获取安装命令失败');
     } finally {
       setNodeList(prev => prev.map(n => 
         n.id === node.id ? { ...n, copyLoading: false } : n
       ));
+    }
+  };
+
+  // 手动复制安装命令
+  const handleManualCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(installCommand);
+      toast.success('安装命令已复制到剪贴板');
+      setInstallCommandModal(false);
+    } catch (error) {
+      toast.error('复制失败，请手动选择文本复制');
     }
   };
 
@@ -781,6 +804,58 @@ export default function NodePage() {
                 isLoading={submitLoading}
               >
                 {submitLoading ? '提交中...' : '确定'}
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* 安装命令模态框 */}
+        <Modal 
+          isOpen={installCommandModal} 
+          onClose={() => setInstallCommandModal(false)}
+          size="2xl"
+          scrollBehavior="inside"
+        >
+          <ModalContent>
+            <ModalHeader>安装命令 - {currentNodeName}</ModalHeader>
+            <ModalBody>
+              <div className="space-y-4">
+                <p className="text-sm text-default-600">
+                  请复制以下安装命令到服务器上执行：
+                </p>
+                <div className="relative">
+                  <Textarea
+                    value={installCommand}
+                    readOnly
+                    variant="bordered"
+                    minRows={6}
+                    maxRows={10}
+                    className="font-mono text-sm"
+                    classNames={{
+                      input: "font-mono text-sm"
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    color="primary"
+                    variant="flat"
+                    className="absolute top-2 right-2"
+                    onPress={handleManualCopy}
+                  >
+                    复制
+                  </Button>
+                </div>
+                <div className="text-xs text-default-500">
+                  💡 提示：如果复制按钮失效，请手动选择上方文本进行复制
+                </div>
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                variant="flat"
+                onPress={() => setInstallCommandModal(false)}
+              >
+                关闭
               </Button>
             </ModalFooter>
           </ModalContent>
