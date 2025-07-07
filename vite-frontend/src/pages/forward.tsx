@@ -597,12 +597,7 @@ export default function ForwardPage() {
     return addresses.length;
   };
 
-  // 格式化时间
-  const formatTime = (timestamp: string | number): string => {
-    if (!timestamp) return '-';
-    const date = new Date(timestamp);
-    return date.toLocaleString('zh-CN');
-  };
+
 
   if (loading) {
     return (
