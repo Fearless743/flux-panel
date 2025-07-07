@@ -28,6 +28,10 @@ export const getNodeList = () => Network.post("/node/list");
 export const updateNode = (data: any) => Network.post("/node/update", data);
 export const deleteNode = (id: number) => Network.post("/node/delete", { id });
 export const getNodeInstallCommand = (id: number) => Network.post("/node/install", { id });
+export const checkNodeStatus = (nodeId?: number) => {
+  const params = nodeId ? { nodeId } : {};
+  return Network.post("/node/check-status", params);
+};
 
 // 隧道CRUD操作 - 全部使用POST请求
 export const createTunnel = (data: any) => Network.post("/tunnel/create", data);
@@ -55,6 +59,9 @@ export const forceDeleteForward = (id: number) => Network.post("/forward/force-d
 // 转发服务控制操作 - 通过Java后端接口
 export const pauseForwardService = (forwardId: number) => Network.post("/forward/pause", { id: forwardId });
 export const resumeForwardService = (forwardId: number) => Network.post("/forward/resume", { id: forwardId });
+
+// 转发诊断操作
+export const diagnoseForward = (forwardId: number) => Network.post("/forward/diagnose", { forwardId });
 
 // 限速规则CRUD操作 - 全部使用POST请求
 export const createSpeedLimit = (data: any) => Network.post("/speed-limit/create", data);

@@ -87,21 +87,21 @@ export default function AdminLayout({
       adminOnly: true
     },
     {
-      path: '/user',
-      label: '用户管理',
-      icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-        </svg>
-      ),
-      adminOnly: true
-    },
-    {
       path: '/limit',
       label: '限速管理',
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
+      path: '/user',
+      label: '用户管理',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
         </svg>
       ),
       adminOnly: true
@@ -260,7 +260,7 @@ export default function AdminLayout({
              <Logo size={28} />
              <div>
                <h1 className="text-base font-bold text-foreground">哆啦A梦</h1>
-               <p className="text-xs text-default-500">v1.0.3</p>
+               <p className="text-xs text-default-500">v1.0.4</p>
              </div>
            </div>
          </div>

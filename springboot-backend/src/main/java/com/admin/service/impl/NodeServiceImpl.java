@@ -430,4 +430,125 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             throw new RuntimeException(ERROR_PORT_ORDER_INVALID);
         }
     }
+
+    /**
+     * 检查和修复节点状态
+     * 如果没有指定节点ID，则检查所有节点
+     * 如果指定了节点ID，则只检查该节点
+     * 
+     * @param params 包含节点ID的参数（可选）
+     * @return 检查结果
+     */
+    @Override
+    public R checkAndFixNodeStatus(java.util.Map<String, Object> params) {
+        try {
+            java.util.List<CheckResult> results = new java.util.ArrayList<>();
+            
+            if (params != null && params.containsKey("nodeId")) {
+                // 检查指定节点
+                Long nodeId = Long.valueOf(params.get("nodeId").toString());
+                CheckResult result = checkSingleNodeStatus(nodeId);
+                results.add(result);
+            } else {
+                // 检查所有节点
+                List<Node> allNodes = this.list();
+                for (Node node : allNodes) {
+                    CheckResult result = checkSingleNodeStatus(node.getId());
+                    results.add(result);
+                }
+            }
+            
+            // 统计结果
+            long totalNodes = results.size();
+            long inconsistentNodes = results.stream()
+                    .mapToLong(r -> r.isFixed() ? 1 : 0)
+                    .sum();
+            long connectedNodes = results.stream()
+                    .mapToLong(r -> r.isConnected() ? 1 : 0)
+                    .sum();
+            
+            java.util.Map<String, Object> response = new java.util.HashMap<>();
+            response.put("totalNodes", totalNodes);
+            response.put("connectedNodes", connectedNodes);
+            response.put("inconsistentNodes", inconsistentNodes);
+            response.put("details", results);
+            
+            return R.ok(response);
+            
+        } catch (Exception e) {
+            return R.err("检查节点状态时发生错误：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 检查单个节点的状态
+     * 
+     * @param nodeId 节点ID
+     * @return 检查结果
+     */
+    private CheckResult checkSingleNodeStatus(Long nodeId) {
+        CheckResult result = new CheckResult();
+        result.setNodeId(nodeId);
+        
+        try {
+            Node node = this.getById(nodeId);
+            if (node == null) {
+                result.setNodeName("未知");
+                result.setConnected(false);
+                result.setDatabaseStatus(0);
+                result.setActualStatus(false);
+                result.setFixed(false);
+                result.setMessage("节点不存在");
+                return result;
+            }
+            
+            result.setNodeName(node.getName());
+            result.setDatabaseStatus(node.getStatus());
+            
+            // 调用WebSocketServer的静态方法检查实际连接状态
+            boolean actualConnected = com.admin.common.utils.WebSocketServer.checkAndFixNodeStatus(this, nodeId);
+            result.setConnected(actualConnected);
+            result.setActualStatus(actualConnected);
+            
+            // 重新查询节点状态，看是否被修复了
+            Node updatedNode = this.getById(nodeId);
+            boolean wasFixed = (updatedNode.getStatus() != node.getStatus());
+            result.setFixed(wasFixed);
+            result.setFinalStatus(updatedNode.getStatus());
+            
+            if (wasFixed) {
+                result.setMessage(String.format("状态已修复：%d -> %d", 
+                        node.getStatus(), updatedNode.getStatus()));
+            } else if (actualConnected && updatedNode.getStatus() == 1) {
+                result.setMessage("状态正常");
+            } else if (!actualConnected && updatedNode.getStatus() == 0) {
+                result.setMessage("状态正常");
+            } else {
+                result.setMessage("状态可能存在异常");
+            }
+            
+        } catch (Exception e) {
+            result.setConnected(false);
+            result.setActualStatus(false);
+            result.setFixed(false);
+            result.setMessage("检查失败：" + e.getMessage());
+        }
+        
+        return result;
+    }
+
+    /**
+     * 节点状态检查结果
+     */
+    @lombok.Data
+    public static class CheckResult {
+        private Long nodeId;
+        private String nodeName;
+        private boolean connected;
+        private int databaseStatus;
+        private boolean actualStatus;
+        private boolean fixed;
+        private int finalStatus;
+        private String message;
+    }
 }

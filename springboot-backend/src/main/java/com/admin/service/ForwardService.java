@@ -64,4 +64,11 @@ public interface ForwardService extends IService<Forward> {
      * @return 结果
      */
     R resumeForward(Long id);
+
+    /**
+     * 转发诊断功能
+     * @param id 转发ID
+     * @return 诊断结果
+     */
+    R diagnoseForward(Long id);
 }

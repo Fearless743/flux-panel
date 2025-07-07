@@ -608,7 +608,7 @@ export default function TunnelPage() {
           isOpen={modalOpen}
           onOpenChange={setModalOpen}
           size="2xl"
-          scrollBehavior="inside"
+          scrollBehavior="outside"
         >
           <ModalContent>
             {(onClose) => (
@@ -896,7 +896,7 @@ export default function TunnelPage() {
           isOpen={diagnosisModalOpen}
           onOpenChange={setDiagnosisModalOpen}
           size="3xl"
-          scrollBehavior="inside"
+          scrollBehavior="outside"
         >
           <ModalContent>
             {(onClose) => (

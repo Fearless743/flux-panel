@@ -37,11 +37,15 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
         String version = serverHttpRequest.getServletRequest().getParameter("version");
         if (Objects.equals(type, "1")) {
             Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
-            if (node == null) return false;
+            if (node == null) {
+                log.warn("节点验证失败：未找到匹配的secret");
+                return false;
+            }
             attributes.put("id", node.getId());
-            node.setStatus(1);
-            node.setVersion(version);
-            nodeService.updateById(node);
+            attributes.put("nodeSecret", secret);
+            attributes.put("nodeVersion", version);
+            log.info("节点 {} 通过验证，版本: {}", node.getId(), version);
+            // 不在这里更新状态，等到连接建立后再统一更新
         }else {
             boolean b = JwtUtil.validateToken(secret);
             if (!b) return false;

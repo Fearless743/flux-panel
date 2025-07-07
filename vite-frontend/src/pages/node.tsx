@@ -15,7 +15,8 @@ import {
   getNodeList, 
   updateNode, 
   deleteNode,
-  getNodeInstallCommand
+  getNodeInstallCommand,
+  checkNodeStatus
 } from "@/api";
 
 interface Node {
@@ -70,6 +71,11 @@ export default function NodePage() {
   const [installCommandModal, setInstallCommandModal] = useState(false);
   const [installCommand, setInstallCommand] = useState('');
   const [currentNodeName, setCurrentNodeName] = useState('');
+  
+  // 状态检查相关状态
+  const [statusCheckLoading, setStatusCheckLoading] = useState(false);
+  const [statusCheckResult, setStatusCheckResult] = useState<any>(null);
+  const [statusCheckModal, setStatusCheckModal] = useState(false);
   
   const websocketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -446,6 +452,55 @@ export default function NodePage() {
     }
   };
 
+  // 状态检查处理函数
+  const handleCheckAllStatus = async () => {
+    setStatusCheckLoading(true);
+    try {
+      const res = await checkNodeStatus();
+      if (res.code === 0) {
+        setStatusCheckResult(res.data);
+        setStatusCheckModal(true);
+        
+        // 刷新节点列表以显示最新状态
+        await loadNodes();
+        
+        const { totalNodes, connectedNodes, inconsistentNodes } = res.data;
+        if (inconsistentNodes > 0) {
+          toast.success(`状态检查完成！修复了 ${inconsistentNodes} 个节点的状态不一致问题`);
+        } else {
+          toast.success(`状态检查完成！${connectedNodes}/${totalNodes} 个节点在线`);
+        }
+      } else {
+        toast.error(res.msg || '状态检查失败');
+      }
+    } catch (error) {
+      toast.error('网络错误，请重试');
+    } finally {
+      setStatusCheckLoading(false);
+    }
+  };
+
+  const handleCheckSingleNodeStatus = async (nodeId: number) => {
+    try {
+      const res = await checkNodeStatus(nodeId);
+      if (res.code === 0) {
+        // 刷新节点列表
+        await loadNodes();
+        
+        const result = res.data.details[0];
+        if (result.fixed) {
+          toast.success(`节点状态已修复：${result.message}`);
+        } else {
+          toast.success(result.message);
+        }
+      } else {
+        toast.error(res.msg || '状态检查失败');
+      }
+    } catch (error) {
+      toast.error('网络错误，请重试');
+    }
+  };
+
   // 提交表单
   const handleSubmit = async () => {
     if (!validateForm()) return;
@@ -522,17 +577,32 @@ export default function NodePage() {
         {/* 页面头部 */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-foreground">节点管理</h1>
-          <Button 
-            color="primary" 
-            onPress={handleAdd}
-            startContent={
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-            }
-          >
-            新增节点
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              color="secondary" 
+              variant="flat"
+              onPress={handleCheckAllStatus}
+              isLoading={statusCheckLoading}
+              startContent={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              }
+            >
+              状态检查
+            </Button>
+            <Button 
+              color="primary" 
+              onPress={handleAdd}
+              startContent={
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+              }
+            >
+              新增节点
+            </Button>
+          </div>
         </div>
 
         {/* 节点列表 */}
@@ -588,14 +658,18 @@ export default function NodePage() {
                 <CardBody className="pt-0 pb-3">
                   {/* 基础信息 */}
                   <div className="space-y-2 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-default-600">入口IP</span>
-                      <div className="text-right text-xs">
+                    <div className="flex justify-between items-center text-sm min-w-0">
+                      <span className="text-default-600 flex-shrink-0">入口IP</span>
+                      <div className="text-right text-xs min-w-0 flex-1 ml-2">
                         {node.ip ? (
                           node.ip.split(',').length > 1 ? (
-                            <span className="font-mono">{node.ip.split(',')[0].trim()} +{node.ip.split(',').length - 1}个</span>
+                            <span className="font-mono truncate block" title={node.ip.split(',')[0].trim()}>
+                              {node.ip.split(',')[0].trim()} +{node.ip.split(',').length - 1}个
+                            </span>
                           ) : (
-                            <span className="font-mono">{node.ip.trim()}</span>
+                            <span className="font-mono truncate block" title={node.ip.trim()}>
+                              {node.ip.trim()}
+                            </span>
                           )
                         ) : '-'}
                       </div>
@@ -678,35 +752,48 @@ export default function NodePage() {
                   </div>
 
                   {/* 操作按钮 */}
-                  <div className="flex gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      color="success"
-                      onPress={() => handleCopyInstallCommand(node)}
-                      isLoading={node.copyLoading}
-                      className="flex-1 min-h-8"
-                    >
-                      复制
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      color="primary"
-                      onPress={() => handleEdit(node)}
-                      className="flex-1 min-h-8"
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      color="danger"
-                      onPress={() => handleDelete(node)}
-                      className="flex-1 min-h-8"
-                    >
-                      删除
-                    </Button>
+                  <div className="space-y-1.5">
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="success"
+                        onPress={() => handleCopyInstallCommand(node)}
+                        isLoading={node.copyLoading}
+                        className="flex-1 min-h-8"
+                      >
+                        复制
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="primary"
+                        onPress={() => handleEdit(node)}
+                        className="flex-1 min-h-8"
+                      >
+                        编辑
+                      </Button>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="secondary"
+                        onPress={() => handleCheckSingleNodeStatus(node.id)}
+                        className="flex-1 min-h-8"
+                      >
+                        检查
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="danger"
+                        onPress={() => handleDelete(node)}
+                        className="flex-1 min-h-8"
+                      >
+                        删除
+                      </Button>
+                    </div>
                   </div>
                 </CardBody>
               </Card>
@@ -719,7 +806,7 @@ export default function NodePage() {
           isOpen={dialogVisible} 
           onClose={() => setDialogVisible(false)}
           size="2xl"
-          scrollBehavior="inside"
+          scrollBehavior="outside"
         >
           <ModalContent>
             <ModalHeader>{dialogTitle}</ModalHeader>
@@ -810,7 +897,7 @@ export default function NodePage() {
           isOpen={installCommandModal} 
           onClose={() => setInstallCommandModal(false)}
           size="2xl"
-          scrollBehavior="inside"
+          scrollBehavior="outside"
         >
           <ModalContent>
             <ModalHeader>安装命令 - {currentNodeName}</ModalHeader>
@@ -850,6 +937,106 @@ export default function NodePage() {
               <Button
                 variant="flat"
                 onPress={() => setInstallCommandModal(false)}
+              >
+                关闭
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* 状态检查结果模态框 */}
+        <Modal 
+          isOpen={statusCheckModal} 
+          onClose={() => setStatusCheckModal(false)}
+          size="3xl"
+          scrollBehavior="outside"
+        >
+          <ModalContent>
+            <ModalHeader className="flex flex-col gap-1">
+              <span>节点状态检查结果</span>
+              {statusCheckResult && (
+                <div className="flex gap-4 text-sm font-normal">
+                  <span className="text-default-600">
+                    总节点: <span className="font-semibold">{statusCheckResult.totalNodes}</span>
+                  </span>
+                  <span className="text-success-600">
+                    在线: <span className="font-semibold">{statusCheckResult.connectedNodes}</span>
+                  </span>
+                  <span className="text-warning-600">
+                    修复: <span className="font-semibold">{statusCheckResult.inconsistentNodes}</span>
+                  </span>
+                </div>
+              )}
+            </ModalHeader>
+            <ModalBody>
+              {statusCheckResult && statusCheckResult.details && (
+                <div className="space-y-3">
+                  {statusCheckResult.details.map((detail: any) => (
+                    <Card key={detail.nodeId} className="border border-divider">
+                      <CardBody className="py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-foreground">
+                                {detail.nodeName || `节点 ${detail.nodeId}`}
+                              </span>
+                              <span className="text-xs text-default-500">
+                                ID: {detail.nodeId}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Chip 
+                              size="sm"
+                              color={detail.connected ? 'success' : 'danger'}
+                              variant="flat"
+                            >
+                              {detail.connected ? '在线' : '离线'}
+                            </Chip>
+                            <Chip 
+                              size="sm"
+                              color={detail.fixed ? 'warning' : 'default'}
+                              variant={detail.fixed ? 'flat' : 'bordered'}
+                            >
+                              {detail.fixed ? '已修复' : '正常'}
+                            </Chip>
+                          </div>
+                        </div>
+                        <div className="mt-2 text-sm">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-default-600">数据库状态:</span>
+                            <span className={`font-mono ${detail.databaseStatus === 1 ? 'text-success-600' : 'text-danger-600'}`}>
+                              {detail.databaseStatus === 1 ? '在线' : '离线'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs mt-1">
+                            <span className="text-default-600">实际状态:</span>
+                            <span className={`font-mono ${detail.actualStatus ? 'text-success-600' : 'text-danger-600'}`}>
+                              {detail.actualStatus ? '连接中' : '未连接'}
+                            </span>
+                          </div>
+                          {detail.fixed && (
+                            <div className="flex justify-between items-center text-xs mt-1">
+                              <span className="text-default-600">最终状态:</span>
+                              <span className={`font-mono ${detail.finalStatus === 1 ? 'text-success-600' : 'text-danger-600'}`}>
+                                {detail.finalStatus === 1 ? '在线' : '离线'}
+                              </span>
+                            </div>
+                          )}
+                          <div className="mt-2 p-2 bg-default-50 dark:bg-default-100 rounded text-xs">
+                            {detail.message}
+                          </div>
+                        </div>
+                      </CardBody>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                variant="flat"
+                onPress={() => setStatusCheckModal(false)}
               >
                 关闭
               </Button>

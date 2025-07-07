@@ -1,5 +1,5 @@
-import { Route, Routes, Navigate, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
 
 import IndexPage from "@/pages/index";
 import ChangePasswordPage from "@/pages/change-password";
@@ -12,49 +12,54 @@ import LimitPage from "@/pages/limit";
 
 import { isLoggedIn } from "@/utils/auth";
 
-// 路由保护组件 - 使用useNavigate避免循环渲染
+// 简化的路由保护组件 - 使用浏览器重定向避免React循环
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const [checking, setChecking] = useState(true);
-  const [authenticated, setAuthenticated] = useState(false);
-  const navigate = useNavigate();
-
+  const authenticated = isLoggedIn();
+  
   useEffect(() => {
-    const checkAuth = () => {
-      const loggedIn = isLoggedIn();
-      
-      if (!loggedIn) {
-        // 如果未登录，直接导航到登录页
-        navigate('/', { replace: true });
-        return;
-      }
-      
-      setAuthenticated(true);
-      setChecking(false);
-    };
+    if (!authenticated) {
+      // 使用浏览器原生重定向，避免React渲染循环
+      window.location.replace('/');
+    }
+  }, [authenticated]);
 
-    checkAuth();
-  }, [navigate]);
-
-  if (checking) {
+  if (!authenticated) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">检查登陆状态...</div>
+        <div className="text-lg">重定向中...</div>
       </div>
     );
   }
 
-  return authenticated ? <>{children}</> : null;
+  return <>{children}</>;
+};
+
+// 登录页面路由组件 - 已登录则重定向到dashboard
+const LoginRoute = () => {
+  const authenticated = isLoggedIn();
+  
+  useEffect(() => {
+    if (authenticated) {
+      // 使用浏览器原生重定向
+      window.location.replace('/dashboard');
+    }
+  }, [authenticated]);
+  
+  if (authenticated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg">重定向中...</div>
+      </div>
+    );
+  }
+  
+  return <IndexPage />;
 };
 
 function App() {
   return (
     <Routes>
-      <Route 
-        path="/" 
-        element={
-          isLoggedIn() ? <Navigate to="/dashboard" replace /> : <IndexPage />
-        } 
-      />
+      <Route path="/" element={<LoginRoute />} />
       <Route 
         path="/change-password" 
         element={

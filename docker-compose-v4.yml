@@ -55,8 +55,8 @@ services:
       start_period: 90s
 
   frontend:
-    image: bqlpfy/vue-frontend:latest
-    container_name: vue-frontend
+    image: bqlpfy/vite-frontend:latest
+    container_name: vite-frontend
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT}:80"

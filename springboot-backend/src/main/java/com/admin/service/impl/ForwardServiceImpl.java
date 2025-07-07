@@ -7,11 +7,13 @@ import com.admin.common.dto.GostDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.alibaba.fastjson.JSONObject;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -19,10 +21,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -383,6 +382,181 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         boolean result = this.updateById(forward);
         
         return result ? R.ok("服务已" + operation) : R.err("更新状态失败");
+    }
+
+    @Override
+    public R diagnoseForward(Long id) {
+        // 1. 获取当前用户信息
+        UserInfo currentUser = getCurrentUserInfo();
+        
+        // 2. 检查转发是否存在且用户有权限访问
+        Forward forward = validateForwardExists(id, currentUser);
+        if (forward == null) {
+            return R.err("转发不存在");
+        }
+
+        // 3. 获取隧道信息
+        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        if (tunnel == null) {
+            return R.err("隧道不存在");
+        }
+
+        // 4. 获取入口节点信息
+        Node inNode = nodeService.getNodeById(tunnel.getInNodeId());
+        if (inNode == null) {
+            return R.err("入口节点不存在");
+        }
+
+        // 5. 解析目标地址，取第一个地址作为诊断目标
+        String[] remoteAddresses = forward.getRemoteAddr().split(",");
+        String targetAddress = remoteAddresses[0].trim();
+        
+        // 提取IP部分（去掉端口）
+        String targetIp = extractIpFromAddress(targetAddress);
+        if (targetIp == null) {
+            return R.err("无法解析目标地址: " + targetAddress);
+        }
+
+        List<DiagnosisResult> results = new ArrayList<>();
+
+        // 6. 根据隧道类型执行不同的诊断策略
+        if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
+            // 端口转发：入口节点直接ping目标地址
+            DiagnosisResult result = performPingDiagnosis(inNode, targetIp, "转发->目标");
+            results.add(result);
+        } else {
+            // 隧道转发：入口ping出口，出口ping目标
+            Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
+            if (outNode == null) {
+                return R.err("出口节点不存在");
+            }
+            
+            // 入口ping出口
+            DiagnosisResult inToOutResult = performPingDiagnosis(inNode, outNode.getServerIp(), "入口->出口");
+            results.add(inToOutResult);
+            
+            // 出口ping目标
+            DiagnosisResult outToTargetResult = performPingDiagnosis(outNode, targetIp, "出口->目标");
+            results.add(outToTargetResult);
+        }
+
+        // 7. 构建诊断报告
+        Map<String, Object> diagnosisReport = new HashMap<>();
+        diagnosisReport.put("forwardId", id);
+        diagnosisReport.put("forwardName", forward.getName());
+        diagnosisReport.put("tunnelType", tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD ? "端口转发" : "隧道转发");
+        diagnosisReport.put("results", results);
+        diagnosisReport.put("timestamp", System.currentTimeMillis());
+
+        return R.ok(diagnosisReport);
+    }
+
+    /**
+     * 从地址字符串中提取IP地址
+     * 支持格式: ip:port, [ipv6]:port, domain:port
+     */
+    private String extractIpFromAddress(String address) {
+        if (address == null || address.trim().isEmpty()) {
+            return null;
+        }
+        
+        address = address.trim();
+        
+        // IPv6格式: [ipv6]:port
+        if (address.startsWith("[")) {
+            int closeBracket = address.indexOf(']');
+            if (closeBracket > 1) {
+                return address.substring(1, closeBracket);
+            }
+        }
+        
+        // IPv4或域名格式: ip:port 或 domain:port
+        int lastColon = address.lastIndexOf(':');
+        if (lastColon > 0) {
+            return address.substring(0, lastColon);
+        }
+        
+        // 如果没有端口，直接返回地址
+        return address;
+    }
+
+    /**
+     * 执行ping诊断
+     * 
+     * @param node 执行ping的节点
+     * @param targetIp 目标IP地址
+     * @param description 诊断描述
+     * @return 诊断结果
+     */
+    private DiagnosisResult performPingDiagnosis(Node node, String targetIp, String description) {
+        try {
+            // 构建ping请求数据
+            JSONObject pingData = new JSONObject();
+            pingData.put("ip", targetIp);
+            pingData.put("count", 4);
+
+            // 发送ping命令到节点
+            GostDto gostResult = WebSocketServer.send_msg(node.getId(), pingData, "Ping");
+            
+            DiagnosisResult result = new DiagnosisResult();
+            result.setNodeId(node.getId());
+            result.setNodeName(node.getName());
+            result.setTargetIp(targetIp);
+            result.setDescription(description);
+            result.setTimestamp(System.currentTimeMillis());
+
+            if (gostResult != null && "OK".equals(gostResult.getMsg())) {
+                // 尝试解析ping响应数据
+                try {
+                    if (gostResult.getData() != null) {
+                        JSONObject pingResponse = (JSONObject) gostResult.getData();
+                        boolean success = pingResponse.getBooleanValue("success");
+                        
+                        result.setSuccess(success);
+                        if (success) {
+                            result.setMessage("ping成功");
+                            result.setAverageTime(pingResponse.getDoubleValue("averageTime"));
+                            result.setPacketLoss(pingResponse.getDoubleValue("packetLoss"));
+                        } else {
+                            result.setMessage(pingResponse.getString("errorMessage"));
+                            result.setAverageTime(-1.0);
+                            result.setPacketLoss(100.0);
+                        }
+                    } else {
+                        // 没有详细数据，使用默认值
+                        result.setSuccess(true);
+                        result.setMessage("ping成功");
+                        result.setAverageTime(0.0);
+                        result.setPacketLoss(0.0);
+                    }
+                } catch (Exception e) {
+                    // 解析响应数据失败，但ping命令本身成功了
+                    result.setSuccess(true);
+                    result.setMessage("ping成功，但无法解析详细数据");
+                    result.setAverageTime(0.0);
+                    result.setPacketLoss(0.0);
+                }
+            } else {
+                result.setSuccess(false);
+                result.setMessage(gostResult != null ? gostResult.getMsg() : "节点无响应");
+                result.setAverageTime(-1.0);
+                result.setPacketLoss(100.0);
+            }
+
+            return result;
+        } catch (Exception e) {
+            DiagnosisResult result = new DiagnosisResult();
+            result.setNodeId(node.getId());
+            result.setNodeName(node.getName());
+            result.setTargetIp(targetIp);
+            result.setDescription(description);
+            result.setSuccess(false);
+            result.setMessage("诊断执行异常: " + e.getMessage());
+            result.setTimestamp(System.currentTimeMillis());
+            result.setAverageTime(-1.0);
+            result.setPacketLoss(100.0);
+            return result;
+        }
     }
 
     /**
@@ -1141,5 +1315,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         public static NodeInfo error(String errorMessage) {
             return new NodeInfo(true, errorMessage, null, null);
         }
+    }
+
+    /**
+     * 诊断结果数据类
+     */
+    @Data
+    public static class DiagnosisResult {
+        private Long nodeId;
+        private String nodeName;
+        private String targetIp;
+        private String description;
+        private boolean success;
+        private String message;
+        private double averageTime;
+        private double packetLoss;
+        private long timestamp;
     }
 }

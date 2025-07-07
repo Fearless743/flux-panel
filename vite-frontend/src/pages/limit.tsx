@@ -337,7 +337,7 @@ export default function LimitPage() {
           isOpen={modalOpen}
           onOpenChange={setModalOpen}
           size="lg"
-          scrollBehavior="inside"
+          scrollBehavior="outside"
         >
           <ModalContent>
             {(onClose) => (
@@ -433,6 +433,7 @@ export default function LimitPage() {
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
           size="sm"
+          scrollBehavior="outside"
         >
           <ModalContent>
             {(onClose) => (

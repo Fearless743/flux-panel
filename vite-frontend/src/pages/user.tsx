@@ -152,6 +152,14 @@ export default function UserPage() {
   const [editTunnelForm, setEditTunnelForm] = useState<UserTunnel | null>(null);
   const [editTunnelLoading, setEditTunnelLoading] = useState(false);
 
+  // 删除确认相关状态
+  const { isOpen: isDeleteModalOpen, onOpen: onDeleteModalOpen, onClose: onDeleteModalClose } = useDisclosure();
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+
+  // 删除隧道权限确认相关状态
+  const { isOpen: isDeleteTunnelModalOpen, onOpen: onDeleteTunnelModalOpen, onClose: onDeleteTunnelModalClose } = useDisclosure();
+  const [tunnelToDelete, setTunnelToDelete] = useState<UserTunnel | null>(null);
+
   // 其他数据
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [speedLimits, setSpeedLimits] = useState<SpeedLimit[]>([]);
@@ -266,12 +274,21 @@ export default function UserPage() {
     onUserModalOpen();
   };
 
-  const handleDelete = async (user: User) => {
+  const handleDelete = (user: User) => {
+    setUserToDelete(user);
+    onDeleteModalOpen();
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+
     try {
-      const response = await deleteUser(user.id);
+      const response = await deleteUser(userToDelete.id);
       if (response.code === 0) {
         toast.success('删除成功');
         loadUsers();
+        onDeleteModalClose();
+        setUserToDelete(null);
       } else {
         toast.error(response.msg || '删除失败');
       }
@@ -405,14 +422,23 @@ export default function UserPage() {
     }
   };
 
-  const handleRemoveTunnel = async (userTunnel: UserTunnel) => {
+  const handleRemoveTunnel = (userTunnel: UserTunnel) => {
+    setTunnelToDelete(userTunnel);
+    onDeleteTunnelModalOpen();
+  };
+
+  const handleConfirmRemoveTunnel = async () => {
+    if (!tunnelToDelete) return;
+
     try {
-      const response = await removeUserTunnel({ id: userTunnel.id });
+      const response = await removeUserTunnel({ id: tunnelToDelete.id });
       if (response.code === 0) {
         toast.success('删除成功');
         if (currentUser) {
           loadUserTunnels(currentUser.id);
         }
+        onDeleteTunnelModalClose();
+        setTunnelToDelete(null);
       } else {
         toast.error(response.msg || '删除失败');
       }
@@ -646,7 +672,7 @@ export default function UserPage() {
         isOpen={isUserModalOpen}
         onClose={onUserModalClose}
         size="2xl"
-        scrollBehavior="inside"
+        scrollBehavior="outside"
       >
         <ModalContent>
           <ModalHeader>
@@ -701,7 +727,7 @@ export default function UserPage() {
                 value={userForm.expTime ? parseDate(userForm.expTime.toISOString().split('T')[0]) : null}
                 onChange={(date) => {
                   if (date) {
-                    const jsDate = new Date(date.year, date.month - 1, date.day);
+                    const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
                     setUserForm(prev => ({ ...prev, expTime: jsDate }));
                   } else {
                     setUserForm(prev => ({ ...prev, expTime: null }));
@@ -743,7 +769,7 @@ export default function UserPage() {
         isOpen={isTunnelModalOpen}
         onClose={onTunnelModalClose}
         size="5xl"
-        scrollBehavior="inside"
+        scrollBehavior="outside"
       >
         <ModalContent>
           <ModalHeader>
@@ -822,7 +848,7 @@ export default function UserPage() {
                       value={tunnelForm.expTime ? parseDate(tunnelForm.expTime.toISOString().split('T')[0]) : null}
                       onChange={(date) => {
                         if (date) {
-                          const jsDate = new Date(date.year, date.month - 1, date.day);
+                          const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
                           setTunnelForm(prev => ({ ...prev, expTime: jsDate }));
                         } else {
                           setTunnelForm(prev => ({ ...prev, expTime: null }));
@@ -937,6 +963,7 @@ export default function UserPage() {
         isOpen={isEditTunnelModalOpen}
         onClose={onEditTunnelModalClose}
         size="2xl"
+        scrollBehavior="outside"
       >
         <ModalContent>
           <ModalHeader>
@@ -991,6 +1018,22 @@ export default function UserPage() {
                     </SelectItem>
                   ))}
                 </Select>
+                
+                <DatePicker
+                  label="到期时间"
+                  value={editTunnelForm.expTime ? parseDate(new Date(editTunnelForm.expTime).toISOString().split('T')[0]) : null}
+                  onChange={(date) => {
+                    if (date) {
+                      const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
+                      setEditTunnelForm(prev => prev ? { ...prev, expTime: jsDate.getTime() } : null);
+                    } else {
+                      setEditTunnelForm(prev => prev ? { ...prev, expTime: Date.now() } : null);
+                    }
+                  }}
+                  showMonthAndYearPickers
+                  className="cursor-pointer"
+                  isRequired
+                />
               </div>
             )}
           </ModalBody>
@@ -1004,6 +1047,92 @@ export default function UserPage() {
               isLoading={editTunnelLoading}
             >
               确定
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* 删除确认对话框 */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={onDeleteModalClose}
+        size="md"
+        scrollBehavior="outside"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            确认删除用户
+          </ModalHeader>
+          <ModalBody>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-danger-100 rounded-full flex items-center justify-center">
+                <DeleteIcon className="w-6 h-6 text-danger" />
+              </div>
+              <div className="flex-1">
+                <p className="text-foreground">
+                  确定要删除用户 <span className="font-semibold text-danger">"{userToDelete?.user}"</span> 吗？
+                </p>
+                <p className="text-small text-default-500 mt-1">
+                  此操作不可撤销，用户的所有数据将被永久删除。
+                </p>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button 
+              variant="light" 
+              onPress={onDeleteModalClose}
+            >
+              取消
+            </Button>
+            <Button 
+              color="danger" 
+              onPress={handleConfirmDelete}
+            >
+              确认删除
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* 删除隧道权限确认对话框 */}
+      <Modal
+        isOpen={isDeleteTunnelModalOpen}
+        onClose={onDeleteTunnelModalClose}
+        size="md"
+        scrollBehavior="outside"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            确认删除隧道权限
+          </ModalHeader>
+          <ModalBody>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-danger-100 rounded-full flex items-center justify-center">
+                <DeleteIcon className="w-6 h-6 text-danger" />
+              </div>
+              <div className="flex-1">
+                <p className="text-foreground">
+                  确定要删除用户 <span className="font-semibold">{currentUser?.user}</span> 对隧道 <span className="font-semibold text-danger">"{tunnelToDelete?.tunnelName}"</span> 的权限吗？
+                </p>
+                <p className="text-small text-default-500 mt-1">
+                  删除后该用户将无法使用此隧道创建转发，此操作不可撤销。
+                </p>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button 
+              variant="light" 
+              onPress={onDeleteTunnelModalClose}
+            >
+              取消
+            </Button>
+            <Button 
+              color="danger" 
+              onPress={handleConfirmRemoveTunnel}
+            >
+              确认删除
             </Button>
           </ModalFooter>
         </ModalContent>

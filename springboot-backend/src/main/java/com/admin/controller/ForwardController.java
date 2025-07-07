@@ -26,6 +26,8 @@ import java.util.Map;
 @RequestMapping("/api/v1/forward")
 public class ForwardController extends BaseController {
 
+    @Autowired
+    private ForwardService forwardService;
 
     @LogAnnotation
     @PostMapping("/create")
@@ -73,5 +75,17 @@ public class ForwardController extends BaseController {
         return forwardService.resumeForward(id);
     }
 
+    /**
+     * 转发诊断功能
+     * @param params 包含forwardId的参数
+     * @return 诊断结果
+     */
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/diagnose")
+    public R diagnoseForward(@RequestBody Map<String, Object> params) {
+        Long forwardId = Long.valueOf(params.get("forwardId").toString());
+        return forwardService.diagnoseForward(forwardId);
+    }
 
 }

@@ -8,6 +8,7 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@herou
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import { Switch } from "@heroui/switch";
+import { Alert } from "@heroui/alert";
 import toast from 'react-hot-toast';
 
 import AdminLayout from "@/layouts/admin";
@@ -19,7 +20,8 @@ import {
   forceDeleteForward,
   userTunnel, 
   pauseForwardService,
-  resumeForwardService
+  resumeForwardService,
+  diagnoseForward
 } from "@/api";
 
 interface Forward {
@@ -63,6 +65,21 @@ interface AddressItem {
   copying: boolean;
 }
 
+interface DiagnosisResult {
+  forwardName: string;
+  timestamp: number;
+  results: Array<{
+    success: boolean;
+    description: string;
+    nodeName: string;
+    nodeId: string;
+    targetIp: string;
+    message?: string;
+    averageTime?: number;
+    packetLoss?: number;
+  }>;
+}
+
 export default function ForwardPage() {
   const [loading, setLoading] = useState(true);
   const [forwards, setForwards] = useState<Forward[]>([]);
@@ -72,10 +89,14 @@ export default function ForwardPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [diagnosisModalOpen, setDiagnosisModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [forwardToDelete, setForwardToDelete] = useState<Forward | null>(null);
+  const [currentDiagnosisForward, setCurrentDiagnosisForward] = useState<Forward | null>(null);
+  const [diagnosisResult, setDiagnosisResult] = useState<DiagnosisResult | null>(null);
   const [addressModalTitle, setAddressModalTitle] = useState('');
   const [addressList, setAddressList] = useState<AddressItem[]>([]);
   
@@ -359,6 +380,64 @@ export default function ForwardPage() {
     }
   };
 
+  // 诊断转发
+  const handleDiagnose = async (forward: Forward) => {
+    setCurrentDiagnosisForward(forward);
+    setDiagnosisModalOpen(true);
+    setDiagnosisLoading(true);
+    setDiagnosisResult(null);
+
+    try {
+      const response = await diagnoseForward(forward.id);
+      if (response.code === 0) {
+        setDiagnosisResult(response.data);
+      } else {
+        toast.error(response.msg || '诊断失败');
+        setDiagnosisResult({
+          forwardName: forward.name,
+          timestamp: Date.now(),
+          results: [{
+            success: false,
+            description: '诊断失败',
+            nodeName: '-',
+            nodeId: '-',
+            targetIp: forward.remoteAddr.split(',')[0] || '-',
+            message: response.msg || '诊断过程中发生错误'
+          }]
+        });
+      }
+    } catch (error) {
+      console.error('诊断失败:', error);
+      toast.error('网络错误，请重试');
+      setDiagnosisResult({
+        forwardName: forward.name,
+        timestamp: Date.now(),
+        results: [{
+          success: false,
+          description: '网络错误',
+          nodeName: '-',
+          nodeId: '-',
+          targetIp: forward.remoteAddr.split(',')[0] || '-',
+          message: '无法连接到服务器'
+        }]
+      });
+    } finally {
+      setDiagnosisLoading(false);
+    }
+  };
+
+  // 获取连接质量
+  const getQualityDisplay = (averageTime?: number, packetLoss?: number) => {
+    if (averageTime === undefined || packetLoss === undefined) return null;
+    
+    if (averageTime < 30 && packetLoss === 0) return { text: '🚀 优秀', color: 'success' };
+    if (averageTime < 50 && packetLoss === 0) return { text: '✨ 很好', color: 'success' };
+    if (averageTime < 100 && packetLoss < 1) return { text: '👍 良好', color: 'primary' };
+    if (averageTime < 150 && packetLoss < 2) return { text: '😐 一般', color: 'warning' };
+    if (averageTime < 200 && packetLoss < 5) return { text: '😟 较差', color: 'warning' };
+    return { text: '😵 很差', color: 'danger' };
+  };
+
   // 格式化流量
   const formatFlow = (value: number): string => {
     if (value === 0) return '0 B';
@@ -518,6 +597,13 @@ export default function ForwardPage() {
     return addresses.length;
   };
 
+  // 格式化时间
+  const formatTime = (timestamp: string | number): string => {
+    if (!timestamp) return '-';
+    const date = new Date(timestamp);
+    return date.toLocaleString('zh-CN');
+  };
+
   if (loading) {
     return (
       <AdminLayout>
@@ -596,9 +682,9 @@ export default function ForwardPage() {
                           title={formatInAddress(forward.inIp, forward.inPort)}
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-medium text-default-600">入口:</span>
-                              <code className="text-xs font-mono text-foreground truncate">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <span className="text-xs font-medium text-default-600 flex-shrink-0">入口:</span>
+                              <code className="text-xs font-mono text-foreground truncate min-w-0">
                                 {formatInAddress(forward.inIp, forward.inPort)}
                               </code>
                             </div>
@@ -620,9 +706,9 @@ export default function ForwardPage() {
                           title={formatRemoteAddress(forward.remoteAddr)}
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-medium text-default-600">目标:</span>
-                              <code className="text-xs font-mono text-foreground truncate">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <span className="text-xs font-medium text-default-600 flex-shrink-0">目标:</span>
+                              <code className="text-xs font-mono text-foreground truncate min-w-0">
                                 {formatRemoteAddress(forward.remoteAddr)}
                               </code>
                             </div>
@@ -669,6 +755,20 @@ export default function ForwardPage() {
                       <Button
                         size="sm"
                         variant="flat"
+                        color="warning"
+                        onPress={() => handleDiagnose(forward)}
+                        className="flex-1 min-h-8"
+                        startContent={
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                        }
+                      >
+                        诊断
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="flat"
                         color="danger"
                         onPress={() => handleDelete(forward)}
                         className="flex-1 min-h-8"
@@ -711,7 +811,7 @@ export default function ForwardPage() {
           isOpen={modalOpen}
           onOpenChange={setModalOpen}
           size="lg"
-          scrollBehavior="inside"
+          scrollBehavior="outside"
         >
           <ModalContent>
             {(onClose) => (
@@ -725,7 +825,7 @@ export default function ForwardPage() {
                   </p>
                 </ModalHeader>
                 <ModalBody>
-                  <div className="space-y-4">
+                  <div className="space-y-4 pb-4">
                     <Input
                       label="转发名称"
                       placeholder="请输入转发名称"
@@ -830,6 +930,7 @@ export default function ForwardPage() {
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
           size="sm"
+          scrollBehavior="outside"
         >
           <ModalContent>
             {(onClose) => (
@@ -863,7 +964,7 @@ export default function ForwardPage() {
         </Modal>
 
         {/* 地址列表弹窗 */}
-        <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="lg">
+        <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="lg" scrollBehavior="outside">
           <ModalContent>
             <ModalHeader className="text-base">{addressModalTitle}</ModalHeader>
             <ModalBody className="pb-6">
@@ -889,6 +990,142 @@ export default function ForwardPage() {
                 ))}
               </div>
             </ModalBody>
+          </ModalContent>
+        </Modal>
+
+        {/* 诊断结果模态框 */}
+        <Modal 
+          isOpen={diagnosisModalOpen}
+          onOpenChange={setDiagnosisModalOpen}
+          size="3xl"
+          scrollBehavior="outside"
+        >
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader className="flex flex-col gap-1">
+                  <h2 className="text-xl font-bold">转发诊断结果</h2>
+                  {currentDiagnosisForward && (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-small text-default-500 truncate flex-1 min-w-0">{currentDiagnosisForward.name}</span>
+                      <Chip 
+                        color="primary"
+                        variant="flat" 
+                        size="sm"
+                        className="flex-shrink-0"
+                      >
+                        转发服务
+                      </Chip>
+                    </div>
+                  )}
+                </ModalHeader>
+                <ModalBody>
+                  {diagnosisLoading ? (
+                    <div className="flex items-center justify-center py-16">
+                      <div className="flex items-center gap-3">
+                        <Spinner size="sm" />
+                        <span className="text-default-600">正在诊断转发连接...</span>
+                      </div>
+                    </div>
+                  ) : diagnosisResult ? (
+                    <div className="space-y-4">
+                      {diagnosisResult.results.map((result, index) => {
+                        const quality = getQualityDisplay(result.averageTime, result.packetLoss);
+                        
+                        return (
+                          <Card key={index} className={`shadow-sm border ${result.success ? 'border-success' : 'border-danger'}`}>
+                            <CardHeader className="pb-2">
+                              <div className="flex items-center justify-between w-full">
+                                <div>
+                                  <h3 className="text-lg font-semibold text-foreground">{result.description}</h3>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-small text-default-500">节点: {result.nodeName}</span>
+                                    <Chip 
+                                      color={result.success ? 'success' : 'danger'} 
+                                      variant="flat" 
+                                      size="sm"
+                                    >
+                                      {result.success ? '连接成功' : '连接失败'}
+                                    </Chip>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardHeader>
+                            
+                            <CardBody className="pt-0">
+                              {result.success ? (
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-3 gap-4">
+                                    <div className="text-center">
+                                      <div className="text-2xl font-bold text-primary">{result.averageTime?.toFixed(0)}</div>
+                                      <div className="text-small text-default-500">平均延迟(ms)</div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="text-2xl font-bold text-warning">{result.packetLoss?.toFixed(1)}</div>
+                                      <div className="text-small text-default-500">丢包率(%)</div>
+                                    </div>
+                                    <div className="text-center">
+                                      {quality && (
+                                        <>
+                                          <Chip color={quality.color as any} variant="flat" size="lg">
+                                            {quality.text}
+                                          </Chip>
+                                          <div className="text-small text-default-500 mt-1">连接质量</div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-small text-default-500 flex items-center gap-1">
+                                    <span className="flex-shrink-0">目标地址:</span>
+                                    <code className="font-mono truncate min-w-0" title={result.targetIp}>{result.targetIp}</code>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="text-small text-default-500 flex items-center gap-1">
+                                    <span className="flex-shrink-0">目标地址:</span>
+                                    <code className="font-mono truncate min-w-0" title={result.targetIp}>{result.targetIp}</code>
+                                  </div>
+                                  <Alert
+                                    color="danger"
+                                    variant="flat"
+                                    title="错误详情"
+                                    description={result.message}
+                                  />
+                                </div>
+                              )}
+                            </CardBody>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-16">
+                      <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-semibold text-foreground">暂无诊断数据</h3>
+                    </div>
+                  )}
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={onClose}>
+                    关闭
+                  </Button>
+                  {currentDiagnosisForward && (
+                    <Button 
+                      color="primary" 
+                      onPress={() => handleDiagnose(currentDiagnosisForward)}
+                      isLoading={diagnosisLoading}
+                    >
+                      重新诊断
+                    </Button>
+                  )}
+                </ModalFooter>
+              </>
+            )}
           </ModalContent>
         </Modal>
       </div>
