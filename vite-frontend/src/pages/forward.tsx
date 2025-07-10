@@ -33,6 +33,7 @@ interface Forward {
   inPort: number;
   remoteAddr: string;
   strategy: string;
+  proxyProtocol: number; // 添加 proxy_protocol 字段
   status: number;
   inFlow: number;
   outFlow: number;
@@ -57,6 +58,7 @@ interface ForwardForm {
   inPort: number | null;
   remoteAddr: string;
   strategy: string;
+  proxyProtocol: boolean; // 在表单中使用 boolean 类型更方便
 }
 
 interface AddressItem {
@@ -106,7 +108,8 @@ export default function ForwardPage() {
     tunnelId: null,
     inPort: null,
     remoteAddr: '',
-    strategy: 'fifo'
+    strategy: 'fifo',
+    proxyProtocol: false // 新增 proxyProtocol 字段
   });
   
   // 表单验证错误
@@ -202,7 +205,8 @@ export default function ForwardPage() {
       tunnelId: null,
       inPort: null,
       remoteAddr: '',
-      strategy: 'fifo'
+      strategy: 'fifo',
+      proxyProtocol: false
     });
     setSelectedTunnel(null);
     setErrors({});
@@ -219,7 +223,8 @@ export default function ForwardPage() {
       tunnelId: forward.tunnelId,
       inPort: forward.inPort,
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
-      strategy: forward.strategy || 'fifo'
+      strategy: forward.strategy || 'fifo',
+      proxyProtocol: forward.proxyProtocol === 1 // 编辑时需要将数字转换为 boolean
     });
     const tunnel = tunnels.find(t => t.id === forward.tunnelId);
     setSelectedTunnel(tunnel || null);
@@ -297,7 +302,8 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          proxyProtocol: form.proxyProtocol ? 1 : 0 // 提交时需要将 boolean 转换为数字
         };
         res = await updateForward(updateData);
       } else {
@@ -307,7 +313,8 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          proxyProtocol: form.proxyProtocol ? 1 : 0 // 创建时需要将 boolean 转换为数字
         };
         res = await createForward(createData);
       }
@@ -901,6 +908,19 @@ export default function ForwardPage() {
                         <SelectItem key="rand" >随机模式 - 随机选择</SelectItem>
                       </Select>
                     )}
+
+                    <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-foreground">启用PROXY Protocol</span>
+                            <span className="text-xs text-default-500">不知道干嘛的就别动</span>
+                          </div>
+                          <Switch
+                            isSelected={form.proxyProtocol}
+                            onValueChange={(checked) => setForm(prev => ({ ...prev, proxyProtocol: checked }))}
+                          />
+                        </div>
+                      </div>
                   </div>
                 </ModalBody>
                 <ModalFooter>
