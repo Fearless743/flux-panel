@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync" // 新增：用于管理连接状态的互斥锁
 	"time"
 
 	"github.com/go-gost/x/config"
@@ -89,6 +90,8 @@ type WebSocketReporter struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	connected      bool
+	connecting     bool  // 新增：正在连接状态
+	connMutex      sync.Mutex // 新增：连接状态锁
 }
 
 // NewWebSocketReporter 创建一个新的WebSocket报告器
@@ -102,6 +105,7 @@ func NewWebSocketReporter(serverURL string) *WebSocketReporter {
 		ctx:            ctx,
 		cancel:         cancel,
 		connected:      false,
+		connecting:     false,
 	}
 }
 
@@ -126,8 +130,28 @@ func (w *WebSocketReporter) run() {
 		case <-w.ctx.Done():
 			return
 		default:
-			if err := w.connect(); err != nil {
-				fmt.Printf("❌ WebSocket连接失败: %v，%v后重试\n", err, w.reconnectTime)
+			// 检查连接状态，避免重复连接
+			w.connMutex.Lock()
+			needConnect := !w.connected && !w.connecting
+			w.connMutex.Unlock()
+			
+			if needConnect {
+				if err := w.connect(); err != nil {
+					fmt.Printf("❌ WebSocket连接失败: %v，%v后重试\n", err, w.reconnectTime)
+					select {
+					case <-time.After(w.reconnectTime):
+						continue
+					case <-w.ctx.Done():
+						return
+					}
+				}
+			}
+
+			// 连接成功，开始发送消息
+			if w.connected {
+				w.handleConnection()
+			} else {
+				// 如果连接失败，等待重试
 				select {
 				case <-time.After(w.reconnectTime):
 					continue
@@ -135,15 +159,26 @@ func (w *WebSocketReporter) run() {
 					return
 				}
 			}
-
-			// 连接成功，开始发送消息
-			w.handleConnection()
 		}
 	}
 }
 
 // connect 建立WebSocket连接
 func (w *WebSocketReporter) connect() error {
+	w.connMutex.Lock()
+	defer w.connMutex.Unlock()
+	
+	// 如果已经在连接中或已连接，直接返回
+	if w.connecting || w.connected {
+		return nil
+	}
+	
+	// 设置连接中状态
+	w.connecting = true
+	defer func() {
+		w.connecting = false
+	}()
+
 	u, err := url.Parse(w.url)
 	if err != nil {
 		return fmt.Errorf("解析URL失败: %v", err)
@@ -157,26 +192,38 @@ func (w *WebSocketReporter) connect() error {
 		return fmt.Errorf("连接WebSocket失败: %v", err)
 	}
 
+	// 如果在连接过程中已经有连接了，关闭新连接
+	if w.conn != nil && w.connected {
+		conn.Close()
+		return nil
+	}
+
 	w.conn = conn
 	w.connected = true
 
 	// 设置关闭处理器来检测连接状态
 	w.conn.SetCloseHandler(func(code int, text string) error {
+		w.connMutex.Lock()
 		w.connected = false
+		w.connMutex.Unlock()
 		return nil
 	})
 
+	fmt.Printf("✅ WebSocket连接建立成功\n")
 	return nil
 }
 
 // handleConnection 处理WebSocket连接
 func (w *WebSocketReporter) handleConnection() {
 	defer func() {
+		w.connMutex.Lock()
 		if w.conn != nil {
 			w.conn.Close()
 			w.conn = nil
 		}
 		w.connected = false
+		w.connMutex.Unlock()
+		fmt.Printf("🔌 WebSocket连接已关闭\n")
 	}()
 
 	// 启动消息接收goroutine
@@ -192,7 +239,11 @@ func (w *WebSocketReporter) handleConnection() {
 			return
 		case <-ticker.C:
 			// 检查连接状态
-			if !w.connected {
+			w.connMutex.Lock()
+			isConnected := w.connected
+			w.connMutex.Unlock()
+			
+			if !isConnected {
 				return
 			}
 
@@ -223,6 +274,9 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 
 // sendSystemInfo 发送系统信息
 func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
+	w.connMutex.Lock()
+	defer w.connMutex.Unlock()
+	
 	if w.conn == nil || !w.connected {
 		return fmt.Errorf("连接未建立")
 	}
@@ -251,19 +305,26 @@ func (w *WebSocketReporter) receiveMessages() {
 		case <-w.ctx.Done():
 			return
 		default:
-			if w.conn == nil || !w.connected {
+			w.connMutex.Lock()
+			conn := w.conn
+			connected := w.connected
+			w.connMutex.Unlock()
+			
+			if conn == nil || !connected {
 				return
 			}
 
 			// 设置读取超时
-			w.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
-			messageType, message, err := w.conn.ReadMessage()
+			messageType, message, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 					fmt.Printf("❌ WebSocket读取消息错误: %v\n", err)
 				}
+				w.connMutex.Lock()
 				w.connected = false
+				w.connMutex.Unlock()
 				return
 			}
 
@@ -681,6 +742,9 @@ func (w *WebSocketReporter) handleCall(data interface{}) error {
 
 // sendResponse 发送响应消息到服务端
 func (w *WebSocketReporter) sendResponse(response CommandResponse) {
+	w.connMutex.Lock()
+	defer w.connMutex.Unlock()
+	
 	if w.conn == nil || !w.connected {
 		fmt.Printf("❌ 无法发送响应：连接未建立\n")
 		return

@@ -42,8 +42,6 @@ public class WebSocketServer extends TextWebSocketHandler {
     // 存储等待响应的请求，key为requestId，value为CompletableFuture
     private static final ConcurrentHashMap<String, CompletableFuture<GostDto>> pendingRequests = new ConcurrentHashMap<>();
     
-    // 存储请求ID与节点ID的映射关系，用于清理特定节点的请求
-    private static final ConcurrentHashMap<String, Long> requestNodeMapping = new ConcurrentHashMap<>();
 
     //接受客户端消息
     @Override
@@ -69,9 +67,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                         
                         if (requestId != null) {
                             CompletableFuture<GostDto> future = pendingRequests.remove(requestId);
-                            // 同时清理请求-节点映射关系
-                            requestNodeMapping.remove(requestId);
-                            
+
                             if (future != null) {
                                 GostDto result = new GostDto();
                                 
@@ -135,10 +131,28 @@ public class WebSocketServer extends TextWebSocketHandler {
                 Long nodeId = Long.valueOf(id);
                 String version = (String) session.getAttributes().get("nodeVersion");
                 
-                log.info("节点 {} 连接建立，开始更新状态", nodeId);
+                log.info("节点 {} 尝试连接，开始处理连接逻辑", nodeId);
                 
-                // 先添加到会话映射
+                // 检查是否已有该节点的连接，如果有则记录日志但直接覆盖
+                WebSocketSession existingSession = nodeSessions.get(nodeId);
+                if (existingSession != null && existingSession.isOpen()) {
+                    log.warn("节点 {} 已有连接存在: {}，新连接将覆盖旧连接", nodeId, existingSession.getId());
+                    // 清理旧连接的锁对象
+                    sessionLocks.remove(existingSession.getId());
+                }
+                
+                // 直接覆盖会话映射（不主动关闭旧连接，让它自然断开）
                 nodeSessions.put(nodeId, session);
+                
+                // 如果有旧连接，在覆盖映射后主动关闭它
+                if (existingSession != null && existingSession.isOpen()) {
+                    try {
+                        log.info("主动关闭节点 {} 的旧连接: {}", nodeId, existingSession.getId());
+                        existingSession.close();
+                    } catch (Exception e) {
+                        log.error("关闭节点 {} 旧连接失败: {}", nodeId, e.getMessage());
+                    }
+                }
                 
                 // 更新节点状态为在线
                 Node node = nodeService.getById(nodeId);
@@ -151,7 +165,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                     boolean updateResult = nodeService.updateById(node);
                     
                     if (updateResult) {
-                        log.info("节点 {} 状态更新为在线成功，版本: {}", nodeId, version);
+                        log.info("节点 {} 连接建立成功，状态更新为在线，版本: {}", nodeId, version);
                         
                         // 广播节点上线状态给所有管理员
                         JSONObject res = new JSONObject();
@@ -203,33 +217,53 @@ public class WebSocketServer extends TextWebSocketHandler {
             } else {
                 // 客户端节点连接关闭
                 Long nodeId = Long.valueOf(id);
-                WebSocketSession removedSession = nodeSessions.remove(nodeId);
                 
-                log.info("节点 {} 连接关闭，开始更新状态为离线", nodeId);
-                
-                // 更新节点状态为离线
-                Node node = nodeService.getById(nodeId);
-                if (node != null) {
-                    node.setStatus(0);
-                    boolean updateResult = nodeService.updateById(node);
-                    
-                    if (updateResult) {
-                        log.info("节点 {} 状态更新为离线成功", nodeId);
-                        
-                        JSONObject res = new JSONObject();
-                        res.put("id", id);
-                        res.put("type", "status");
-                        res.put("data", 0);
-                        broadcastMessage(res.toJSONString());
-                    } else {
-                        log.error("节点 {} 状态更新为离线失败", nodeId);
-                    }
-                } else {
-                    log.warn("节点 {} 不存在，无法更新离线状态", nodeId);
+                // 验证当前会话是否还是活跃会话（关键：这里会自动过滤掉被覆盖的旧连接）
+                WebSocketSession currentSession = nodeSessions.get(nodeId);
+                if (currentSession == null || !currentSession.equals(session)) {
+                    log.info("节点 {} 连接关闭，但已有新连接或会话不匹配，跳过状态更新", nodeId);
+                    sessionLocks.remove(sessionId);
+                    return;
                 }
                 
-                // 清理该节点的待处理请求
-                clearPendingRequestsForNode(nodeId);
+                log.info("节点 {} 当前活跃连接关闭，开始验证并更新状态", nodeId);
+                
+                // 先验证连接是否真的断开（发送call消息测试）
+                boolean shouldUpdateOffline = true;
+                try {
+                    // 尝试发送验证消息，如果发送成功说明连接可能还活跃
+                    sendToUser(session, "{\"type\":\"call\"}");
+                    log.warn("节点 {} 连接关闭但仍能发送消息，可能是假断开", nodeId);
+                    shouldUpdateOffline = false;
+                } catch (Exception e) {
+                    log.info("节点 {} 连接验证失败，确认连接已断开: {}", nodeId, e.getMessage());
+                }
+                
+                if (shouldUpdateOffline) {
+                    // 移除会话映射
+                    WebSocketSession removedSession = nodeSessions.remove(nodeId);
+                    
+                    // 更新节点状态为离线
+                    Node node = nodeService.getById(nodeId);
+                    if (node != null) {
+                        node.setStatus(0);
+                        boolean updateResult = nodeService.updateById(node);
+                        
+                        if (updateResult) {
+                            log.info("节点 {} 状态更新为离线成功", nodeId);
+                            
+                            JSONObject res = new JSONObject();
+                            res.put("id", id);
+                            res.put("type", "status");
+                            res.put("data", 0);
+                            broadcastMessage(res.toJSONString());
+                        } else {
+                            log.error("节点 {} 状态更新为离线失败", nodeId);
+                        }
+                    } else {
+                        log.warn("节点 {} 不存在，无法更新离线状态", nodeId);
+                    }
+                }
             }
             
             // 清理session锁对象
@@ -284,50 +318,6 @@ public class WebSocketServer extends TextWebSocketHandler {
             });
         }
     }
-    
-    /**
-     * 清理无效的session锁（定期清理任务）
-     */
-    public static void cleanupInvalidSessionLocks() {
-        java.util.List<String> invalidSessionIds = new java.util.ArrayList<>();
-        
-        sessionLocks.keySet().forEach(sessionId -> {
-            boolean isValidSession = false;
-            
-            // 检查是否为有效的管理员session
-            for (WebSocketSession adminSession : activeSessions) {
-                if (adminSession != null && sessionId.equals(adminSession.getId())) {
-                    isValidSession = true;
-                    break;
-                }
-            }
-            
-            // 检查是否为有效的节点session
-            if (!isValidSession) {
-                for (WebSocketSession nodeSession : nodeSessions.values()) {
-                    if (nodeSession != null && sessionId.equals(nodeSession.getId())) {
-                        isValidSession = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (!isValidSession) {
-                invalidSessionIds.add(sessionId);
-            }
-        });
-        
-        int cleanedCount = 0;
-        for (String sessionId : invalidSessionIds) {
-            if (sessionLocks.remove(sessionId) != null) {
-                cleanedCount++;
-            }
-        }
-        
-        if (cleanedCount > 0) {
-            log.info("清理了 {} 个无效的session锁", cleanedCount);
-        }
-    }
 
     // 广播消息
     public static void broadcastMessage(String message) {
@@ -335,244 +325,8 @@ public class WebSocketServer extends TextWebSocketHandler {
             sendToUser(session, message);
         }
     }
-    
-    /**
-     * 清理指定节点的待处理请求
-     * 只清理属于该节点的未完成请求，避免影响其他节点的请求
-     */
-    private static void clearPendingRequestsForNode(Long nodeId) {
-        if (nodeId == null) {
-            log.warn("节点ID为空，无法清理待处理请求");
-            return;
-        }
-        
-        java.util.concurrent.atomic.AtomicInteger clearedCount = new java.util.concurrent.atomic.AtomicInteger(0);
-        java.util.List<String> requestIdsToRemove = new java.util.ArrayList<>();
-        
-        // 找出属于该节点的请求
-        requestNodeMapping.entrySet().forEach(entry -> {
-            String requestId = entry.getKey();
-            Long mappedNodeId = entry.getValue();
-            
-            if (nodeId.equals(mappedNodeId)) {
-                CompletableFuture<GostDto> future = pendingRequests.get(requestId);
-                if (future != null && !future.isDone()) {
-                    // 完成该请求并设置错误信息
-                    GostDto errorResult = new GostDto();
-                    errorResult.setMsg("节点连接已断开");
-                    future.complete(errorResult);
-                    clearedCount.incrementAndGet();
-                }
-                requestIdsToRemove.add(requestId);
-            }
-        });
-        
-        // 批量清理映射关系和请求
-        requestIdsToRemove.forEach(requestId -> {
-            pendingRequests.remove(requestId);
-            requestNodeMapping.remove(requestId);
-        });
-        
-        if (clearedCount.get() > 0) {
-            log.info("清理了节点 {} 的 {} 个待处理请求", nodeId, clearedCount.get());
-        } else {
-            log.debug("节点 {} 没有待处理的请求需要清理", nodeId);
-        }
-    }
 
 
-    /**
-     * 检查节点的实际连接状态，如果状态不一致则修复
-     */
-    public static boolean checkAndFixNodeStatus(NodeService nodeService, Long nodeId) {
-        try {
-            WebSocketSession session = nodeSessions.get(nodeId);
-            boolean isConnected = session != null && session.isOpen();
-            
-            Node node = nodeService.getById(nodeId);
-            if (node != null) {
-                int currentStatus = node.getStatus();
-                int expectedStatus = isConnected ? 1 : 0;
-                
-                if (currentStatus != expectedStatus) {
-                    log.warn("节点 {} 状态不一致，数据库状态: {}, 实际连接状态: {}, 正在修复...", 
-                            nodeId, currentStatus, expectedStatus);
-                    
-                    node.setStatus(expectedStatus);
-                    boolean updateResult = nodeService.updateById(node);
-                    
-                    if (updateResult) {
-                        log.info("节点 {} 状态修复成功，更新为: {}", nodeId, expectedStatus);
-                        
-                        // 广播状态变更
-                        JSONObject res = new JSONObject();
-                        res.put("id", nodeId.toString());
-                        res.put("type", "status");
-                        res.put("data", expectedStatus);
-                        broadcastMessage(res.toJSONString());
-                        
-                        return true;
-                    } else {
-                        log.error("节点 {} 状态修复失败", nodeId);
-                    }
-                }
-            }
-            
-            return isConnected;
-        } catch (Exception e) {
-            log.error("检查节点 {} 状态时发生异常: {}", nodeId, e.getMessage(), e);
-            return false;
-        }
-    }
-    
-    /**
-     * 获取节点的实际连接状态
-     */
-    public static boolean isNodeConnected(Long nodeId) {
-        WebSocketSession session = nodeSessions.get(nodeId);
-        return session != null && session.isOpen();
-    }
-    
-    /**
-     * 获取所有在线节点的ID列表
-     */
-    public static java.util.Set<Long> getConnectedNodeIds() {
-        return nodeSessions.entrySet().stream()
-                .filter(entry -> entry.getValue() != null && entry.getValue().isOpen())
-                .map(java.util.Map.Entry::getKey)
-                .collect(java.util.stream.Collectors.toSet());
-    }
-    
-    /**
-     * 获取指定节点的待处理请求数量
-     */
-    public static int getPendingRequestCount(Long nodeId) {
-        if (nodeId == null) {
-            return 0;
-        }
-        return (int) requestNodeMapping.entrySet().stream()
-                .filter(entry -> nodeId.equals(entry.getValue()))
-                .map(java.util.Map.Entry::getKey)
-                .filter(requestId -> {
-                    CompletableFuture<GostDto> future = pendingRequests.get(requestId);
-                    return future != null && !future.isDone();
-                })
-                .count();
-    }
-    
-    /**
-     * 获取所有待处理请求的总数
-     */
-    public static int getTotalPendingRequestCount() {
-        return (int) pendingRequests.entrySet().stream()
-                .filter(entry -> entry.getValue() != null && !entry.getValue().isDone())
-                .count();
-    }
-    
-    /**
-     * 清理所有已完成但未被移除的请求（定期清理任务）
-     */
-    public static void cleanupCompletedRequests() {
-        java.util.List<String> completedRequestIds = new java.util.ArrayList<>();
-        
-        pendingRequests.entrySet().forEach(entry -> {
-            String requestId = entry.getKey();
-            CompletableFuture<GostDto> future = entry.getValue();
-            
-            if (future != null && future.isDone()) {
-                completedRequestIds.add(requestId);
-            }
-        });
-        
-        int cleanedCount = 0;
-        for (String requestId : completedRequestIds) {
-            if (pendingRequests.remove(requestId) != null) {
-                requestNodeMapping.remove(requestId);
-                cleanedCount++;
-            }
-        }
-        
-        if (cleanedCount > 0) {
-            log.info("清理了 {} 个已完成的请求", cleanedCount);
-        }
-    }
-    
-    /**
-     * 获取WebSocket连接统计信息
-     */
-    public static java.util.Map<String, Object> getConnectionStats() {
-        java.util.Map<String, Object> stats = new java.util.HashMap<>();
-        
-        // 节点连接统计
-        int totalNodes = nodeSessions.size();
-        int onlineNodes = (int) nodeSessions.entrySet().stream()
-                .filter(entry -> entry.getValue() != null && entry.getValue().isOpen())
-                .count();
-        
-        // 管理员连接统计
-        int adminConnections = activeSessions.size();
-        
-        // 请求统计
-        int totalPendingRequests = getTotalPendingRequestCount();
-        int totalMappings = requestNodeMapping.size();
-        
-        stats.put("totalNodes", totalNodes);
-        stats.put("onlineNodes", onlineNodes);
-        stats.put("offlineNodes", totalNodes - onlineNodes);
-        stats.put("adminConnections", adminConnections);
-        stats.put("totalPendingRequests", totalPendingRequests);
-        stats.put("totalRequestMappings", totalMappings);
-        
-        return stats;
-    }
-    
-    /**
-     * 执行全面的内存清理操作
-     * 建议定期调用以防止内存泄漏
-     */
-    public static void performFullCleanup() {
-        log.info("开始执行WebSocket全面清理操作...");
-        
-        // 获取清理前的统计信息
-        java.util.Map<String, Object> statsBefore = getConnectionStats();
-        
-        // 执行各种清理操作
-        cleanupCompletedRequests();
-        cleanupInvalidSessionLocks();
-        
-        // 清理失效的节点session
-        java.util.List<Long> invalidNodeIds = new java.util.ArrayList<>();
-        nodeSessions.entrySet().forEach(entry -> {
-            WebSocketSession session = entry.getValue();
-            if (session == null || !session.isOpen()) {
-                invalidNodeIds.add(entry.getKey());
-            }
-        });
-        
-        int removedNodeSessions = 0;
-        for (Long nodeId : invalidNodeIds) {
-            if (nodeSessions.remove(nodeId) != null) {
-                removedNodeSessions++;
-            }
-        }
-        
-        // 清理失效的管理员session
-        int removedAdminSessions = 0;
-        java.util.Iterator<WebSocketSession> adminIterator = activeSessions.iterator();
-        while (adminIterator.hasNext()) {
-            WebSocketSession session = adminIterator.next();
-            if (session == null || !session.isOpen()) {
-                adminIterator.remove();
-                removedAdminSessions++;
-            }
-        }
-        
-        // 获取清理后的统计信息
-        java.util.Map<String, Object> statsAfter = getConnectionStats();
-        
-        log.info("WebSocket清理完成 - 清理前: {}, 清理后: {}, 移除节点session: {}, 移除管理员session: {}", 
-                statsBefore, statsAfter, removedNodeSessions, removedAdminSessions);
-    }
 
     public static GostDto send_msg(Long node_id, Object msg, String type) {
         WebSocketSession nodeSession = nodeSessions.get(node_id);
@@ -600,8 +354,6 @@ public class WebSocketServer extends TextWebSocketHandler {
         CompletableFuture<GostDto> future = new CompletableFuture<>();
         pendingRequests.put(requestId, future);
         
-        // 建立请求ID与节点ID的映射关系
-        requestNodeMapping.put(requestId, node_id);
 
         try {
             JSONObject data = new JSONObject();
@@ -617,8 +369,7 @@ public class WebSocketServer extends TextWebSocketHandler {
         } catch (Exception e) {
             // 清理请求和映射关系
             pendingRequests.remove(requestId);
-            requestNodeMapping.remove(requestId);
-            
+
             GostDto result = new GostDto();
             if (e instanceof java.util.concurrent.TimeoutException) {
                 result.setMsg("等待响应超时");

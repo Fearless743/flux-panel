@@ -6,9 +6,9 @@ export LANG=en_US.UTF-8
 export LC_ALL=C
 
 # 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/docker-compose-v6.yml"
-GOST_SQL_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/gost.sql"
+DOCKER_COMPOSEV4_URL="https://file.tes.cc/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://file.tes.cc/docker-compose-v6.yml"
+GOST_SQL_URL="https://file.tes.cc/gost.sql"
 
 # 根据IPv6支持情况选择docker-compose URL
 get_docker_compose_url() {
@@ -708,6 +708,29 @@ DEALLOCATE PREPARE stmt;
 UPDATE \`forward\`
 SET \`strategy\` = 'fifo'
 WHERE \`strategy\` IS NULL;
+
+-- forward 表：添加 proxy_protocol 字段
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'proxy_protocol'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`proxy_protocol\` INT(10) NOT NULL DEFAULT 0 COMMENT "Proxy Protocol 支持";',
+    'SELECT "Column \`proxy_protocol\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 为现有数据设置默认 proxy_protocol 值
+UPDATE \`forward\`
+SET \`proxy_protocol\` = 0
+WHERE \`proxy_protocol\` IS NULL;
 EOF
   
   # 检查数据库容器

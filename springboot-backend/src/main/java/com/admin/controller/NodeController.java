@@ -63,15 +63,4 @@ public class NodeController extends BaseController {
         return nodeService.getInstallCommand(id);
     }
 
-    /**
-     * 检查和修复节点状态
-     * @param params 包含节点ID的参数（可选）
-     * @return 检查结果
-     */
-    @LogAnnotation
-    @RequireRole
-    @PostMapping("/check-status")
-    public R checkNodeStatus(@RequestBody(required = false) Map<String, Object> params) {
-        return nodeService.checkAndFixNodeStatus(params);
-    }
 }

@@ -1,6 +1,6 @@
 # 转发面板
 
-本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
+本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://.com/go-gost/x) 两个开源库，实现了转发面板。
 ---
 ## 文档地址
 - [文档地址](https://tes.cc)
@@ -73,9 +73,8 @@
 ### Docker Compose部署
 #### 快速部署
 
-不在提供gitee 自行解决github访问问题
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://file.tes.cc/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 
 ```
 
