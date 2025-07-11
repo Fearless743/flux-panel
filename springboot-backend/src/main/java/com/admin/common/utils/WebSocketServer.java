@@ -72,7 +72,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 String id = session.getAttributes().get("id").toString();
                 String type = session.getAttributes().get("type").toString();
                 String nodeSecret = (String) session.getAttributes().get("nodeSecret");
-                
+
                 // 尝试解密消息
                 String decryptedPayload = decryptMessageIfNeeded(message.getPayload(), nodeSecret);
 

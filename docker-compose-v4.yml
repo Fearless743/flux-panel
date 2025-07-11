@@ -69,8 +69,10 @@ services:
 
 volumes:
   mysql_data:
+    name: mysql_data
     driver: local
   backend_logs:
+    name: backend_logs
     driver: local
 
 
