@@ -76,6 +76,7 @@ volumes:
 
 networks:
   gost-network:
+    name: gost-network
     driver: bridge
     ipam:
       config:
