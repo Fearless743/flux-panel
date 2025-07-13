@@ -5,6 +5,24 @@ set -e
 export LANG=en_US.UTF-8
 export LC_ALL=C
 
+# 显示重要更新说明
+show_update_notice() {
+  echo "==============================================="
+  echo "🚨🚨🚨 重要更新说明 🚨🚨🚨"
+  echo "==============================================="
+  echo "⚠️  此次更新包含重要的数据库结构变更！"
+  echo "⚠️  使用前务必前往群组查看更新说明！"
+  echo "⚠️  否则可能导致数据灰飞烟灭！"
+  echo "⚠️  有任何疑问可在群组询问，不要盲目操作！"
+  echo "==============================================="
+  echo "📱 请先前往群组查看详细更新说明"
+  echo "📱 确认了解更新内容后再进行操作"
+  echo "==============================================="
+  echo ""
+  echo "按回车键继续..."
+  read -r
+}
+
 # 全局下载地址配置
 DOCKER_COMPOSEV4_URL="https://file.tes.cc/docker-compose-v4.yml"
 DOCKER_COMPOSEV6_URL="https://file.tes.cc/docker-compose-v6.yml"
@@ -905,6 +923,9 @@ uninstall_panel() {
 
 # 主逻辑
 main() {
+  # 显示更新说明
+  show_update_notice
+  
   # 显示交互式菜单
   while true; do
     show_menu
