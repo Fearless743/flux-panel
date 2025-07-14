@@ -324,8 +324,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 
                 log.info("节点 {} 当前活跃连接关闭，开始验证并更新状态", nodeId);
                 
-                // 移除会话映射
-                    WebSocketSession removedSession = nodeSessions.remove(nodeId);
+                    nodeSessions.remove(nodeId);
                     
                     // 更新节点状态为离线
                     Node node = nodeService.getById(nodeId);
