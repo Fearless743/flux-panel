@@ -25,9 +25,9 @@ show_update_notice() {
 }
 
 # 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://file.tes.cc/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://file.tes.cc/docker-compose-v6.yml"
-GOST_SQL_URL="https://file.tes.cc/gost.sql"
+DOCKER_COMPOSEV4_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/docker-compose-v6.yml"
+GOST_SQL_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/gost.sql"
 
 # 根据IPv6支持情况选择docker-compose URL
 get_docker_compose_url() {
