@@ -137,9 +137,6 @@ curl -L https://your-panel-server:6365/agent/install | bash -s -- --server=your-
 
 **出口配置**（仅隧道转发类型需要）：
 - **协议类型**: 保持默认即可，如有特殊需求可选择：
-  - TLS：数据过墙推荐选择
-  - TCP：普通场景
-  - MTLS: 多路复用的TLS
 - **出口节点**: 选择流量出口节点
 
 4. 点击 **"创建"** 保存隧道

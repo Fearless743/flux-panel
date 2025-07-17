@@ -35,7 +35,7 @@ CREATE TABLE `forward` (
   `tunnel_id` int(10) NOT NULL,
   `in_port` int(10) NOT NULL,
   `out_port` int(10) DEFAULT NULL,
-  `remote_addr` varchar(100) NOT NULL,
+  `remote_addr` longtext,
   `strategy` varchar(100) NOT NULL DEFAULT 'fifo',
   `in_flow` bigint(20) NOT NULL DEFAULT '0',
   `out_flow` bigint(20) NOT NULL DEFAULT '0',

@@ -426,8 +426,8 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         // 验证协议类型
         String protocol = tunnelDto.getProtocol();
         if (StrUtil.isNotBlank(protocol) && 
-            !protocol.equals("tls") && !protocol.equals("tcp") && !protocol.equals("mtls")) {
-            return R.err("协议类型只能为tls、tcp或mtls");
+            !protocol.equals("tls") && !protocol.equals("tcp") && !protocol.equals("mtls") && !protocol.equals("wss")) {
+            return R.err("协议类型只能为tls、tcp、wss或mtls");
         }
         
         // 验证出口节点是否存在
