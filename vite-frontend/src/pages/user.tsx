@@ -716,14 +716,16 @@ export default function UserPage() {
                   setUserForm(prev => ({ ...prev, flowResetTime: Number(value) }));
                 }}
               >
-                <SelectItem key="0" textValue="不重置">
-                  不重置
-                </SelectItem>
-                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                  <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                    每月{day}号（0点重置）
+                <>
+                  <SelectItem key="0" textValue="不重置">
+                    不重置
                   </SelectItem>
-                ))}
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                    <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
+                      每月{day}号（0点重置）
+                    </SelectItem>
+                  ))}
+                </>
               </Select>
               <DatePicker
                 label="过期时间"
@@ -839,14 +841,16 @@ export default function UserPage() {
                         setTunnelForm(prev => ({ ...prev, flowResetTime: Number(value) }));
                       }}
                     >
-                      <SelectItem key="0" textValue="不重置">
-                        不重置
-                      </SelectItem>
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                        <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                          每月{day}号（0点重置）
+                      <>
+                        <SelectItem key="0" textValue="不重置">
+                          不重置
                         </SelectItem>
-                      ))}
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                          <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
+                            每月{day}号（0点重置）
+                          </SelectItem>
+                        ))}
+                      </>
                     </Select>
                     
                     <DatePicker
@@ -1018,14 +1022,16 @@ export default function UserPage() {
                     setEditTunnelForm(prev => prev ? { ...prev, flowResetTime: Number(value) } : null);
                   }}
                 >
-                  <SelectItem key="0" textValue="不重置">
-                    不重置
-                  </SelectItem>
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                    <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                      每月{day}号（0点重置）
+                  <>
+                    <SelectItem key="0" textValue="不重置">
+                      不重置
                     </SelectItem>
-                  ))}
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                      <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
+                        每月{day}号（0点重置）
+                      </SelectItem>
+                    ))}
+                  </>
                 </Select>
                 
                 <DatePicker

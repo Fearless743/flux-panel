@@ -67,7 +67,7 @@ interface DiagnosisResult {
     nodeName: string;
     nodeId: string;
     targetIp: string;
-    targetPort: number;
+    targetPort?: number;
     message?: string;
     averageTime?: number;
     packetLoss?: number;
@@ -310,6 +310,7 @@ export default function TunnelPage() {
             nodeName: '-',
             nodeId: '-',
             targetIp: '-',
+            targetPort: 443,
             message: response.msg || '诊断过程中发生错误'
           }]
         });
@@ -327,6 +328,7 @@ export default function TunnelPage() {
           nodeName: '-',
           nodeId: '-',
           targetIp: '-',
+          targetPort: 443,
           message: '无法连接到服务器'
         }]
       });
@@ -975,13 +977,13 @@ export default function TunnelPage() {
                                     </div>
                                   </div>
                                   <div className="text-small text-default-500">
-                                    目标地址: <code className="font-mono">{result.targetIp}:{result.targetPort}</code>
+                                    目标地址: <code className="font-mono">{result.targetIp}{result.targetPort ? ':' + result.targetPort : ''}</code>
                                   </div>
                                 </div>
                               ) : (
                                 <div className="space-y-2">
                                   <div className="text-small text-default-500">
-                                    目标地址: <code className="font-mono">{result.targetIp}:{result.targetPort}</code>
+                                    目标地址: <code className="font-mono">{result.targetIp}{result.targetPort ? ':' + result.targetPort : ''}</code>
                                   </div>
                                   <Alert
                                     color="danger"
