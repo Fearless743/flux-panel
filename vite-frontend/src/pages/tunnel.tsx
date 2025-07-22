@@ -67,6 +67,7 @@ interface DiagnosisResult {
     nodeName: string;
     nodeId: string;
     targetIp: string;
+    targetPort: number;
     message?: string;
     averageTime?: number;
     packetLoss?: number;
@@ -974,13 +975,13 @@ export default function TunnelPage() {
                                     </div>
                                   </div>
                                   <div className="text-small text-default-500">
-                                    目标地址: <code className="font-mono">{result.targetIp}</code>
+                                    目标地址: <code className="font-mono">{result.targetIp}:{result.targetPort}</code>
                                   </div>
                                 </div>
                               ) : (
                                 <div className="space-y-2">
                                   <div className="text-small text-default-500">
-                                    目标地址: <code className="font-mono">{result.targetIp}</code>
+                                    目标地址: <code className="font-mono">{result.targetIp}:{result.targetPort}</code>
                                   </div>
                                   <Alert
                                     color="danger"
