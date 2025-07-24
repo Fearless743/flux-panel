@@ -49,7 +49,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
 const getInitialConfigs = (): Record<string, string> => {
   if (typeof window === 'undefined') return {};
   
-  const configKeys = ['app_name', 'site_title', 'site_description', 'contact_email', 'footer_text', 'logo_url'];
+  const configKeys = ['app_name'];
   const initialConfigs: Record<string, string> = {};
   
   try {
