@@ -1033,7 +1033,7 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 			totalTime += elapsed.Seconds() * 1000 // 转换为毫秒
 			successCount++
 		}
-		
+
 		// 如果不是最后一次，等待一下再进行下次测试
 		if i < count-1 {
 			time.Sleep(100 * time.Millisecond)
