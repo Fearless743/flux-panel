@@ -100,6 +100,16 @@ export default function ForwardPage() {
   const [forwards, setForwards] = useState<Forward[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   
+  // 显示模式状态 - 从localStorage读取，默认为分类显示
+  const [viewMode, setViewMode] = useState<'grouped' | 'direct'>(() => {
+    try {
+      const savedMode = localStorage.getItem('forward-view-mode');
+      return (savedMode as 'grouped' | 'direct') || 'grouped';
+    } catch {
+      return 'grouped';
+    }
+  });
+  
   // 模态框状态
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -131,6 +141,17 @@ export default function ForwardPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // 切换显示模式并保存到localStorage
+  const handleViewModeChange = () => {
+    const newMode = viewMode === 'grouped' ? 'direct' : 'grouped';
+    setViewMode(newMode);
+    try {
+      localStorage.setItem('forward-view-mode', newMode);
+    } catch (error) {
+      console.warn('无法保存显示模式到localStorage:', error);
+    }
+  };
 
   // 加载所有数据
   const loadData = async () => {
@@ -742,6 +763,11 @@ export default function ForwardPage() {
               <Chip variant="flat" size="sm" className="text-xs">
                 {formatFlow((forward.inFlow || 0) + (forward.outFlow || 0))}
               </Chip>
+              {forward.userName && (
+                <Chip variant="flat" size="sm" className="text-xs">
+                  {forward.userName}
+                </Chip>
+              )}
             </div>
           </div>
           
@@ -816,100 +842,150 @@ export default function ForwardPage() {
         {/* 页面头部 */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-foreground">转发管理</h1>
-          <Button 
-            color="primary" 
-            onPress={handleAdd}
-            startContent={
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-            }
-          >
-            新增转发
-          </Button>
+          <div className="flex items-center gap-3">
+            {/* 显示模式切换按钮 */}
+            <Button
+              size="sm"
+              variant="flat"
+              color="default"
+              onPress={handleViewModeChange}
+              isIconOnly
+              className="text-sm"
+              title={viewMode === 'grouped' ? '切换到直接显示' : '切换到分类显示'}
+            >
+              {viewMode === 'grouped' ? (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zM3 16a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+                </svg>
+              )}
+            </Button>
+            
+            <Button 
+              color="primary" 
+              onPress={handleAdd}
+              startContent={
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+              }
+            >
+              新增转发
+            </Button>
+          </div>
         </div>
 
-        {/* 按用户和隧道分组的转发列表 */}
-        {userGroups.length > 0 ? (
-          <div className="space-y-6">
-            {userGroups.map((userGroup) => (
-              <Card key={userGroup.userId || 'unknown'} className="shadow-sm border border-divider w-full overflow-hidden">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between w-full min-w-0">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center flex-shrink-0">
-                        <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h2 className="text-base font-medium text-foreground truncate max-w-[150px] sm:max-w-[250px] md:max-w-[350px] lg:max-w-[450px]">{userGroup.userName}</h2>
-                        <p className="text-xs text-default-500 truncate max-w-[150px] sm:max-w-[250px] md:max-w-[350px] lg:max-w-[450px]">
-                          {userGroup.tunnelGroups.length} 个隧道，
-                          {userGroup.tunnelGroups.reduce((total, tg) => total + tg.forwards.length, 0)} 个转发
-                        </p>
-                      </div>
-                    </div>
-                    <Chip color="primary" variant="flat" size="sm" className="text-xs flex-shrink-0 ml-2">
-                      用户
-                    </Chip>
-                  </div>
-                </CardHeader>
-                
-                <CardBody className="pt-0">
-                  <Accordion variant="splitted" className="px-0">
-                    {userGroup.tunnelGroups.map((tunnelGroup) => (
-                      <AccordionItem
-                        key={tunnelGroup.tunnelId}
-                        aria-label={tunnelGroup.tunnelName}
-                        title={
-                          <div className="flex items-center justify-between w-full min-w-0 pr-4">
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="w-8 h-8 bg-success-100 dark:bg-success-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <h3 className="text-sm font-medium text-foreground truncate max-w-[120px] sm:max-w-[200px] md:max-w-[300px] lg:max-w-[400px]">{tunnelGroup.tunnelName}</h3>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                              <Chip variant="flat" size="sm" className="text-xs">
-                                {tunnelGroup.forwards.filter(f => f.serviceRunning).length}/{tunnelGroup.forwards.length}
-                              </Chip>
-                            </div>
-                          </div>
-                        }
-                        className="shadow-none border border-divider"
-                      >
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 p-4">
-                          {tunnelGroup.forwards.map((forward) => renderForwardCard(forward))}
+        {/* 根据显示模式渲染不同内容 */}
+        {viewMode === 'grouped' ? (
+          /* 按用户和隧道分组的转发列表 */
+          userGroups.length > 0 ? (
+            <div className="space-y-6">
+              {userGroups.map((userGroup) => (
+                <Card key={userGroup.userId || 'unknown'} className="shadow-sm border border-divider w-full overflow-hidden">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between w-full min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                          <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                          </svg>
                         </div>
-                      </AccordionItem>
-                    ))}
-                  </Accordion>
-                </CardBody>
-              </Card>
-            ))}
-          </div>
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-base font-medium text-foreground truncate max-w-[150px] sm:max-w-[250px] md:max-w-[350px] lg:max-w-[450px]">{userGroup.userName}</h2>
+                          <p className="text-xs text-default-500 truncate max-w-[150px] sm:max-w-[250px] md:max-w-[350px] lg:max-w-[450px]">
+                            {userGroup.tunnelGroups.length} 个隧道，
+                            {userGroup.tunnelGroups.reduce((total, tg) => total + tg.forwards.length, 0)} 个转发
+                          </p>
+                        </div>
+                      </div>
+                      <Chip color="primary" variant="flat" size="sm" className="text-xs flex-shrink-0 ml-2">
+                        用户
+                      </Chip>
+                    </div>
+                  </CardHeader>
+                  
+                  <CardBody className="pt-0">
+                    <Accordion variant="splitted" className="px-0">
+                      {userGroup.tunnelGroups.map((tunnelGroup) => (
+                        <AccordionItem
+                          key={tunnelGroup.tunnelId}
+                          aria-label={tunnelGroup.tunnelName}
+                          title={
+                            <div className="flex items-center justify-between w-full min-w-0 pr-4">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className="w-8 h-8 bg-success-100 dark:bg-success-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                  </svg>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="text-sm font-medium text-foreground truncate max-w-[120px] sm:max-w-[200px] md:max-w-[300px] lg:max-w-[400px]">{tunnelGroup.tunnelName}</h3>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                <Chip variant="flat" size="sm" className="text-xs">
+                                  {tunnelGroup.forwards.filter(f => f.serviceRunning).length}/{tunnelGroup.forwards.length}
+                                </Chip>
+                              </div>
+                            </div>
+                          }
+                          className="shadow-none border border-divider"
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 p-4">
+                            {tunnelGroup.forwards.map((forward) => renderForwardCard(forward))}
+                          </div>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            /* 空状态 */
+            <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
+              <CardBody className="text-center py-16">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
+                    <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">暂无转发配置</h3>
+                    <p className="text-default-500 text-sm mt-1">还没有创建任何转发配置，点击上方按钮开始创建</p>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          )
         ) : (
-          /* 空状态 */
-          <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-            <CardBody className="text-center py-16">
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-                  </svg>
+          /* 直接显示模式 */
+          forwards.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+              {forwards.map((forward) => renderForwardCard(forward))}
+            </div>
+          ) : (
+            /* 空状态 */
+            <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
+              <CardBody className="text-center py-16">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
+                    <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">暂无转发配置</h3>
+                    <p className="text-default-500 text-sm mt-1">还没有创建任何转发配置，点击上方按钮开始创建</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">暂无转发配置</h3>
-                  <p className="text-default-500 text-sm mt-1">还没有创建任何转发配置，点击上方按钮开始创建</p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
+              </CardBody>
+            </Card>
+          )
         )}
 
         {/* 新增/编辑模态框 */}
