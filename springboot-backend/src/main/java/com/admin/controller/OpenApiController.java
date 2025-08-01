@@ -73,7 +73,7 @@ public class OpenApiController extends BaseController {
 
 
     private String buildSubscriptionHeader(long upload, long download, long total, long expire) {
-        return String.format("upload=%d;download=%d;total=%d;expire=%d", upload, download, total, expire);
+        return String.format("upload=%d; download=%d; total=%d; expire=%d", upload, download, total, expire);
     }
 
 
