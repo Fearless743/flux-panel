@@ -8,6 +8,7 @@ import javax.servlet.http.HttpServletResponse;
 import com.admin.common.utils.Md5Util;
 import com.admin.entity.User;
 import com.admin.entity.UserTunnel;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,12 +21,16 @@ public class OpenApiController extends BaseController {
 
     @LogAnnotation
     @GetMapping("/sub_store")
-    public R create(
+    public Object create(
             @RequestParam("user") String user,
             @RequestParam("pwd") String pwd,
             @RequestParam(value = "tunnel", required = false, defaultValue = "-1") String tunnel,
             HttpServletResponse response) {
-
+        JSONObject result = new JSONObject();
+        result.put("upload", 0);
+        result.put("download", 0);
+        result.put("total", 0);
+        result.put("expire", 0);
         // 校验 user 是否为空
         if (user == null || user.isEmpty()) {
             return R.err("用户不能为空");
@@ -67,7 +72,7 @@ public class OpenApiController extends BaseController {
         }
 
         response.setHeader("subscription-userinfo", headerValue);
-        return R.ok();
+        return headerValue;
     }
 
 
