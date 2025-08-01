@@ -66,7 +66,7 @@ public class OpenApiController extends BaseController {
             );
         }
 
-        response.setHeader("ubscription-userinfo", headerValue);
+        response.setHeader("subscription-userinfo", headerValue);
         return R.ok();
     }
 
