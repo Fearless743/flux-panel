@@ -157,8 +157,7 @@ show_menu() {
   echo "2. 更新面板"
   echo "3. 卸载面板"
   echo "4. 导出数据库备份"
-  echo "5. 重置MySQL密码"
-  echo "6. 退出"
+  echo "5. 退出"
   echo "==============================================="
 }
 
@@ -914,243 +913,6 @@ export_migration_sql() {
   fi
 }
 
-# 重置MySQL密码功能
-reset_mysql_password() {
-  echo "🔑 开始重置MySQL密码..."
-  check_docker
-  
-  # 获取当前数据库配置信息
-  echo "🔍 获取数据库配置信息..."
-  
-  # 从 .env 文件读取配置
-  if [[ -f ".env" ]]; then
-    DB_NAME=$(grep "^DB_NAME=" .env | cut -d'=' -f2 2>/dev/null)
-    OLD_DB_PASSWORD=$(grep "^DB_PASSWORD=" .env | cut -d'=' -f2 2>/dev/null)
-    DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
-    
-    if [[ -n "$DB_NAME" && -n "$OLD_DB_PASSWORD" && -n "$DB_USER" ]]; then
-      echo "✅ 从 .env 文件读取数据库配置成功"
-    else
-      echo "❌ .env 文件中的数据库配置不完整"
-      return 1
-    fi
-  else
-    echo "❌ 未找到 .env 文件"
-    return 1
-  fi
-  
-  echo "📋 当前数据库配置："
-  echo "   数据库名: $DB_NAME"
-  echo "   用户名: $DB_USER"
-  
-  # 生成新密码
-  NEW_DB_PASSWORD=$(generate_random)
-  
-  echo "🔑 生成新密码..."
-  echo "⚠️ 新密码: $NEW_DB_PASSWORD"
-  echo "⚠️ 请妥善保存新密码！"
-  
-  # 停止所有服务
-  echo "🛑 停止当前服务..."
-  $DOCKER_CMD down
-  
-  echo "⏳ 等待服务完全停止..."
-  sleep 3
-  
-  # 以跳过权限验证模式启动MySQL容器
-  echo "🔧 以跳过权限验证模式启动MySQL容器..."
-  
-  # MySQL配置 - 固定值（来自docker-compose配置）
-  MYSQL_IMAGE="mysql:5.7"
-  MYSQL_CONTAINER="gost-mysql"
-  MYSQL_VOLUME="mysql_data"
-  
-  echo "🖼️ MySQL镜像: $MYSQL_IMAGE"
-  echo "📦 MySQL容器: $MYSQL_CONTAINER"
-  echo "📀 MySQL数据卷: $MYSQL_VOLUME"
-  
-  # 启动临时MySQL容器（跳过权限验证）
-  echo "🚀 启动临时MySQL容器（跳过权限验证模式）..."
-  docker run -d \
-    --name temp-mysql-reset \
-    --rm \
-    -v "$MYSQL_VOLUME:/var/lib/mysql" \
-    -e MYSQL_ROOT_PASSWORD="$OLD_DB_PASSWORD" \
-    "$MYSQL_IMAGE" \
-    --skip-grant-tables \
-    --skip-networking=false \
-    --bind-address=0.0.0.0
-  
-  # 等待MySQL启动
-  echo "⏳ 等待MySQL容器启动..."
-  for i in {1..30}; do
-    if docker exec temp-mysql-reset mysqladmin ping --silent 2>/dev/null; then
-      echo "✅ MySQL容器启动成功"
-      break
-    fi
-    if [ $i -eq 30 ]; then
-      echo "❌ MySQL容器启动超时"
-      docker stop temp-mysql-reset 2>/dev/null
-      return 1
-    fi
-    sleep 1
-  done
-  
-  # 在skip-grant-tables模式下重置密码
-  echo "🔄 重置数据库用户密码..."
-  
-  # 在skip-grant-tables模式下，直接操作mysql.user表，不要执行FLUSH PRIVILEGES
-  echo "🔧 第一步：直接更新mysql.user表中的用户密码..."
-  echo "🔍 重置用户: $DB_USER"
-  
-  # 直接更新用户密码（MySQL 5.7使用authentication_string字段）
-  if docker exec temp-mysql-reset mysql -e "UPDATE mysql.user SET authentication_string = PASSWORD('$NEW_DB_PASSWORD') WHERE User = '$DB_USER';"; then
-    echo "✅ 用户密码更新成功"
-  else
-    echo "⚠️ 用户密码更新失败，可能用户不存在"
-    echo "🔍 检查用户是否存在..."
-    USER_EXISTS=$(docker exec temp-mysql-reset mysql -e "SELECT COUNT(*) FROM mysql.user WHERE User = '$DB_USER';" 2>/dev/null | tail -n 1)
-    if [ "$USER_EXISTS" = "0" ]; then
-      echo "🔧 用户不存在，创建新用户..."
-      # 在skip-grant-tables模式下，直接插入用户记录
-      if docker exec temp-mysql-reset mysql -e "INSERT INTO mysql.user (Host, User, authentication_string, ssl_cipher, x509_issuer, x509_subject) VALUES ('%', '$DB_USER', PASSWORD('$NEW_DB_PASSWORD'), '', '', '');"; then
-        echo "✅ 新用户创建成功"
-      else
-        echo "❌ 新用户创建失败"
-        docker logs temp-mysql-reset | tail -10
-        docker stop temp-mysql-reset 2>/dev/null
-        return 1
-      fi
-    else
-      echo "❌ 用户存在但密码更新失败"
-      docker logs temp-mysql-reset | tail -10
-      docker stop temp-mysql-reset 2>/dev/null
-      return 1
-    fi
-  fi
-  
-  echo "🔧 第二步：重置root密码..."
-  # 更新root用户密码
-  docker exec temp-mysql-reset mysql -e "UPDATE mysql.user SET authentication_string = PASSWORD('$NEW_DB_PASSWORD') WHERE User = 'root';"
-  echo "✅ root密码更新完成"
-  
-  echo "🔧 第三步：最后刷新权限..."
-  if docker exec temp-mysql-reset mysql -e "FLUSH PRIVILEGES;"; then
-    echo "✅ 密码重置完成"
-  else
-    echo "❌ 权限刷新失败"
-    docker logs temp-mysql-reset | tail -10
-    docker stop temp-mysql-reset 2>/dev/null
-    return 1
-  fi
-  
-  # 清理临时容器
-  docker stop temp-mysql-reset 2>/dev/null
-  
-  echo "✅ 临时MySQL容器已停止"
-  
-  # 更新.env文件
-  echo "📝 更新.env文件..."
-  if [[ -f ".env" ]]; then
-    # 备份原配置文件
-    cp .env .env.backup.$(date +%Y%m%d_%H%M%S)
-    
-    # 更新密码
-    sed -i.tmp "s/^DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" .env
-    rm -f .env.tmp
-    
-    echo "✅ .env文件已更新"
-  else
-    echo "❌ .env文件不存在，无法更新"
-    return 1
-  fi
-  
-  # 重启正常服务
-  echo "🚀 重启正常服务..."
-  $DOCKER_CMD up -d
-  
-  # 等待服务启动
-  echo "⏳ 等待服务启动..."
-  
-  # 固定容器名称
-  BACKEND_CONTAINER="springboot-backend"
-  
-  # 检查数据库容器健康状态
-  echo "🔍 检查数据库服务状态..."
-  for i in {1..60}; do
-    if docker ps --format "{{.Names}}" | grep -q "^$MYSQL_CONTAINER$"; then
-      DB_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' "$MYSQL_CONTAINER" 2>/dev/null || echo "unknown")
-      if [[ "$DB_HEALTH" == "healthy" ]]; then
-        echo "✅ 数据库服务健康检查通过"
-        break
-      elif [[ "$DB_HEALTH" == "starting" ]]; then
-        # 继续等待
-        :
-      elif [[ "$DB_HEALTH" == "unhealthy" ]]; then
-        echo "⚠️ 数据库健康状态：$DB_HEALTH"
-      fi
-    else
-      echo "⚠️ 数据库容器未找到或未运行"
-      DB_HEALTH="not_running"
-    fi
-    if [ $i -eq 60 ]; then
-      echo "❌ 数据库服务启动超时（60秒）"
-      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' "$MYSQL_CONTAINER" 2>/dev/null || echo '容器不存在')"
-      return 1
-    fi
-    # 每10秒显示一次进度
-    if [ $((i % 10)) -eq 1 ]; then
-      echo "⏳ 等待数据库服务启动... ($i/60) 状态：${DB_HEALTH:-unknown}"
-    fi
-    sleep 1
-  done
-  
-  # 检查后端容器健康状态
-  echo "🔍 检查后端服务状态..."
-  for i in {1..60}; do
-    if docker ps --format "{{.Names}}" | grep -q "^$BACKEND_CONTAINER$"; then
-      BACKEND_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo "unknown")
-      if [[ "$BACKEND_HEALTH" == "healthy" ]]; then
-        echo "✅ 后端服务健康检查通过"
-        break
-      elif [[ "$BACKEND_HEALTH" == "starting" ]]; then
-        # 继续等待
-        :
-      elif [[ "$BACKEND_HEALTH" == "unhealthy" ]]; then
-        echo "⚠️ 后端健康状态：$BACKEND_HEALTH"
-      fi
-    else
-      echo "⚠️ 后端容器未找到或未运行"
-      BACKEND_HEALTH="not_running"
-    fi
-    if [ $i -eq 60 ]; then
-      echo "❌ 后端服务启动超时（60秒）"
-      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo '容器不存在')"
-      echo "⚠️ 密码已重置，但服务启动可能有问题，请检查日志"
-      return 1
-    fi
-    # 每10秒显示一次进度
-    if [ $((i % 10)) -eq 1 ]; then
-      echo "⏳ 等待后端服务启动... ($i/60) 状态：${BACKEND_HEALTH:-unknown}"
-    fi
-    sleep 1
-  done
-  
-  # 验证数据库连接
-  echo "🔍 验证数据库连接..."
-  if docker exec "$MYSQL_CONTAINER" mysql -u "$DB_USER" -p"$NEW_DB_PASSWORD" -e "SELECT 1;" "$DB_NAME" >/dev/null 2>&1; then
-    echo "✅ 数据库连接验证成功"
-  else
-    echo "⚠️ 数据库连接验证失败，但密码已重置"
-  fi
-  
-  echo "✅ MySQL密码重置完成！"
-  echo "🔑 新的数据库密码: $NEW_DB_PASSWORD"
-  echo "📝 .env文件已更新"
-  echo "🚀 服务已重启"
-  echo "⚠️ 请妥善保存新密码！"
-}
-
 # 卸载功能
 uninstall_panel() {
   echo "🗑️ 开始卸载面板..."
@@ -1185,7 +947,7 @@ main() {
   # 显示交互式菜单
   while true; do
     show_menu
-    read -p "请输入选项 (1-6): " choice
+    read -p "请输入选项 (1-5): " choice
     
     case $choice in
       1)
@@ -1205,15 +967,11 @@ main() {
         break
         ;;
       5)
-        reset_mysql_password
-        break
-        ;;
-      6)
         echo "👋 退出脚本"
         exit 0
         ;;
       *)
-        echo "❌ 无效选项，请输入 1-6"
+        echo "❌ 无效选项，请输入 1-5"
         echo ""
         ;;
     esac
