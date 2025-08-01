@@ -258,6 +258,7 @@ export default function DashboardPage() {
   };
 
   const calculateUserTotalUsedFlow = (): number => {
+    // 后端已按计费类型处理流量，前端直接使用入站+出站总和
     return (userInfo.inFlow || 0) + (userInfo.outFlow || 0);
   };
 
@@ -313,11 +314,8 @@ export default function DashboardPage() {
     if (!tunnel) return 0;
     const inFlow = tunnel.inFlow || 0;
     const outFlow = tunnel.outFlow || 0;
-    if (tunnel.tunnelFlow === 1) {
-      return outFlow;
-    } else {
-      return inFlow + outFlow;
-    }
+    // 后端已按计费类型处理流量，前端直接使用入站+出站总和
+    return inFlow + outFlow;
   };
 
   const calculateTunnelFlowPercentage = (tunnel: UserTunnel): number => {
@@ -523,19 +521,11 @@ export default function DashboardPage() {
   const calculateForwardBillingFlow = (forward: Forward): number => {
     if (!forward) return 0;
     
-    const tunnel = userTunnels.find(t => t.tunnelId === forward.tunnelId);
-    if (!tunnel) {
-      return (forward.inFlow || 0) + (forward.outFlow || 0);
-    }
-    
     const inFlow = forward.inFlow || 0;
     const outFlow = forward.outFlow || 0;
     
-    if (tunnel.tunnelFlow === 1) {
-      return outFlow;
-    } else {
-      return inFlow + outFlow;
-    }
+    // 后端已按计费类型处理流量，前端直接使用入站+出站总和
+    return inFlow + outFlow;
   };
 
       if (loading) {
