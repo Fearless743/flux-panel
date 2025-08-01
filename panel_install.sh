@@ -913,6 +913,224 @@ export_migration_sql() {
   fi
 }
 
+# 重置MySQL密码功能
+reset_mysql_password() {
+  echo "🔑 开始重置MySQL密码..."
+  check_docker
+  
+  # 获取当前数据库配置信息
+  echo "🔍 获取数据库配置信息..."
+  
+  # 从 .env 文件读取配置
+  if [[ -f ".env" ]]; then
+    DB_NAME=$(grep "^DB_NAME=" .env | cut -d'=' -f2 2>/dev/null)
+    OLD_DB_PASSWORD=$(grep "^DB_PASSWORD=" .env | cut -d'=' -f2 2>/dev/null)
+    DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
+    
+    if [[ -n "$DB_NAME" && -n "$OLD_DB_PASSWORD" && -n "$DB_USER" ]]; then
+      echo "✅ 从 .env 文件读取数据库配置成功"
+    else
+      echo "❌ .env 文件中的数据库配置不完整"
+      return 1
+    fi
+  else
+    echo "❌ 未找到 .env 文件"
+    return 1
+  fi
+  
+  echo "📋 当前数据库配置："
+  echo "   数据库名: $DB_NAME"
+  echo "   用户名: $DB_USER"
+  
+  # 生成新密码
+  NEW_DB_PASSWORD=$(generate_random)
+  
+  echo "🔑 生成新密码..."
+  echo "⚠️ 新密码: $NEW_DB_PASSWORD"
+  echo "⚠️ 请妥善保存新密码！"
+  
+  # 停止所有服务
+  echo "🛑 停止当前服务..."
+  $DOCKER_CMD down
+  
+  echo "⏳ 等待服务完全停止..."
+  sleep 3
+  
+  # 以跳过权限验证模式启动MySQL容器
+  echo "🔧 以跳过权限验证模式启动MySQL容器..."
+  
+  # 获取MySQL镜像名称
+  MYSQL_IMAGE=$(grep -A 10 "gost-mysql:" docker-compose.yml | grep "image:" | head -1 | awk '{print $2}' | tr -d '"' || echo "mysql:8.0")
+  
+  # 获取数据库卷挂载路径
+  MYSQL_VOLUME=$(docker volume ls | grep mysql | awk '{print $2}' | head -1)
+  
+  if [[ -z "$MYSQL_VOLUME" ]]; then
+    echo "❌ 未找到MySQL数据卷"
+    return 1
+  fi
+  
+  echo "📀 MySQL数据卷: $MYSQL_VOLUME"
+  
+  # 启动临时MySQL容器（跳过权限验证）
+  echo "🚀 启动临时MySQL容器（跳过权限验证模式）..."
+  docker run -d \
+    --name temp-mysql-reset \
+    --rm \
+    -v "$MYSQL_VOLUME:/var/lib/mysql" \
+    -e MYSQL_ROOT_PASSWORD="$OLD_DB_PASSWORD" \
+    "$MYSQL_IMAGE" \
+    --skip-grant-tables \
+    --skip-networking=false \
+    --bind-address=0.0.0.0
+  
+  # 等待MySQL启动
+  echo "⏳ 等待MySQL容器启动..."
+  for i in {1..30}; do
+    if docker exec temp-mysql-reset mysqladmin ping --silent 2>/dev/null; then
+      echo "✅ MySQL容器启动成功"
+      break
+    fi
+    if [ $i -eq 30 ]; then
+      echo "❌ MySQL容器启动超时"
+      docker stop temp-mysql-reset 2>/dev/null
+      return 1
+    fi
+    sleep 1
+  done
+  
+  # 创建临时密码重置脚本
+  echo "🔄 重置数据库用户密码..."
+  cat > temp_reset_password.sql <<EOF
+-- 刷新权限表
+FLUSH PRIVILEGES;
+
+-- 重置用户密码
+ALTER USER '$DB_USER'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';
+
+-- 重置root密码（以防万一）
+ALTER USER 'root'@'localhost' IDENTIFIED BY '$NEW_DB_PASSWORD';
+ALTER USER 'root'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';
+
+-- 刷新权限
+FLUSH PRIVILEGES;
+EOF
+  
+  # 执行密码重置
+  if docker exec -i temp-mysql-reset mysql < temp_reset_password.sql 2>/dev/null; then
+    echo "✅ 密码重置成功"
+  else
+    echo "❌ 密码重置失败"
+    docker stop temp-mysql-reset 2>/dev/null
+    rm -f temp_reset_password.sql
+    return 1
+  fi
+  
+  # 清理临时文件和容器
+  rm -f temp_reset_password.sql
+  docker stop temp-mysql-reset 2>/dev/null
+  
+  echo "✅ 临时MySQL容器已停止"
+  
+  # 更新.env文件
+  echo "📝 更新.env文件..."
+  if [[ -f ".env" ]]; then
+    # 备份原配置文件
+    cp .env .env.backup.$(date +%Y%m%d_%H%M%S)
+    
+    # 更新密码
+    sed -i.tmp "s/^DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" .env
+    rm -f .env.tmp
+    
+    echo "✅ .env文件已更新"
+  else
+    echo "❌ .env文件不存在，无法更新"
+    return 1
+  fi
+  
+  # 重启正常服务
+  echo "🚀 重启正常服务..."
+  $DOCKER_CMD up -d
+  
+  # 等待服务启动
+  echo "⏳ 等待服务启动..."
+  
+  # 检查数据库容器健康状态
+  echo "🔍 检查数据库服务状态..."
+  for i in {1..60}; do
+    if docker ps --format "{{.Names}}" | grep -q "^gost-mysql$"; then
+      DB_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' gost-mysql 2>/dev/null || echo "unknown")
+      if [[ "$DB_HEALTH" == "healthy" ]]; then
+        echo "✅ 数据库服务健康检查通过"
+        break
+      elif [[ "$DB_HEALTH" == "starting" ]]; then
+        # 继续等待
+        :
+      elif [[ "$DB_HEALTH" == "unhealthy" ]]; then
+        echo "⚠️ 数据库健康状态：$DB_HEALTH"
+      fi
+    else
+      echo "⚠️ 数据库容器未找到或未运行"
+      DB_HEALTH="not_running"
+    fi
+    if [ $i -eq 60 ]; then
+      echo "❌ 数据库服务启动超时（60秒）"
+      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' gost-mysql 2>/dev/null || echo '容器不存在')"
+      return 1
+    fi
+    # 每10秒显示一次进度
+    if [ $((i % 10)) -eq 1 ]; then
+      echo "⏳ 等待数据库服务启动... ($i/60) 状态：${DB_HEALTH:-unknown}"
+    fi
+    sleep 1
+  done
+  
+  # 检查后端容器健康状态
+  echo "🔍 检查后端服务状态..."
+  for i in {1..60}; do
+    if docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
+      BACKEND_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo "unknown")
+      if [[ "$BACKEND_HEALTH" == "healthy" ]]; then
+        echo "✅ 后端服务健康检查通过"
+        break
+      elif [[ "$BACKEND_HEALTH" == "starting" ]]; then
+        # 继续等待
+        :
+      elif [[ "$BACKEND_HEALTH" == "unhealthy" ]]; then
+        echo "⚠️ 后端健康状态：$BACKEND_HEALTH"
+      fi
+    else
+      echo "⚠️ 后端容器未找到或未运行"
+      BACKEND_HEALTH="not_running"
+    fi
+    if [ $i -eq 60 ]; then
+      echo "❌ 后端服务启动超时（60秒）"
+      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
+      echo "⚠️ 密码已重置，但服务启动可能有问题，请检查日志"
+      return 1
+    fi
+    # 每10秒显示一次进度
+    if [ $((i % 10)) -eq 1 ]; then
+      echo "⏳ 等待后端服务启动... ($i/60) 状态：${BACKEND_HEALTH:-unknown}"
+    fi
+    sleep 1
+  done
+  
+  # 验证数据库连接
+  echo "🔍 验证数据库连接..."
+  if docker exec gost-mysql mysql -u "$DB_USER" -p"$NEW_DB_PASSWORD" -e "SELECT 1;" "$DB_NAME" >/dev/null 2>&1; then
+    echo "✅ 数据库连接验证成功"
+  else
+    echo "⚠️ 数据库连接验证失败，但密码已重置"
+  fi
+  
+  echo "✅ MySQL密码重置完成！"
+  echo "🔑 新的数据库密码: $NEW_DB_PASSWORD"
+  echo "📝 .env文件已更新"
+  echo "🚀 服务已重启"
+  echo "⚠️ 请妥善保存新密码！"
+}
+
 # 卸载功能
 uninstall_panel() {
   echo "🗑️ 开始卸载面板..."
@@ -947,7 +1165,7 @@ main() {
   # 显示交互式菜单
   while true; do
     show_menu
-    read -p "请输入选项 (1-5): " choice
+    read -p "请输入选项 (1-6): " choice
     
     case $choice in
       1)
@@ -967,11 +1185,15 @@ main() {
         break
         ;;
       5)
+        reset_mysql_password
+        break
+        ;;
+      6)
         echo "👋 退出脚本"
         exit 0
         ;;
       *)
-        echo "❌ 无效选项，请输入 1-5"
+        echo "❌ 无效选项，请输入 1-6"
         echo ""
         ;;
     esac
