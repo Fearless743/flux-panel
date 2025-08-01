@@ -996,51 +996,49 @@ reset_mysql_password() {
     sleep 1
   done
   
-  # 创建临时密码重置脚本
+  # 在skip-grant-tables模式下重置密码
   echo "🔄 重置数据库用户密码..."
   
-  # 在skip-grant-tables模式下，需要分步执行
-  echo "🔧 第一步：刷新权限表..."
-  echo "🔍 执行命令: docker exec temp-mysql-reset mysql -e \"FLUSH PRIVILEGES;\""
-  if docker exec temp-mysql-reset mysql -e "FLUSH PRIVILEGES;"; then
-    echo "✅ 权限表刷新成功"
-  else
-    echo "❌ 权限表刷新失败"
-    echo "🔍 检查容器状态:"
-    docker ps | grep temp-mysql-reset || echo "容器未运行"
-    docker logs temp-mysql-reset | tail -10
-    docker stop temp-mysql-reset 2>/dev/null
-    return 1
-  fi
-  
-  echo "🔧 第二步：重置用户密码..."
+  # 在skip-grant-tables模式下，直接操作mysql.user表，不要执行FLUSH PRIVILEGES
+  echo "🔧 第一步：直接更新mysql.user表中的用户密码..."
   echo "🔍 重置用户: $DB_USER"
-  # 重置用户密码
-  if docker exec temp-mysql-reset mysql -e "ALTER USER '$DB_USER'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';"; then
-    echo "✅ 用户密码重置成功"
+  
+  # 直接更新用户密码（MySQL 5.7使用authentication_string字段）
+  if docker exec temp-mysql-reset mysql -e "UPDATE mysql.user SET authentication_string = PASSWORD('$NEW_DB_PASSWORD') WHERE User = '$DB_USER';"; then
+    echo "✅ 用户密码更新成功"
   else
-    echo "⚠️ 用户密码重置失败，尝试创建用户..."
-    # 如果用户不存在，先创建用户
-    if docker exec temp-mysql-reset mysql -e "CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';"; then
-      echo "✅ 用户创建成功"
+    echo "⚠️ 用户密码更新失败，可能用户不存在"
+    echo "🔍 检查用户是否存在..."
+    USER_EXISTS=$(docker exec temp-mysql-reset mysql -e "SELECT COUNT(*) FROM mysql.user WHERE User = '$DB_USER';" 2>/dev/null | tail -n 1)
+    if [ "$USER_EXISTS" = "0" ]; then
+      echo "🔧 用户不存在，创建新用户..."
+      # 在skip-grant-tables模式下，直接插入用户记录
+      if docker exec temp-mysql-reset mysql -e "INSERT INTO mysql.user (Host, User, authentication_string, ssl_cipher, x509_issuer, x509_subject) VALUES ('%', '$DB_USER', PASSWORD('$NEW_DB_PASSWORD'), '', '', '');"; then
+        echo "✅ 新用户创建成功"
+      else
+        echo "❌ 新用户创建失败"
+        docker logs temp-mysql-reset | tail -10
+        docker stop temp-mysql-reset 2>/dev/null
+        return 1
+      fi
     else
-      echo "❌ 用户创建失败"
+      echo "❌ 用户存在但密码更新失败"
       docker logs temp-mysql-reset | tail -10
       docker stop temp-mysql-reset 2>/dev/null
       return 1
     fi
   fi
   
-  echo "🔧 第三步：重置root密码..."
-  # 重置root密码
-  docker exec temp-mysql-reset mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$NEW_DB_PASSWORD';"
-  docker exec temp-mysql-reset mysql -e "ALTER USER 'root'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';"
+  echo "🔧 第二步：重置root密码..."
+  # 更新root用户密码
+  docker exec temp-mysql-reset mysql -e "UPDATE mysql.user SET authentication_string = PASSWORD('$NEW_DB_PASSWORD') WHERE User = 'root';"
+  echo "✅ root密码更新完成"
   
-  echo "🔧 第四步：刷新权限..."
+  echo "🔧 第三步：最后刷新权限..."
   if docker exec temp-mysql-reset mysql -e "FLUSH PRIVILEGES;"; then
     echo "✅ 密码重置完成"
   else
-    echo "❌ 最终权限刷新失败"
+    echo "❌ 权限刷新失败"
     docker logs temp-mysql-reset | tail -10
     docker stop temp-mysql-reset 2>/dev/null
     return 1
