@@ -960,14 +960,33 @@ reset_mysql_password() {
   # 以跳过权限验证模式启动MySQL容器
   echo "🔧 以跳过权限验证模式启动MySQL容器..."
   
-  # 获取MySQL镜像名称
-  MYSQL_IMAGE=$(grep -A 10 "gost-mysql:" docker-compose.yml | grep "image:" | head -1 | awk '{print $2}' | tr -d '"' || echo "mysql:8.0")
+  # 获取MySQL镜像名称 - 根据docker-compose配置
+  # 检查IPv6配置来确定使用哪个镜像版本
+  if check_ipv6_support > /dev/null 2>&1; then
+    # IPv6环境通常使用v6版本的compose文件
+    MYSQL_IMAGE="mysql:5.7"
+  else
+    # IPv4环境使用v4版本的compose文件  
+    MYSQL_IMAGE="mysql:5.7"
+  fi
+  
+  # 如果docker-compose.yml存在，从中获取实际的镜像名称
+  if [[ -f "docker-compose.yml" ]]; then
+    MYSQL_IMAGE_FROM_FILE=$(grep -A 10 "mysql:" docker-compose.yml | grep "image:" | head -1 | sed 's/.*image:[[:space:]]*//' | xargs)
+    if [[ -n "$MYSQL_IMAGE_FROM_FILE" ]]; then
+      MYSQL_IMAGE="$MYSQL_IMAGE_FROM_FILE"
+    fi
+  fi
+  
+  echo "🖼️ MySQL镜像: $MYSQL_IMAGE"
   
   # 获取数据库卷挂载路径
-  MYSQL_VOLUME=$(docker volume ls | grep mysql | awk '{print $2}' | head -1)
+  MYSQL_VOLUME=$(docker volume ls | grep -E "(mysql|gost.*mysql)" | awk '{print $2}' | head -1)
   
   if [[ -z "$MYSQL_VOLUME" ]]; then
     echo "❌ 未找到MySQL数据卷"
+    echo "🔍 当前所有数据卷："
+    docker volume ls
     return 1
   fi
   
