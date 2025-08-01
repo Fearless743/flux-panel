@@ -1001,25 +1001,31 @@ reset_mysql_password() {
   
   # 在skip-grant-tables模式下，需要分步执行
   echo "🔧 第一步：刷新权限表..."
-  if docker exec temp-mysql-reset mysql -e "FLUSH PRIVILEGES;" 2>/dev/null; then
+  echo "🔍 执行命令: docker exec temp-mysql-reset mysql -e \"FLUSH PRIVILEGES;\""
+  if docker exec temp-mysql-reset mysql -e "FLUSH PRIVILEGES;"; then
     echo "✅ 权限表刷新成功"
   else
     echo "❌ 权限表刷新失败"
+    echo "🔍 检查容器状态:"
+    docker ps | grep temp-mysql-reset || echo "容器未运行"
+    docker logs temp-mysql-reset | tail -10
     docker stop temp-mysql-reset 2>/dev/null
     return 1
   fi
   
   echo "🔧 第二步：重置用户密码..."
+  echo "🔍 重置用户: $DB_USER"
   # 重置用户密码
-  if docker exec temp-mysql-reset mysql -e "ALTER USER '$DB_USER'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';" 2>/dev/null; then
+  if docker exec temp-mysql-reset mysql -e "ALTER USER '$DB_USER'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';"; then
     echo "✅ 用户密码重置成功"
   else
     echo "⚠️ 用户密码重置失败，尝试创建用户..."
     # 如果用户不存在，先创建用户
-    if docker exec temp-mysql-reset mysql -e "CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';" 2>/dev/null; then
+    if docker exec temp-mysql-reset mysql -e "CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';"; then
       echo "✅ 用户创建成功"
     else
       echo "❌ 用户创建失败"
+      docker logs temp-mysql-reset | tail -10
       docker stop temp-mysql-reset 2>/dev/null
       return 1
     fi
@@ -1027,14 +1033,15 @@ reset_mysql_password() {
   
   echo "🔧 第三步：重置root密码..."
   # 重置root密码
-  docker exec temp-mysql-reset mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$NEW_DB_PASSWORD';" 2>/dev/null
-  docker exec temp-mysql-reset mysql -e "ALTER USER 'root'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';" 2>/dev/null
+  docker exec temp-mysql-reset mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$NEW_DB_PASSWORD';"
+  docker exec temp-mysql-reset mysql -e "ALTER USER 'root'@'%' IDENTIFIED BY '$NEW_DB_PASSWORD';"
   
   echo "🔧 第四步：刷新权限..."
-  if docker exec temp-mysql-reset mysql -e "FLUSH PRIVILEGES;" 2>/dev/null; then
+  if docker exec temp-mysql-reset mysql -e "FLUSH PRIVILEGES;"; then
     echo "✅ 密码重置完成"
   else
     echo "❌ 最终权限刷新失败"
+    docker logs temp-mysql-reset | tail -10
     docker stop temp-mysql-reset 2>/dev/null
     return 1
   fi
