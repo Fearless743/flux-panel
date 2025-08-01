@@ -960,36 +960,13 @@ reset_mysql_password() {
   # 以跳过权限验证模式启动MySQL容器
   echo "🔧 以跳过权限验证模式启动MySQL容器..."
   
-  # 获取MySQL镜像名称 - 根据docker-compose配置
-  # 检查IPv6配置来确定使用哪个镜像版本
-  if check_ipv6_support > /dev/null 2>&1; then
-    # IPv6环境通常使用v6版本的compose文件
-    MYSQL_IMAGE="mysql:5.7"
-  else
-    # IPv4环境使用v4版本的compose文件  
-    MYSQL_IMAGE="mysql:5.7"
-  fi
-  
-  # 如果docker-compose.yml存在，从中获取实际的镜像名称
-  if [[ -f "docker-compose.yml" ]]; then
-    MYSQL_IMAGE_FROM_FILE=$(grep -A 10 "mysql:" docker-compose.yml | grep "image:" | head -1 | sed 's/.*image:[[:space:]]*//' | xargs)
-    if [[ -n "$MYSQL_IMAGE_FROM_FILE" ]]; then
-      MYSQL_IMAGE="$MYSQL_IMAGE_FROM_FILE"
-    fi
-  fi
+  # MySQL配置 - 固定值（来自docker-compose配置）
+  MYSQL_IMAGE="mysql:5.7"
+  MYSQL_CONTAINER="gost-mysql"
+  MYSQL_VOLUME="mysql_data"
   
   echo "🖼️ MySQL镜像: $MYSQL_IMAGE"
-  
-  # 获取数据库卷挂载路径
-  MYSQL_VOLUME=$(docker volume ls | grep -E "(mysql|gost.*mysql)" | awk '{print $2}' | head -1)
-  
-  if [[ -z "$MYSQL_VOLUME" ]]; then
-    echo "❌ 未找到MySQL数据卷"
-    echo "🔍 当前所有数据卷："
-    docker volume ls
-    return 1
-  fi
-  
+  echo "📦 MySQL容器: $MYSQL_CONTAINER"
   echo "📀 MySQL数据卷: $MYSQL_VOLUME"
   
   # 启动临时MySQL容器（跳过权限验证）
@@ -1075,11 +1052,14 @@ EOF
   # 等待服务启动
   echo "⏳ 等待服务启动..."
   
+  # 固定容器名称
+  BACKEND_CONTAINER="springboot-backend"
+  
   # 检查数据库容器健康状态
   echo "🔍 检查数据库服务状态..."
   for i in {1..60}; do
-    if docker ps --format "{{.Names}}" | grep -q "^gost-mysql$"; then
-      DB_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' gost-mysql 2>/dev/null || echo "unknown")
+    if docker ps --format "{{.Names}}" | grep -q "^$MYSQL_CONTAINER$"; then
+      DB_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' "$MYSQL_CONTAINER" 2>/dev/null || echo "unknown")
       if [[ "$DB_HEALTH" == "healthy" ]]; then
         echo "✅ 数据库服务健康检查通过"
         break
@@ -1095,7 +1075,7 @@ EOF
     fi
     if [ $i -eq 60 ]; then
       echo "❌ 数据库服务启动超时（60秒）"
-      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' gost-mysql 2>/dev/null || echo '容器不存在')"
+      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' "$MYSQL_CONTAINER" 2>/dev/null || echo '容器不存在')"
       return 1
     fi
     # 每10秒显示一次进度
@@ -1108,8 +1088,8 @@ EOF
   # 检查后端容器健康状态
   echo "🔍 检查后端服务状态..."
   for i in {1..60}; do
-    if docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
-      BACKEND_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo "unknown")
+    if docker ps --format "{{.Names}}" | grep -q "^$BACKEND_CONTAINER$"; then
+      BACKEND_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo "unknown")
       if [[ "$BACKEND_HEALTH" == "healthy" ]]; then
         echo "✅ 后端服务健康检查通过"
         break
@@ -1125,7 +1105,7 @@ EOF
     fi
     if [ $i -eq 60 ]; then
       echo "❌ 后端服务启动超时（60秒）"
-      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
+      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo '容器不存在')"
       echo "⚠️ 密码已重置，但服务启动可能有问题，请检查日志"
       return 1
     fi
@@ -1138,7 +1118,7 @@ EOF
   
   # 验证数据库连接
   echo "🔍 验证数据库连接..."
-  if docker exec gost-mysql mysql -u "$DB_USER" -p"$NEW_DB_PASSWORD" -e "SELECT 1;" "$DB_NAME" >/dev/null 2>&1; then
+  if docker exec "$MYSQL_CONTAINER" mysql -u "$DB_USER" -p"$NEW_DB_PASSWORD" -e "SELECT 1;" "$DB_NAME" >/dev/null 2>&1; then
     echo "✅ 数据库连接验证成功"
   else
     echo "⚠️ 数据库连接验证失败，但密码已重置"
