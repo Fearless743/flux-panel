@@ -392,12 +392,6 @@ export default function TunnelPage() {
     }
   };
 
-  // 格式化时间
-  const formatTime = (timestamp: string | number): string => {
-    if (!timestamp) return '-';
-    const date = new Date(timestamp);
-    return date.toLocaleString('zh-CN');
-  };
 
   // 获取连接质量
   const getQualityDisplay = (averageTime?: number, packetLoss?: number) => {
