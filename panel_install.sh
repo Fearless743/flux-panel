@@ -172,6 +172,8 @@ get_config_params() {
   echo "🔧 请输入配置参数："
 
   echo "📡 节点端服务器和面板通信的地址，需要能正常访问（IPv6不需要加[]）"
+  echo "不要套CDN，不支持HTTPS，直接输入面板服务器的ip"
+  echo "用于节点和面板通讯的地址，节点和面板通讯内容有加密！！！！！"
   while true; do
     read -p "当前面板服务器地址: " SERVER_HOST
     if [ -n "$SERVER_HOST" ]; then

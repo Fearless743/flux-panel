@@ -1,10 +1,6 @@
 package com.admin.service;
 
-import com.admin.common.dto.ChangePasswordDto;
-import com.admin.common.dto.LoginDto;
-import com.admin.common.dto.PageDto;
-import com.admin.common.dto.UserDto;
-import com.admin.common.dto.UserUpdateDto;
+import com.admin.common.dto.*;
 import com.admin.common.lang.R;
 import com.admin.entity.User;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -32,4 +28,6 @@ public interface UserService extends IService<User> {
     R getUserPackageInfo();
     
     R updatePassword(ChangePasswordDto changePasswordDto);
+
+    R reset(ResetFlowDto resetFlowDto);
 }

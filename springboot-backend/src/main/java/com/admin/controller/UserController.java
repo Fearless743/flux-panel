@@ -3,11 +3,7 @@ package com.admin.controller;
 
 import com.admin.common.aop.LogAnnotation;
 import com.admin.common.annotation.RequireRole;
-import com.admin.common.dto.ChangePasswordDto;
-import com.admin.common.dto.LoginDto;
-import com.admin.common.dto.PageDto;
-import com.admin.common.dto.UserDto;
-import com.admin.common.dto.UserUpdateDto;
+import com.admin.common.dto.*;
 import com.admin.common.lang.R;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -78,4 +74,14 @@ public class UserController extends BaseController {
     public R updatePassword(@Validated @RequestBody ChangePasswordDto changePasswordDto) {
         return userService.updatePassword(changePasswordDto);
     }
+
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/reset")
+    public R reset(@Validated @RequestBody ResetFlowDto resetFlowDto) {
+        return userService.reset(resetFlowDto);
+    }
+
+
+
 }

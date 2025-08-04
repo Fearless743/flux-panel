@@ -518,23 +518,17 @@ export default function TunnelPage() {
                       {/* 配置信息 */}
                       <div className="flex justify-between items-center pt-2 border-t border-divider">
                         <div className="text-left">
-                          <div className="text-xs text-default-500">流量计算</div>
                           <div className="text-xs font-medium text-foreground">
                             {getFlowDisplay(tunnel.flow)}
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs text-default-500">倍率</div>
                           <div className="text-xs font-medium text-foreground">
                             {tunnel.trafficRatio}x
                           </div>
                         </div>
                       </div>
 
-                      {/* 时间信息 */}
-                      <div className="text-xs text-default-500 pt-1 border-t border-divider">
-                        创建时间: {formatTime(tunnel.createdTime)}
-                      </div>
                     </div>
                     
                     <div className="flex gap-1.5 mt-3">

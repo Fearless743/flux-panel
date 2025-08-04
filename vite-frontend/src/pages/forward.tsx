@@ -760,14 +760,15 @@ export default function ForwardPage() {
               <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
                 {strategyDisplay.text}
               </Chip>
-              <Chip variant="flat" size="sm" className="text-xs">
-                {formatFlow((forward.inFlow || 0) + (forward.outFlow || 0))}
-              </Chip>
-              {forward.userName && (
-                <Chip variant="flat" size="sm" className="text-xs">
-                  {forward.userName}
+              <div className="flex items-center gap-1">
+                <Chip variant="flat" size="sm" className="text-xs" color="primary">
+                  ↑{formatFlow(forward.inFlow || 0)}
                 </Chip>
-              )}
+               
+              </div>
+              <Chip variant="flat" size="sm" className="text-xs" color="success">
+                  ↓{formatFlow(forward.outFlow || 0)}
+                </Chip>
             </div>
           </div>
           

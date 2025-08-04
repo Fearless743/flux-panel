@@ -2,13 +2,7 @@ package com.admin.service.impl;
 
 import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.StrUtil;
-import com.admin.common.dto.ChangePasswordDto;
-import com.admin.common.dto.LoginDto;
-import com.admin.common.dto.PageDto;
-import com.admin.common.dto.UserDto;
-import com.admin.common.dto.UserUpdateDto;
-import com.admin.common.dto.UserPackageDto;
-import com.admin.common.dto.GostDto;
+import com.admin.common.dto.*;
 import com.admin.common.lang.R;
 import com.admin.common.task.DelayQueueManager;
 import com.admin.common.task.DelayTask;
@@ -351,6 +345,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
     }
 
+    @Override
+    public R reset(ResetFlowDto resetFlowDto) {
+        if (resetFlowDto.getType() == 1){ // 清零账号流量
+            User user = this.getById(resetFlowDto.getId());
+            if (user == null) return R.err(ERROR_USER_NOT_FOUND);
+            user.setInFlow(0L);
+            user.setOutFlow(0L);
+            this.updateById(user);
+        }else { // 清零隧道流量
+            UserTunnel tunnel = userTunnelService.getById(resetFlowDto.getId());
+            if (tunnel == null) return R.err("隧道不存在");
+            tunnel.setInFlow(0L);
+            tunnel.setOutFlow(0L);
+            userTunnelService.updateById(tunnel);
+        }
+        return R.ok();
+    }
+
     // ========== 私有辅助方法 ==========
 
     /**
@@ -691,7 +703,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         UserPackageDto.UserInfoDto userInfo = buildUserInfoDto(user);
         
         // 2. 获取隧道权限详情
-        List<UserPackageDto.UserTunnelDetailDto> tunnelPermissions = getTunnelPermissions(user.getId(), roleId);
+        List<UserPackageDto.UserTunnelDetailDto> tunnelPermissions = getTunnelPermissions(user.getId());
         
         // 3. 获取转发详情
         List<UserPackageDto.UserForwardDetailDto> forwards = userMapper.getUserForwardDetails(user.getId().intValue());
@@ -731,15 +743,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * 获取隧道权限详情
      * 
      * @param userId 用户ID
-     * @param roleId 角色ID
      * @return 隧道权限详情列表
      */
-    private List<UserPackageDto.UserTunnelDetailDto> getTunnelPermissions(Long userId, Integer roleId) {
-        if (roleId != null && roleId == ADMIN_ROLE_ID) {
-            return userMapper.getAllTunnelsForAdmin();
-        } else {
-            return userMapper.getUserTunnelDetails(userId.intValue());
-        }
+    private List<UserPackageDto.UserTunnelDetailDto> getTunnelPermissions(Long userId) {
+        return userMapper.getUserTunnelDetails(userId.intValue());
     }
 
     /**

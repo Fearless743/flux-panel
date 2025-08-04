@@ -284,6 +284,34 @@ export default function NodePage() {
     return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // 格式化开机时间
+  const formatUptime = (seconds: number): string => {
+    if (seconds === 0) return '-';
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (days > 0) {
+      return `${days}天${hours}小时`;
+    } else if (hours > 0) {
+      return `${hours}小时${minutes}分钟`;
+    } else {
+      return `${minutes}分钟`;
+    }
+  };
+
+  // 格式化流量
+  const formatTraffic = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   // 获取进度条颜色
   const getProgressColor = (value: number, offline = false): "default" | "primary" | "secondary" | "success" | "warning" | "danger" => {
     if (offline) return "default";
@@ -633,6 +661,15 @@ export default function NodePage() {
                       <span className="text-default-600">版本</span>
                       <span className="text-xs">{node.version || '未知'}</span>
                     </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-default-600">开机时间</span>
+                      <span className="text-xs">
+                        {node.connectionStatus === 'online' && node.systemInfo 
+                          ? formatUptime(node.systemInfo.uptime)
+                          : '-'
+                        }
+                      </span>
+                    </div>
                   </div>
 
                   {/* 系统监控 */}
@@ -695,6 +732,28 @@ export default function NodePage() {
                         <div className="font-mono">
                           {node.connectionStatus === 'online' && node.systemInfo 
                             ? formatSpeed(node.systemInfo.downloadSpeed) 
+                            : '-'
+                          }
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 流量统计 */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="text-center p-2 bg-primary-50 dark:bg-primary-100/20 rounded border border-primary-200 dark:border-primary-300/20">
+                        <div className="text-primary-600 dark:text-primary-400 mb-0.5">↑ 上行流量</div>
+                        <div className="font-mono text-primary-700 dark:text-primary-300">
+                          {node.connectionStatus === 'online' && node.systemInfo 
+                            ? formatTraffic(node.systemInfo.uploadTraffic) 
+                            : '-'
+                          }
+                        </div>
+                      </div>
+                      <div className="text-center p-2 bg-success-50 dark:bg-success-100/20 rounded border border-success-200 dark:border-success-300/20">
+                        <div className="text-success-600 dark:text-success-400 mb-0.5">↓ 下行流量</div>
+                        <div className="font-mono text-success-700 dark:text-success-300">
+                          {node.connectionStatus === 'online' && node.systemInfo 
+                            ? formatTraffic(node.systemInfo.downloadTraffic) 
                             : '-'
                           }
                         </div>

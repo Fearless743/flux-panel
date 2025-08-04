@@ -46,7 +46,8 @@ import {
   getUserTunnelList,
   removeUserTunnel,
   updateUserTunnel,
-  getSpeedLimitList
+  getSpeedLimitList,
+  resetUserFlow
 } from '@/api';
 import { SearchIcon, PlusIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
 import { parseDate } from "@internationalized/date";
@@ -156,6 +157,16 @@ export default function UserPage() {
   // 删除隧道权限确认相关状态
   const { isOpen: isDeleteTunnelModalOpen, onOpen: onDeleteTunnelModalOpen, onClose: onDeleteTunnelModalClose } = useDisclosure();
   const [tunnelToDelete, setTunnelToDelete] = useState<UserTunnel | null>(null);
+
+  // 重置流量确认相关状态
+  const { isOpen: isResetFlowModalOpen, onOpen: onResetFlowModalOpen, onClose: onResetFlowModalClose } = useDisclosure();
+  const [userToReset, setUserToReset] = useState<User | null>(null);
+  const [resetFlowLoading, setResetFlowLoading] = useState(false);
+
+  // 重置隧道流量确认相关状态
+  const { isOpen: isResetTunnelFlowModalOpen, onOpen: onResetTunnelFlowModalOpen, onClose: onResetTunnelFlowModalClose } = useDisclosure();
+  const [tunnelToReset, setTunnelToReset] = useState<UserTunnel | null>(null);
+  const [resetTunnelFlowLoading, setResetTunnelFlowLoading] = useState(false);
 
   // 其他数据
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
@@ -444,6 +455,70 @@ export default function UserPage() {
     }
   };
 
+  // 重置流量相关函数
+  const handleResetFlow = (user: User) => {
+    setUserToReset(user);
+    onResetFlowModalOpen();
+  };
+
+  const handleConfirmResetFlow = async () => {
+    if (!userToReset) return;
+
+    setResetFlowLoading(true);
+    try {
+      const response = await resetUserFlow({ 
+        id: userToReset.id, 
+        type: 1 // 1表示重置用户流量
+      });
+      
+      if (response.code === 0) {
+        toast.success('流量重置成功');
+        onResetFlowModalClose();
+        setUserToReset(null);
+        loadUsers(); // 重新加载用户列表
+      } else {
+        toast.error(response.msg || '重置失败');
+      }
+    } catch (error) {
+      toast.error('重置失败');
+    } finally {
+      setResetFlowLoading(false);
+    }
+  };
+
+  // 隧道流量重置相关函数
+  const handleResetTunnelFlow = (userTunnel: UserTunnel) => {
+    setTunnelToReset(userTunnel);
+    onResetTunnelFlowModalOpen();
+  };
+
+  const handleConfirmResetTunnelFlow = async () => {
+    if (!tunnelToReset) return;
+
+    setResetTunnelFlowLoading(true);
+    try {
+      const response = await resetUserFlow({ 
+        id: tunnelToReset.id, 
+        type: 2 // 2表示重置隧道流量
+      });
+      
+      if (response.code === 0) {
+        toast.success('隧道流量重置成功');
+        onResetTunnelFlowModalClose();
+        setTunnelToReset(null);
+        if (currentUser) {
+          loadUserTunnels(currentUser.id); // 重新加载隧道权限列表
+        }
+      } else {
+        toast.error(response.msg || '重置失败');
+      }
+    } catch (error) {
+      toast.error('重置失败');
+    } finally {
+      setResetTunnelFlowLoading(false);
+    }
+  };
+
   // 过滤数据
   const availableTunnels = tunnels.filter(
     tunnel => !userTunnels.some(ut => ut.tunnelId === tunnel.id)
@@ -595,15 +670,16 @@ export default function UserPage() {
                         <div className="flex justify-between text-sm">
                           <span className="text-default-600">过期时间</span>
                           <div className="text-right">
-                            <div className="text-xs">{formatDate(user.expTime)}</div>
-                            {expStatus && (
+                            {expStatus && expStatus.color === 'success' ? (
+                              <div className="text-xs">{formatDate(user.expTime)}</div>
+                            ) : (
                               <Chip 
-                                color={expStatus.color} 
+                                color={expStatus?.color || 'default'} 
                                 variant="flat" 
                                 size="sm"
-                                className="text-xs mt-0.5"
+                                className="text-xs"
                               >
-                                {expStatus.text}
+                                {expStatus?.text || '未知状态'}
                               </Chip>
                             )}
                           </div>
@@ -622,6 +698,20 @@ export default function UserPage() {
                       startContent={<EditIcon className="w-3 h-3" />}
                     >
                       编辑
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      color="warning"
+                      onPress={() => handleResetFlow(user)}
+                      className="flex-1 min-h-8"
+                      startContent={
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                        </svg>
+                      }
+                    >
+                      重置
                     </Button>
                     <Button
                       size="sm"
@@ -962,6 +1052,18 @@ export default function UserPage() {
                             <Button
                               size="sm"
                               variant="flat"
+                              color="warning"
+                              isIconOnly
+                              onClick={() => handleResetTunnelFlow(userTunnel)}
+                              title="重置流量"
+                            >
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                              </svg>
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="flat"
                               color="danger"
                               isIconOnly
                               onClick={() => handleRemoveTunnel(userTunnel)}
@@ -1175,6 +1277,140 @@ export default function UserPage() {
               onPress={handleConfirmRemoveTunnel}
             >
               确认删除
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* 重置流量确认对话框 */}
+      <Modal
+        isOpen={isResetFlowModalOpen}
+        onClose={onResetFlowModalClose}
+        size="md"
+        scrollBehavior="outside"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            确认重置流量
+          </ModalHeader>
+          <ModalBody>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-warning-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-warning" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-foreground">
+                  确定要重置用户 <span className="font-semibold text-warning">"{userToReset?.user}"</span> 的流量吗？
+                </p>
+                <p className="text-small text-default-500 mt-1">
+                  该操作只会重置账号流量不会重置隧道权限流量，重置后该用户的上下行流量将归零，此操作不可撤销。
+                </p>
+                <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
+                  <div className="text-warning-700 dark:text-warning-300">
+                    当前流量使用情况：
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    <div className="flex justify-between">
+                      <span>上行流量：</span>
+                      <span className="font-mono">{userToReset ? formatFlow(userToReset.inFlow || 0) : '-'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>下行流量：</span>
+                      <span className="font-mono">{userToReset ? formatFlow(userToReset.outFlow || 0) : '-'}</span>
+                    </div>
+                    <div className="flex justify-between font-medium">
+                      <span>总计：</span>
+                      <span className="font-mono text-warning-700 dark:text-warning-300">
+                        {userToReset ? formatFlow(calculateUserTotalUsedFlow(userToReset)) : '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button 
+              variant="light" 
+              onPress={onResetFlowModalClose}
+            >
+              取消
+            </Button>
+            <Button 
+              color="warning" 
+              onPress={handleConfirmResetFlow}
+              isLoading={resetFlowLoading}
+            >
+              确认重置
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* 重置隧道流量确认对话框 */}
+      <Modal
+        isOpen={isResetTunnelFlowModalOpen}
+        onClose={onResetTunnelFlowModalClose}
+        size="md"
+        scrollBehavior="outside"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            确认重置隧道流量
+          </ModalHeader>
+          <ModalBody>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-warning-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-warning" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-foreground">
+                  确定要重置用户 <span className="font-semibold">{currentUser?.user}</span> 对隧道 <span className="font-semibold text-warning">"{tunnelToReset?.tunnelName}"</span> 的流量吗？
+                </p>
+                <p className="text-small text-default-500 mt-1">
+                  该操作只会重置隧道权限流量不会重置账号流量，重置后该隧道权限的上下行流量将归零，此操作不可撤销。
+                </p>
+                <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
+                  <div className="text-warning-700 dark:text-warning-300">
+                    当前流量使用情况：
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    <div className="flex justify-between">
+                      <span>上行流量：</span>
+                      <span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.inFlow || 0) : '-'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>下行流量：</span>
+                      <span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.outFlow || 0) : '-'}</span>
+                    </div>
+                    <div className="flex justify-between font-medium">
+                      <span>总计：</span>
+                      <span className="font-mono text-warning-700 dark:text-warning-300">
+                        {tunnelToReset ? formatFlow(calculateTunnelUsedFlow(tunnelToReset)) : '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button 
+              variant="light" 
+              onPress={onResetTunnelFlowModalClose}
+            >
+              取消
+            </Button>
+            <Button 
+              color="warning" 
+              onPress={handleConfirmResetTunnelFlow}
+              isLoading={resetTunnelFlowLoading}
+            >
+              确认重置
             </Button>
           </ModalFooter>
         </ModalContent>

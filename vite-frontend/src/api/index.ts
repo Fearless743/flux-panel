@@ -72,6 +72,9 @@ export const deleteSpeedLimit = (id: number) => Network.post("/speed-limit/delet
 // 修改密码接口
 export const updatePassword = (data: any) => Network.post("/user/updatePassword", data);
 
+// 重置流量接口
+export const resetUserFlow = (data: { id: number; type: number }) => Network.post("/user/reset", data);
+
 // 网站配置相关接口
 export const getConfigs = () => Network.post("/config/list");
 export const getConfigByName = (name: string) => Network.post("/config/get", { name });

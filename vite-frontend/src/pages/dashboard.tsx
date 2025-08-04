@@ -774,11 +774,11 @@ export default function DashboardPage() {
                             <div className="pt-2 border-t border-gray-200 dark:border-default-200">
                               <div className="grid grid-cols-3 gap-1 text-xs">
                                 <div className="text-center">
-                                  <div className="text-default-500 mb-1">入站</div>
+                                  <div className="text-default-500 mb-1">上传</div>
                                   <div className="font-medium text-green-600 dark:text-green-400 truncate">{formatFlow(forward.inFlow || 0)}</div>
                                 </div>
                                 <div className="text-center">
-                                  <div className="text-default-500 mb-1">出站</div>
+                                  <div className="text-default-500 mb-1">下载</div>
                                   <div className="font-medium text-orange-600 dark:text-orange-400 truncate">{formatFlow(forward.outFlow || 0)}</div>
                                 </div>
                                 <div className="text-center">
