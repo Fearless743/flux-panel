@@ -844,7 +844,7 @@ export default function UserPage() {
             <RadioGroup
               label="状态"
               value={userForm.status.toString()}
-              onValueChange={(value) => setUserForm(prev => ({ ...prev, status: Number(value) }))}
+              onValueChange={(value: string) => setUserForm(prev => ({ ...prev, status: Number(value) }))}
               orientation="horizontal"
             >
               <Radio value="1">正常</Radio>
