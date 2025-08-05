@@ -125,6 +125,24 @@ export default function ForwardPage() {
   const [addressModalTitle, setAddressModalTitle] = useState('');
   const [addressList, setAddressList] = useState<AddressItem[]>([]);
   
+  // 导出相关状态
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportData, setExportData] = useState('');
+  const [exportLoading, setExportLoading] = useState(false);
+  const [selectedTunnelForExport, setSelectedTunnelForExport] = useState<number | null>(null);
+  
+  // 导入相关状态
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importData, setImportData] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [selectedTunnelForImport, setSelectedTunnelForImport] = useState<number | null>(null);
+  const [importResults, setImportResults] = useState<Array<{
+    line: string;
+    success: boolean;
+    message: string;
+    forwardName?: string;
+  }>>([]);
+  
   // 表单状态
   const [form, setForm] = useState<ForwardForm>({
     name: '',
@@ -154,8 +172,8 @@ export default function ForwardPage() {
   };
 
   // 加载所有数据
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (lod = true) => {
+    setLoading(lod);
     try {
       const [forwardsRes, tunnelsRes] = await Promise.all([
         getForwardList(),
@@ -639,6 +657,190 @@ export default function ForwardPage() {
     await copyToClipboard(allAddresses, '所有地址');
   };
 
+    // 导出转发数据
+  const handleExport = () => {
+    setSelectedTunnelForExport(null);
+    setExportData('');
+    setExportModalOpen(true);
+  };
+
+  // 执行导出
+  const executeExport = () => {
+    if (!selectedTunnelForExport) {
+      toast.error('请选择要导出的隧道');
+      return;
+    }
+
+    setExportLoading(true);
+    
+    try {
+      // 根据当前显示模式获取要导出的转发列表
+      let forwardsToExport: Forward[] = [];
+      
+      if (viewMode === 'grouped') {
+        // 分组模式下，获取指定隧道的转发
+        const userGroups = groupForwardsByUserAndTunnel();
+        forwardsToExport = userGroups.flatMap(userGroup => 
+          userGroup.tunnelGroups
+            .filter(tunnelGroup => tunnelGroup.tunnelId === selectedTunnelForExport)
+            .flatMap(tunnelGroup => tunnelGroup.forwards)
+        );
+      } else {
+        // 直接显示模式下，过滤指定隧道的转发
+        forwardsToExport = forwards.filter(forward => forward.tunnelId === selectedTunnelForExport);
+      }
+      
+      if (forwardsToExport.length === 0) {
+        toast.error('所选隧道没有转发数据');
+        setExportLoading(false);
+        return;
+      }
+      
+      // 格式化导出数据：remoteAddr|name|inPort
+      const exportLines = forwardsToExport.map(forward => {
+        return `${forward.remoteAddr}|${forward.name}|${forward.inPort}`;
+      });
+      
+      const exportText = exportLines.join('\n');
+      setExportData(exportText);
+    } catch (error) {
+      console.error('导出失败:', error);
+      toast.error('导出失败');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  // 复制导出数据
+  const copyExportData = async () => {
+    await copyToClipboard(exportData, '转发数据');
+  };
+
+  // 导入转发数据
+  const handleImport = () => {
+    setImportData('');
+    setImportResults([]);
+    setSelectedTunnelForImport(null);
+    setImportModalOpen(true);
+  };
+
+  // 执行导入
+  const executeImport = async () => {
+    if (!importData.trim()) {
+      toast.error('请输入要导入的数据');
+      return;
+    }
+
+    if (!selectedTunnelForImport) {
+      toast.error('请选择要导入的隧道');
+      return;
+    }
+
+    setImportLoading(true);
+    setImportResults([]); // 清空之前的结果
+
+    try {
+      const lines = importData.trim().split('\n').filter(line => line.trim());
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        const parts = line.split('|');
+        
+        if (parts.length < 2) {
+          setImportResults(prev => [{
+            line,
+            success: false,
+            message: '格式错误：需要至少包含目标地址和转发名称'
+          }, ...prev]);
+          continue;
+        }
+
+        const [remoteAddr, name, inPort] = parts;
+        
+        if (!remoteAddr.trim() || !name.trim()) {
+          setImportResults(prev => [{
+            line,
+            success: false,
+            message: '目标地址和转发名称不能为空'
+          }, ...prev]);
+          continue;
+        }
+
+        // 验证远程地址格式 - 支持单个地址或多个地址用逗号分隔
+        const addresses = remoteAddr.trim().split(',');
+        const addressPattern = /^[^:]+:\d+$/;
+        const isValidFormat = addresses.every(addr => addressPattern.test(addr.trim()));
+        
+        if (!isValidFormat) {
+          setImportResults(prev => [{
+            line,
+            success: false,
+            message: '目标地址格式错误，应为 地址:端口 格式，多个地址用逗号分隔'
+          }, ...prev]);
+          continue;
+        }
+
+        try {
+          // 处理入口端口
+          let portNumber: number | null = null;
+          if (inPort && inPort.trim()) {
+            const port = parseInt(inPort.trim());
+            if (isNaN(port) || port < 1 || port > 65535) {
+              setImportResults(prev => [{
+                line,
+                success: false,
+                message: '入口端口格式错误，应为1-65535之间的数字'
+              }, ...prev]);
+              continue;
+            }
+            portNumber = port;
+          }
+
+          // 调用创建转发接口
+          const response = await createForward({
+            name: name.trim(),
+            tunnelId: selectedTunnelForImport, // 使用用户选择的隧道
+            inPort: portNumber, // 使用指定端口或自动分配
+            remoteAddr: remoteAddr.trim(),
+            strategy: 'fifo'
+          });
+
+          if (response.code === 0) {
+            setImportResults(prev => [{
+              line,
+              success: true,
+              message: '创建成功',
+              forwardName: name.trim()
+            }, ...prev]);
+          } else {
+            setImportResults(prev => [{
+              line,
+              success: false,
+              message: response.msg || '创建失败'
+            }, ...prev]);
+          }
+        } catch (error) {
+          setImportResults(prev => [{
+            line,
+            success: false,
+            message: '网络错误，创建失败'
+          }, ...prev]);
+        }
+      }
+      
+      
+      toast.success(`导入执行完成`);
+      
+      // 导入完成后刷新转发列表
+      await loadData(false);
+    } catch (error) {
+      console.error('导入失败:', error);
+      toast.error('导入过程中发生错误');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   // 获取状态显示
   const getStatusDisplay = (status: number) => {
     switch (status) {
@@ -714,7 +916,7 @@ export default function ForwardPage() {
                 className={`cursor-pointer px-2 py-1 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
                   hasMultipleAddresses(forward.inIp) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
                 }`}
-                onClick={() => showAddressModal(forward.inIp, forward.inPort, '入口地址')}
+                onClick={() => showAddressModal(forward.inIp, forward.inPort, '入口端口')}
                 title={formatInAddress(forward.inIp, forward.inPort)}
               >
                 <div className="flex items-center justify-between">
@@ -865,17 +1067,39 @@ export default function ForwardPage() {
               )}
             </Button>
             
-            <Button 
-              color="primary" 
-              onPress={handleAdd}
-              startContent={
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                </svg>
-              }
+            {/* 导入按钮 */}
+            <Button
+              size="sm"
+              variant="flat"
+              color="warning"
+              onPress={handleImport}
             >
-              新增转发
+              导入
             </Button>
+            
+            {/* 导出按钮 */}
+            <Button
+              size="sm"
+              variant="flat"
+              color="success"
+              onPress={handleExport}
+              isLoading={exportLoading}
+          
+            >
+              导出
+            </Button>
+
+            <Button
+              size="sm"
+              variant="flat"
+              color="primary"
+              onPress={handleAdd}
+             
+            >
+              新增
+            </Button>
+            
+        
           </div>
         </div>
 
@@ -1154,7 +1378,7 @@ export default function ForwardPage() {
             <ModalBody className="pb-6">
               <div className="mb-4 text-right">
                 <Button size="sm" onClick={copyAllAddresses}>
-                  复制全部
+                  复制
                 </Button>
               </div>
               
@@ -1174,6 +1398,267 @@ export default function ForwardPage() {
                 ))}
               </div>
             </ModalBody>
+          </ModalContent>
+        </Modal>
+
+        {/* 导出数据模态框 */}
+        <Modal 
+          isOpen={exportModalOpen} 
+          onClose={() => {
+            setExportModalOpen(false);
+            setSelectedTunnelForExport(null);
+            setExportData('');
+          }} 
+          size="2xl" 
+          scrollBehavior="outside"
+        >
+          <ModalContent>
+            <ModalHeader className="flex flex-col gap-1">
+              <h2 className="text-xl font-bold">导出转发数据</h2>
+              <p className="text-small text-default-500">
+                格式：目标地址|转发名称|入口端口
+              </p>
+            </ModalHeader>
+            <ModalBody className="pb-6">
+              <div className="space-y-4">
+                {/* 隧道选择 */}
+                <div>
+                  <Select
+                    label="选择导出隧道"
+                    placeholder="请选择要导出的隧道"
+                    selectedKeys={selectedTunnelForExport ? [selectedTunnelForExport.toString()] : []}
+                    onSelectionChange={(keys) => {
+                      const selectedKey = Array.from(keys)[0] as string;
+                      setSelectedTunnelForExport(selectedKey ? parseInt(selectedKey) : null);
+                    }}
+                    variant="bordered"
+                    isRequired
+                  >
+                    {tunnels.map((tunnel) => (
+                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
+                        {tunnel.name}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                </div>
+
+                {/* 导出按钮和数据 */}
+                {exportData && (
+                  <div className="flex justify-between items-center">
+                    <Button 
+                      color="primary" 
+                      size="sm" 
+                      onPress={executeExport}
+                      isLoading={exportLoading}
+                      isDisabled={!selectedTunnelForExport}
+                      startContent={
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      }
+                    >
+                      重新生成
+                    </Button>
+                    <Button 
+                      color="secondary" 
+                      size="sm" 
+                      onPress={copyExportData}
+                      startContent={
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                          <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                        </svg>
+                      }
+                    >
+                      复制
+                    </Button>
+                  </div>
+                )}
+
+                {/* 初始导出按钮 */}
+                {!exportData && (
+                  <div className="text-right">
+                    <Button 
+                      color="primary" 
+                      size="sm" 
+                      onPress={executeExport}
+                      isLoading={exportLoading}
+                      isDisabled={!selectedTunnelForExport}
+                      startContent={
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      }
+                    >
+                      生成导出数据
+                    </Button>
+                  </div>
+                )}
+
+                {/* 导出数据显示 */}
+                {exportData && (
+                  <div className="relative">
+                    <Textarea
+                      value={exportData}
+                      readOnly
+                      variant="bordered"
+                      minRows={10}
+                      maxRows={20}
+                      className="font-mono text-sm"
+                      classNames={{
+                        input: "font-mono text-sm"
+                      }}
+                      placeholder="暂无数据"
+                    />
+                  </div>
+                )}
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button 
+                variant="light" 
+                onPress={() => setExportModalOpen(false)}
+              >
+                关闭
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* 导入数据模态框 */}
+        <Modal 
+          isOpen={importModalOpen} 
+          onClose={() => setImportModalOpen(false)} 
+          size="3xl" 
+          scrollBehavior="outside"
+        >
+          <ModalContent>
+            <ModalHeader className="flex flex-col gap-1">
+              <h2 className="text-xl font-bold">导入转发数据</h2>
+              <p className="text-small text-default-500">
+                格式：目标地址|转发名称|入口端口，每行一个，入口端口留空将自动分配可用端口
+              </p>
+              <p className="text-small text-default-400">
+                目标地址支持单个地址(如：example.com:8080)或多个地址用逗号分隔(如：3.3.3.3:3,4.4.4.4:4)
+              </p>
+            </ModalHeader>
+            <ModalBody className="pb-6">
+              <div className="space-y-4">
+                {/* 隧道选择 */}
+                <div>
+                  <Select
+                    label="选择导入隧道"
+                    placeholder="请选择要导入的隧道"
+                    selectedKeys={selectedTunnelForImport ? [selectedTunnelForImport.toString()] : []}
+                    onSelectionChange={(keys) => {
+                      const selectedKey = Array.from(keys)[0] as string;
+                      setSelectedTunnelForImport(selectedKey ? parseInt(selectedKey) : null);
+                    }}
+                    variant="bordered"
+                    isRequired
+                  >
+                    {tunnels.map((tunnel) => (
+                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
+                        {tunnel.name}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                </div>
+
+                {/* 输入区域 */}
+                <div>
+                  <Textarea
+                    label="导入数据"
+                    placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口"
+                    value={importData}
+                    onChange={(e) => setImportData(e.target.value)}
+                    variant="flat"
+                    minRows={8}
+                    maxRows={12}
+                    classNames={{
+                      input: "font-mono text-sm"
+                    }}
+                  />
+
+                
+                </div>
+
+                {/* 导入结果 */}
+                {importResults.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-base font-semibold">导入结果</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-default-500">
+                          成功：{importResults.filter(r => r.success).length} / 
+                          总计：{importResults.length}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="max-h-40 overflow-y-auto space-y-1" style={{
+                      scrollbarWidth: 'thin',
+                      scrollbarColor: 'rgb(156 163 175) transparent'
+                    }}>
+                      {importResults.map((result, index) => (
+                        <div 
+                          key={index} 
+                          className={`p-2 rounded border ${
+                            result.success 
+                              ? 'bg-success-50 dark:bg-success-100/10 border-success-200 dark:border-success-300/20' 
+                              : 'bg-danger-50 dark:bg-danger-100/10 border-danger-200 dark:border-danger-300/20'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {result.success ? (
+                              <svg className="w-3 h-3 text-success-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3 text-danger-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className={`text-xs font-medium ${
+                                  result.success ? 'text-success-700 dark:text-success-300' : 'text-danger-700 dark:text-danger-300'
+                                }`}>
+                                  {result.success ? '成功' : '失败'}
+                                </span>
+                                <span className="text-xs text-default-500">|</span>
+                                <code className="text-xs font-mono text-default-600 truncate">{result.line}</code>
+                              </div>
+                              <div className={`text-xs ${
+                                result.success ? 'text-success-600 dark:text-success-400' : 'text-danger-600 dark:text-danger-400'
+                              }`}>
+                                {result.message}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button 
+                variant="light" 
+                onPress={() => setImportModalOpen(false)}
+              >
+                关闭
+              </Button>
+              <Button 
+                color="warning" 
+                onPress={executeImport}
+                isLoading={importLoading}
+                isDisabled={!importData.trim() || !selectedTunnelForImport}
+              >
+                开始导入
+              </Button>
+            </ModalFooter>
           </ModalContent>
         </Modal>
 

@@ -676,7 +676,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
      * @return TCP端口号
      */
     private int getOutNodeTcpPort(Long tunnelId) {
-        List<Forward> forwards = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelId));
+        List<Forward> forwards = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelId).eq("status", TUNNEL_STATUS_ACTIVE));
         if (!forwards.isEmpty()) {
             return forwards.get(0).getOutPort();
         }

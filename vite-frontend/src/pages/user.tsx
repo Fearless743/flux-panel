@@ -132,7 +132,7 @@ export default function UserPage() {
   const { isOpen: isTunnelModalOpen, onOpen: onTunnelModalOpen, onClose: onTunnelModalClose } = useDisclosure();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userTunnels, setUserTunnels] = useState<UserTunnel[]>([]);
-  const [tunnelListLoading, setTunnelListLoading] = useState(false);
+  const [tunnelListLoading, setTunnelListLoading] = useState(false);  
   
   // 分配新隧道权限相关状态
   const [tunnelForm, setTunnelForm] = useState<UserTunnelForm>({
@@ -826,7 +826,7 @@ export default function UserPage() {
               </Select>
               <DatePicker
                 label="过期时间"
-                value={userForm.expTime ? parseDate(userForm.expTime.toISOString().split('T')[0]) : null}
+                value={userForm.expTime ? parseDate(userForm.expTime.toISOString().split('T')[0]) as any : null}
                 onChange={(date) => {
                   if (date) {
                     const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
@@ -962,7 +962,7 @@ export default function UserPage() {
                     
                     <DatePicker
                       label="到期时间"
-                      value={tunnelForm.expTime ? parseDate(tunnelForm.expTime.toISOString().split('T')[0]) : null}
+                      value={tunnelForm.expTime ? parseDate(tunnelForm.expTime.toISOString().split('T')[0]) as any : null}
                       onChange={(date) => {
                         if (date) {
                           const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
@@ -1165,7 +1165,7 @@ export default function UserPage() {
                 
                 <DatePicker
                   label="到期时间"
-                  value={editTunnelForm.expTime ? parseDate(new Date(editTunnelForm.expTime).toISOString().split('T')[0]) : null}
+                  value={editTunnelForm.expTime ? parseDate(new Date(editTunnelForm.expTime).toISOString().split('T')[0]) as any : null}
                   onChange={(date) => {
                     if (date) {
                       const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
