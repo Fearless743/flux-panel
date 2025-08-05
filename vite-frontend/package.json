@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@heroui/accordion": "^2.2.21",
     "@heroui/alert": "^2.2.24",
     "@heroui/autocomplete": "^2.3.25",
@@ -44,10 +47,12 @@
     "@react-types/shared": "3.30.0",
     "@tailwindcss/postcss": "4.1.11",
     "@tailwindcss/vite": "4.1.11",
+    "@types/react-beautiful-dnd": "^13.1.8",
     "axios": "^1.11.0",
     "clsx": "2.1.1",
     "framer-motion": "11.18.2",
     "react": "18.3.1",
+    "react-beautiful-dnd": "^13.1.1",
     "react-dom": "18.3.1",
     "react-hot-toast": "^2.5.2",
     "react-router-dom": "6.23.0",

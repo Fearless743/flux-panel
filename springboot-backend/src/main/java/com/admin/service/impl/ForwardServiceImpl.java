@@ -452,6 +452,68 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         return R.ok(diagnosisReport);
     }
 
+    @Override
+    public R updateForwardOrder(Map<String, Object> params) {
+        try {
+            // 1. 获取当前用户信息
+            UserInfo currentUser = getCurrentUserInfo();
+            
+            // 2. 验证参数
+            if (!params.containsKey("forwards")) {
+                return R.err("缺少forwards参数");
+            }
+            
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> forwardsList = (List<Map<String, Object>>) params.get("forwards");
+            if (forwardsList == null || forwardsList.isEmpty()) {
+                return R.err("forwards参数不能为空");
+            }
+            
+            // 3. 验证用户权限（只能更新自己的转发）
+            if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
+                // 普通用户只能更新自己的转发
+                List<Long> forwardIds = forwardsList.stream()
+                    .map(item -> Long.valueOf(item.get("id").toString()))
+                    .collect(Collectors.toList());
+                
+                // 检查所有转发是否属于当前用户
+                QueryWrapper<Forward> queryWrapper = new QueryWrapper<>();
+                queryWrapper.in("id", forwardIds);
+                queryWrapper.eq("user_id", currentUser.getUserId());
+                
+                long count = this.count(queryWrapper);
+                if (count != forwardIds.size()) {
+                    return R.err("只能更新自己的转发排序");
+                }
+            }
+            
+            // 4. 批量更新排序
+            List<Forward> forwardsToUpdate = new ArrayList<>();
+            for (Map<String, Object> forwardData : forwardsList) {
+                Long id = Long.valueOf(forwardData.get("id").toString());
+                Integer inx = Integer.valueOf(forwardData.get("inx").toString());
+                
+                Forward forward = new Forward();
+                forward.setId(id);
+                forward.setInx(inx);
+                forwardsToUpdate.add(forward);
+            }
+            
+            // 5. 执行批量更新
+            boolean success = this.updateBatchById(forwardsToUpdate);
+            if (success) {
+                log.info("用户 {} 更新了 {} 个转发的排序", currentUser.getUserName(), forwardsToUpdate.size());
+                return R.ok("排序更新成功");
+            } else {
+                return R.err("排序更新失败");
+            }
+            
+        } catch (Exception e) {
+            log.error("更新转发排序失败", e);
+            return R.err("更新排序时发生错误: " + e.getMessage());
+        }
+    }
+
     /**
      * 从地址字符串中提取IP地址
      * 支持格式: ip:port, [ipv6]:port, domain:port

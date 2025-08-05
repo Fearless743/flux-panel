@@ -87,4 +87,15 @@ public class ForwardController extends BaseController {
         return forwardService.diagnoseForward(forwardId);
     }
 
+    /**
+     * 更新转发排序
+     * @param params 包含forwards数组的参数，每个元素包含id和inx
+     * @return 更新结果
+     */
+    @LogAnnotation
+    @PostMapping("/update-order")
+    public R updateForwardOrder(@RequestBody Map<String, Object> params) {
+        return forwardService.updateForwardOrder(params);
+    }
+
 }

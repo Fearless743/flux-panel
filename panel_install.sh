@@ -756,6 +756,29 @@ UPDATE \`forward\`
 SET \`strategy\` = 'fifo'
 WHERE \`strategy\` IS NULL;
 
+-- forward 表：添加 inx 字段（排序索引）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'inx'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`inx\` INT(10) DEFAULT 0 COMMENT "排序索引";',
+    'SELECT "Column \`inx\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 为现有数据设置默认排序索引
+UPDATE \`forward\`
+SET \`inx\` = 0
+WHERE \`inx\` IS NULL;
+
 -- 创建 vite_config 表（如果不存在）
 CREATE TABLE IF NOT EXISTS \`vite_config\` (
   \`id\` int(10) NOT NULL AUTO_INCREMENT,

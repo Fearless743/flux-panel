@@ -5,6 +5,7 @@ import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.entity.Forward;
 import com.baomidou.mybatisplus.extension.service.IService;
+import java.util.Map;
 
 /**
  * <p>
@@ -71,4 +72,11 @@ public interface ForwardService extends IService<Forward> {
      * @return 诊断结果
      */
     R diagnoseForward(Long id);
+
+    /**
+     * 更新转发排序
+     * @param params 包含forwards数组的参数
+     * @return 更新结果
+     */
+    R updateForwardOrder(Map<String, Object> params);
 }
