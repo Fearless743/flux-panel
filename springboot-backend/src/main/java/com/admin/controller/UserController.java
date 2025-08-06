@@ -40,12 +40,8 @@ public class UserController extends BaseController {
     @LogAnnotation
     @RequireRole
     @PostMapping("/list")
-    public R readAll(@RequestBody(required = false) PageDto pageDto) {
-        // 如果没有传分页参数，使用默认值
-        if (pageDto == null) {
-            pageDto = new PageDto();
-        }
-        return userService.getAllUsers(pageDto);
+    public R readAll() {
+        return userService.getAllUsers();
     }
 
     @LogAnnotation

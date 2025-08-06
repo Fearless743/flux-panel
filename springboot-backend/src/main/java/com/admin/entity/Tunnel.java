@@ -55,7 +55,7 @@ public class Tunnel extends BaseEntity {
     private int flow;
 
     /**
-     * 协议类型（隧道转发时使用：tls、tcp、mtls）
+     * 协议类型
      */
     private String protocol;
 

@@ -181,6 +181,15 @@ public class GostUtil {
     public static GostDto AddChains(Long node_id, String name, String remoteAddr, String protocol) {
         JSONObject dialer = new JSONObject();
         dialer.put("type", protocol);
+        if (Objects.equals(protocol, "quic")){
+            JSONObject metadata = new JSONObject();
+            metadata.put("keepAlive", true);
+            metadata.put("ttl", "10s");
+            dialer.put("metadata", metadata);
+        }
+
+
+
 
         JSONObject connector = new JSONObject();
         connector.put("type", "relay");
@@ -211,6 +220,14 @@ public class GostUtil {
     public static GostDto UpdateChains(Long node_id, String name, String remoteAddr, String protocol) {
         JSONObject dialer = new JSONObject();
         dialer.put("type", protocol);
+
+        if (Objects.equals(protocol, "quic")){
+            JSONObject metadata = new JSONObject();
+            metadata.put("keepAlive", true);
+            metadata.put("ttl", "10s");
+            dialer.put("metadata", metadata);
+        }
+
 
         JSONObject connector = new JSONObject();
         connector.put("type", "relay");

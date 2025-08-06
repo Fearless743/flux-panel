@@ -1,6 +1,5 @@
 package com.admin.service;
 
-import com.admin.common.dto.PageDto;
 import com.admin.common.dto.TunnelDto;
 import com.admin.common.dto.TunnelUpdateDto;
 

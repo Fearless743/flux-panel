@@ -183,21 +183,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     /**
      * 获取所有用户（分页）
      * 支持关键字搜索，排除管理员用户，清除密码信息
-     * 
-     * @param pageDto 分页查询数据传输对象
+     *
      * @return 分页用户列表响应
      */
     @Override
-    public R getAllUsers(PageDto pageDto) {
-        // 1. 构建分页查询
-        Page<User> page = new Page<>(pageDto.getCurrent(), pageDto.getSize());
-        QueryWrapper<User> queryWrapper = buildUserQueryWrapper(pageDto);
-        
-        // 2. 执行查询并处理结果
-        Page<User> userPage = this.page(page, queryWrapper);
-        clearUserPasswords(userPage.getRecords());
-        
-        return R.ok(userPage);
+    public R getAllUsers() {
+        return R.ok(this.list(new QueryWrapper<User>().ne("role_id", ADMIN_ROLE_ID)));
     }
 
     /**
@@ -446,39 +437,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return user;
     }
 
-    /**
-     * 构建用户查询条件
-     * 
-     * @param pageDto 分页查询DTO
-     * @return 查询条件包装器
-     */
-    private QueryWrapper<User> buildUserQueryWrapper(PageDto pageDto) {
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        
-        // 关键字搜索
-        if (StrUtil.isNotBlank(pageDto.getKeyword())) {
-            queryWrapper.and(wrapper -> wrapper
-                .like("user", pageDto.getKeyword())
-            );
-        }
-        
-        // 排除管理员用户
-        queryWrapper.ne("id", ADMIN_USER_ID);
-        
-        // 按更新时间降序排列
-        queryWrapper.orderByDesc("updated_time");
-        
-        return queryWrapper;
-    }
 
-    /**
-     * 清除用户列表中的密码信息
-     * 
-     * @param users 用户列表
-     */
-    private void clearUserPasswords(List<User> users) {
-        users.forEach(user -> user.setPwd(null));
-    }
 
     /**
      * 检查用户是否存在

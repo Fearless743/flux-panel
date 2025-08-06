@@ -1,3 +1,33 @@
 @import "tailwindcss";
 
+
+/* 移动端视口高度优化 */
+html, body {
+  height: 100%;
+  overflow-x: hidden;
+}
+
+/* 解决移动端100vh问题 */
+@supports (-webkit-touch-callout: none) {
+  .h-screen {
+    height: -webkit-fill-available;
+  }
+  
+  .min-h-screen {
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* 移动端滚动优化 */
+@media (max-width: 768px) {
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
+
 @config "../../tailwind.config.js"

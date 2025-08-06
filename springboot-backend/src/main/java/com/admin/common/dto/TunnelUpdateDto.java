@@ -26,9 +26,14 @@ public class TunnelUpdateDto {
     @DecimalMax(value = "100.0", message = "流量倍率不能大于100.0")
     private BigDecimal trafficRatio;
 
+    @NotBlank
+    private String protocol;
+
     // TCP监听地址
+    @NotBlank
     private String tcpListenAddr;
     
     // UDP监听地址
+    @NotBlank
     private String udpListenAddr;
 } 

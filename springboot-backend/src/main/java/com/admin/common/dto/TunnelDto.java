@@ -32,7 +32,7 @@ public class TunnelDto {
     @DecimalMax(value = "100.0", message = "流量倍率不能大于100.0")
     private BigDecimal trafficRatio = new BigDecimal("1.0");
     
-    // 协议类型（隧道转发时使用：tls、tcp、mtls），默认为tls
+    // 协议类型，默认为tls
     private String protocol;
     
     // TCP监听地址，默认为0.0.0.0

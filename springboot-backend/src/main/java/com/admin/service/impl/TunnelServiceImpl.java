@@ -1,10 +1,7 @@
 package com.admin.service.impl;
 
 import cn.hutool.core.util.StrUtil;
-import com.admin.common.dto.GostDto;
-import com.admin.common.dto.TunnelDto;
-import com.admin.common.dto.TunnelListDto;
-import com.admin.common.dto.TunnelUpdateDto;
+import com.admin.common.dto.*;
 
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
@@ -30,10 +27,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -175,35 +169,50 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         }
 
         // 2. 验证隧道名称唯一性（排除自身）
-        R nameValidationResult = validateTunnelNameUniquenessForUpdate(
-            tunnelUpdateDto.getName(), tunnelUpdateDto.getId());
+        R nameValidationResult = validateTunnelNameUniquenessForUpdate(tunnelUpdateDto.getName(), tunnelUpdateDto.getId());
         if (nameValidationResult.getCode() != 0) {
             return nameValidationResult;
         }
-
-
+        int up = 0;
+        if (!Objects.equals(existingTunnel.getTcpListenAddr(), tunnelUpdateDto.getTcpListenAddr()) ||
+                !Objects.equals(existingTunnel.getUdpListenAddr(), tunnelUpdateDto.getUdpListenAddr()) ||
+                !Objects.equals(existingTunnel.getProtocol(), tunnelUpdateDto.getProtocol())) {
+            up++;
+        }
 
         // 5. 更新允许修改的字段
         existingTunnel.setName(tunnelUpdateDto.getName());
         existingTunnel.setFlow(tunnelUpdateDto.getFlow());
-        
-        // 更新流量倍率
-        if (tunnelUpdateDto.getTrafficRatio() != null) {
-            existingTunnel.setTrafficRatio(tunnelUpdateDto.getTrafficRatio());
-        }
-        
-        // 更新TCP和UDP监听地址
-        if (StrUtil.isNotBlank(tunnelUpdateDto.getTcpListenAddr())) {
-            existingTunnel.setTcpListenAddr(tunnelUpdateDto.getTcpListenAddr());
-        }
-        if (StrUtil.isNotBlank(tunnelUpdateDto.getUdpListenAddr())) {
-            existingTunnel.setUdpListenAddr(tunnelUpdateDto.getUdpListenAddr());
+        existingTunnel.setTcpListenAddr(tunnelUpdateDto.getTcpListenAddr());
+        existingTunnel.setUdpListenAddr(tunnelUpdateDto.getUdpListenAddr());
+        existingTunnel.setTrafficRatio(tunnelUpdateDto.getTrafficRatio());
+        existingTunnel.setProtocol(tunnelUpdateDto.getProtocol());
+        this.updateById(existingTunnel);
+        int err = 0;
+        if (up == 1){
+            List<Forward> tunnel = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelUpdateDto.getId()));
+            if (!tunnel.isEmpty()) {
+                for (Forward forward : tunnel) {
+                    ForwardUpdateDto forwardUpdateDto = new ForwardUpdateDto();
+                    forwardUpdateDto.setId(forward.getId());
+                    forwardUpdateDto.setUserId(forward.getUserId());
+                    forwardUpdateDto.setName(forward.getName());
+                    forwardUpdateDto.setTunnelId(forward.getTunnelId());
+                    forwardUpdateDto.setRemoteAddr(forward.getRemoteAddr());
+                    forwardUpdateDto.setStrategy(forward.getStrategy());
+                    forwardUpdateDto.setInPort(forward.getInPort());
+                    R r = forwardService.updateForward(forwardUpdateDto);
+                    if (r.getCode() != 0){
+                        err++;
+                    }
+                }
+            }
         }
 
-
-        // 6. 保存更新
-        boolean result = this.updateById(existingTunnel);
-        return result ? R.ok("隧道更新成功") : R.err("隧道更新失败");
+        if (err != 0) {
+            return R.err("隧道信息更新成功，但部分转发同步更新失败");
+        }
+        return R.ok("隧道更新成功");
     }
 
     /**
@@ -425,9 +434,8 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         
         // 验证协议类型
         String protocol = tunnelDto.getProtocol();
-        if (StrUtil.isNotBlank(protocol) && 
-            !protocol.equals("tls") && !protocol.equals("tcp") && !protocol.equals("mtls") && !protocol.equals("wss")) {
-            return R.err("协议类型只能为tls、tcp、wss或mtls");
+        if (StrUtil.isBlank(protocol)) {
+            return R.err("协议类型必选");
         }
         
         // 验证出口节点是否存在

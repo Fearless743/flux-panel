@@ -122,6 +122,20 @@ export default function ForwardPage() {
   const [forwards, setForwards] = useState<Forward[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   
+  // 检测是否为移动端
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
   // 显示模式状态 - 从localStorage读取，默认为分类显示
   const [viewMode, setViewMode] = useState<'grouped' | 'direct'>(() => {
     try {
@@ -1009,12 +1023,21 @@ export default function ForwardPage() {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     
-    if (!over || active.id === over.id) return;
+    if (!active || !over || active.id === over.id) return;
     
-    const oldIndex = forwardOrder.indexOf(Number(active.id));
-    const newIndex = forwardOrder.indexOf(Number(over.id));
+    // 确保 forwardOrder 存在且有效
+    if (!forwardOrder || forwardOrder.length === 0) return;
     
-    if (oldIndex !== -1 && newIndex !== -1) {
+    const activeId = Number(active.id);
+    const overId = Number(over.id);
+    
+    // 检查 ID 是否有效
+    if (isNaN(activeId) || isNaN(overId)) return;
+    
+    const oldIndex = forwardOrder.indexOf(activeId);
+    const newIndex = forwardOrder.indexOf(overId);
+    
+    if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
       const newOrder = arrayMove(forwardOrder, oldIndex, newIndex);
       setForwardOrder(newOrder);
       
@@ -1052,7 +1075,7 @@ export default function ForwardPage() {
     }
   };
 
-  // 传感器配置
+  // 传感器配置 - 使用默认配置避免错误
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -1062,6 +1085,11 @@ export default function ForwardPage() {
 
   // 根据排序顺序获取转发列表
   const getSortedForwards = (): Forward[] => {
+    // 确保 forwards 数组存在且有效
+    if (!forwards || forwards.length === 0) {
+      return [];
+    }
+    
     // 在平铺模式下，只显示当前用户的转发
     let filteredForwards = forwards;
     if (viewMode === 'direct') {
@@ -1069,6 +1097,11 @@ export default function ForwardPage() {
       if (currentUserId !== null) {
         filteredForwards = forwards.filter(forward => forward.userId === currentUserId);
       }
+    }
+    
+    // 确保过滤后的转发列表有效
+    if (!filteredForwards || filteredForwards.length === 0) {
+      return [];
     }
     
     // 优先使用数据库中的 inx 字段进行排序
@@ -1079,7 +1112,7 @@ export default function ForwardPage() {
     });
     
     // 如果数据库中没有排序信息，则使用本地存储的顺序
-    if (forwardOrder.length > 0 && sortedForwards.every(f => f.inx === undefined || f.inx === 0)) {
+    if (forwardOrder && forwardOrder.length > 0 && sortedForwards.every(f => f.inx === undefined || f.inx === 0)) {
       const forwardMap = new Map(filteredForwards.map(f => [f.id, f]));
       const localSortedForwards: Forward[] = [];
       
@@ -1105,6 +1138,11 @@ export default function ForwardPage() {
 
   // 可拖拽的转发卡片组件
   const SortableForwardCard = ({ forward }: { forward: Forward }) => {
+    // 确保 forward 对象有效
+    if (!forward || !forward.id) {
+      return null;
+    }
+
     const {
       attributes,
       listeners,
@@ -1115,20 +1153,20 @@ export default function ForwardPage() {
     } = useSortable({ id: forward.id });
 
     const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
+      transform: transform ? CSS.Transform.toString(transform) : undefined,
+      transition: transition || undefined,
       opacity: isDragging ? 0.5 : 1,
     };
 
     return (
-      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-        {renderForwardCard(forward)}
+      <div ref={setNodeRef} style={style} {...attributes}>
+        {renderForwardCard(forward, listeners)}
       </div>
     );
   };
 
   // 渲染转发卡片
-  const renderForwardCard = (forward: Forward) => {
+  const renderForwardCard = (forward: Forward, listeners?: any) => {
     const statusDisplay = getStatusDisplay(forward.status);
     const strategyDisplay = getStrategyDisplay(forward.strategy);
     
@@ -1142,7 +1180,16 @@ export default function ForwardPage() {
             </div>
             <div className="flex items-center gap-1.5 ml-2">
               {viewMode === 'direct' && (
-                <div className="cursor-grab active:cursor-grabbing p-1 text-default-400 hover:text-default-600 transition-colors opacity-0 group-hover:opacity-100">
+                <div 
+                  className={`cursor-grab active:cursor-grabbing p-2 text-default-400 hover:text-default-600 transition-colors touch-manipulation ${
+                    isMobile 
+                      ? 'opacity-100' // 移动端始终显示
+                      : 'opacity-0 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
+                  }`}
+                  {...listeners}
+                  title={isMobile ? "长按拖拽排序" : "拖拽排序"}
+                  style={{ touchAction: 'none' }}
+                >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M7 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 2zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 14zm6-8a2 2 0 1 1-.001-4.001A2 2 0 0 1 13 6zm0 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 14z" />
                   </svg>
@@ -1363,6 +1410,7 @@ export default function ForwardPage() {
           </div>
         </div>
 
+
         {/* 根据显示模式渲染不同内容 */}
         {viewMode === 'grouped' ? (
           /* 按用户和隧道分组的转发列表 */
@@ -1420,7 +1468,7 @@ export default function ForwardPage() {
                           className="shadow-none border border-divider"
                         >
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 p-4">
-                            {tunnelGroup.forwards.map((forward) => renderForwardCard(forward))}
+                            {tunnelGroup.forwards.map((forward) => renderForwardCard(forward, undefined))}
                           </div>
                         </AccordionItem>
                       ))}
@@ -1454,14 +1502,17 @@ export default function ForwardPage() {
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
+              onDragStart={() => {}} // 添加空的 onDragStart 处理器
             >
               <SortableContext
-                items={getSortedForwards().map(f => f.id)}
+                items={getSortedForwards().map(f => f.id || 0).filter(id => id > 0)}
                 strategy={rectSortingStrategy}
               >
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                   {getSortedForwards().map((forward) => (
-                    <SortableForwardCard key={forward.id} forward={forward} />
+                    forward && forward.id ? (
+                      <SortableForwardCard key={forward.id} forward={forward} />
+                    ) : null
                   ))}
                 </div>
               </SortableContext>

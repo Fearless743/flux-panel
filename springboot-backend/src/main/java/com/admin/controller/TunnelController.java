@@ -2,7 +2,6 @@ package com.admin.controller;
 
 import com.admin.common.aop.LogAnnotation;
 import com.admin.common.annotation.RequireRole;
-import com.admin.common.dto.PageDto;
 import com.admin.common.dto.TunnelDto;
 import com.admin.common.dto.TunnelUpdateDto;
 
@@ -47,7 +46,7 @@ public class TunnelController extends BaseController {
     @LogAnnotation
     @RequireRole
     @PostMapping("/list")
-    public R readAll(@RequestBody(required = false) PageDto pageDto) {
+    public R readAll() {
         return tunnelService.getAllTunnels();
     }
 

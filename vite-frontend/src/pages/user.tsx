@@ -19,13 +19,12 @@ import {
   useDisclosure 
 } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
-import { Pagination } from "@heroui/pagination";
 import { Select, SelectItem } from "@heroui/select";
 import { RadioGroup, Radio } from "@heroui/radio";
 import { DatePicker } from "@heroui/date-picker";
 import { Spinner } from "@heroui/spinner";
 import { Progress } from "@heroui/progress";
-import { Tabs, Tab } from "@heroui/tabs";
+
 import toast from 'react-hot-toast';
 import { 
   User, 
@@ -191,13 +190,7 @@ export default function UserPage() {
       
       if (response.code === 0) {
         const data = response.data || {};
-        setUsers(data.records || []);
-        setPagination(prev => ({
-          ...prev,
-          total: data.total || 0,
-          current: data.current || 1,
-          size: data.size || 10
-        }));
+        setUsers(data || []);
       } else {
         toast.error(response.msg || '获取用户列表失败');
       }
@@ -748,18 +741,6 @@ export default function UserPage() {
         </div>
       )}
 
-      {/* 分页 */}
-      {pagination.total > 0 && (
-        <div className="flex justify-center mt-6">
-          <Pagination
-            total={Math.ceil(pagination.total / pagination.size)}
-            page={pagination.current}
-            onChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
-            showControls
-            showShadow
-          />
-        </div>
-      )}
 
       {/* 用户表单模态框 */}
       <Modal
@@ -877,16 +858,22 @@ export default function UserPage() {
       <Modal
         isOpen={isTunnelModalOpen}
         onClose={onTunnelModalClose}
-        size="5xl"
+        size="4xl"
         scrollBehavior="outside"
+        isDismissable={false}
+        classNames={{
+          base: "max-w-[95vw] sm:max-w-4xl"
+        }}
       >
         <ModalContent>
           <ModalHeader>
             用户 {currentUser?.user} 的隧道权限管理
           </ModalHeader>
           <ModalBody>
-            <Tabs defaultSelectedKey="assign">
-              <Tab key="assign" title="分配新权限">
+            <div className="space-y-6">
+              {/* 分配新权限部分 */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4">分配新权限</h3>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Select
@@ -991,9 +978,11 @@ export default function UserPage() {
                     分配权限
                   </Button>
                 </div>
-              </Tab>
-              
-              <Tab key="list" title="已有权限">
+              </div>
+
+              {/* 已有权限部分 */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4">已有权限</h3>
                 <Table
                   aria-label="用户隧道权限列表"
                   classNames={{
@@ -1083,8 +1072,8 @@ export default function UserPage() {
                     )}
                   </TableBody>
                 </Table>
-              </Tab>
-            </Tabs>
+              </div>
+            </div>
           </ModalBody>
           <ModalFooter>
             <Button onPress={onTunnelModalClose}>
@@ -1100,6 +1089,7 @@ export default function UserPage() {
         onClose={onEditTunnelModalClose}
         size="2xl"
         scrollBehavior="outside"
+        isDismissable={false}
       >
         <ModalContent>
           <ModalHeader>

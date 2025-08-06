@@ -243,11 +243,11 @@ export default function AdminLayout({
   );
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-black">
+    <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-gray-50 dark:bg-black`}>
       {/* 移动端遮罩层 */}
       {isMobile && mobileMenuVisible && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          className="fixed inset-0 backdrop-blur-sm bg-white/50 dark:bg-black/30 z-40"
           onClick={hideMobileMenu}
         />
       )}
@@ -263,7 +263,8 @@ export default function AdminLayout({
         z-50 
         transition-transform duration-300 ease-in-out
         flex flex-col
-        h-full
+        ${isMobile ? 'h-screen' : 'h-full'}
+        ${isMobile ? 'top-0 left-0' : ''}
       `}>
                  {/* Logo 区域 */}
          <div className="px-3 py-3 h-14 flex items-center">
@@ -277,7 +278,7 @@ export default function AdminLayout({
          </div>
 
                  {/* 菜单导航 */}
-         <nav className="flex-1 px-4 py-6">
+         <nav className="flex-1 px-4 py-6 overflow-y-auto">
            <ul className="space-y-1">
             {filteredMenuItems.map((item) => {
               const isActive = location.pathname === item.path;
@@ -306,7 +307,7 @@ export default function AdminLayout({
         </nav>
 
                 {/* 底部版权信息 */}
-        <div className="px-4 py-2 pb-4 mt-auto">
+        <div className="px-4 py-2 pb-4 mt-auto flex-shrink-0">
           <div className="text-center">
             <p className="text-xs text-gray-400 dark:text-gray-500">
               Powered by{' '}
@@ -324,7 +325,7 @@ export default function AdminLayout({
       </aside>
 
       {/* 主内容区域 */}
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className={`flex flex-col flex-1 ${isMobile ? 'min-h-0' : 'h-full overflow-hidden'}`}>
                  {/* 顶部导航栏 */}
          <header className="bg-white dark:bg-black shadow-md border-b border-gray-200 dark:border-gray-600 h-14 flex items-center justify-between px-4 lg:px-6 relative z-10">
           <div className="flex items-center gap-4">
@@ -387,7 +388,7 @@ export default function AdminLayout({
         </header>
 
         {/* 主内容 */}
-        <main className="flex-1 overflow-y-auto bg-gray-100 dark:bg-black">
+        <main className={`flex-1 bg-gray-100 dark:bg-black ${isMobile ? '' : 'overflow-y-auto'}`}>
           {children}
         </main>
       </div>
