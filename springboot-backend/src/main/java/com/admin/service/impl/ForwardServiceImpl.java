@@ -151,32 +151,37 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 4. 检查权限和限制
         UserPermissionResult permissionResult = null;
         if (tunnelChanged) {
-            // 管理员操作用户转发时，需要检查原用户是否有新隧道权限
             if (currentUser.getRoleId() == ADMIN_ROLE_ID) {
-                // 获取原转发用户的信息
-                User originalUser = userService.getById(existForward.getUserId());
-                if (originalUser == null) {
-                    return R.err("用户不存在");
+                // 管理员操作自己的转发时，不需要检查权限限制
+                if (Objects.equals(currentUser.getUserId(), existForward.getUserId())) {
+                    permissionResult = UserPermissionResult.success(null, null);
+                } else {
+                    // 管理员操作用户转发时，需要检查原用户是否有新隧道权限
+                    // 获取原转发用户的信息
+                    User originalUser = userService.getById(existForward.getUserId());
+                    if (originalUser == null) {
+                        return R.err("用户不存在");
+                    }
+                    
+                    // 检查原用户是否有新隧道权限
+                    UserTunnel userTunnel = getUserTunnel(existForward.getUserId(), tunnel.getId().intValue());
+                    if (userTunnel == null) {
+                        return R.err("用户没有该隧道权限");
+                    }
+                    
+                    // 检查隧道权限到期时间
+                    if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
+                        return R.err("用户的该隧道权限已到期");
+                    }
+                    
+                    // 检查原用户的流量和转发数量限制
+                    R quotaCheckResult = checkForwardQuota(existForward.getUserId(), tunnel.getId().intValue(), userTunnel, originalUser, forwardUpdateDto.getId());
+                    if (quotaCheckResult.getCode() != 0) {
+                        return R.err("用户" + quotaCheckResult.getMsg());
+                    }
+                    
+                    permissionResult = UserPermissionResult.success(userTunnel.getSpeedId(), userTunnel);
                 }
-                
-                // 检查原用户是否有新隧道权限
-                UserTunnel userTunnel = getUserTunnel(existForward.getUserId(), tunnel.getId().intValue());
-                if (userTunnel == null) {
-                    return R.err("用户没有该隧道权限");
-                }
-                
-                // 检查隧道权限到期时间
-                if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
-                    return R.err("用户的该隧道权限已到期");
-                }
-                
-                // 检查原用户的流量和转发数量限制
-                R quotaCheckResult = checkForwardQuota(existForward.getUserId(), tunnel.getId().intValue(), userTunnel, originalUser, forwardUpdateDto.getId());
-                if (quotaCheckResult.getCode() != 0) {
-                    return R.err("用户" + quotaCheckResult.getMsg());
-                }
-                
-                permissionResult = UserPermissionResult.success(userTunnel.getSpeedId(), userTunnel);
             } else {
                 // 普通用户检查自己的权限
                 permissionResult = checkUserPermissions(currentUser, tunnel, forwardUpdateDto.getId());
