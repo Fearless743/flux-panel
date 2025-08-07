@@ -31,6 +31,7 @@ interface Tunnel {
   protocol?: string;
   tcpListenAddr: string;
   udpListenAddr: string;
+  interfaceName?: string;
   flow: number; // 1: 单向, 2: 双向
   trafficRatio: number;
   status: number;
@@ -52,6 +53,7 @@ interface TunnelForm {
   protocol: string;
   tcpListenAddr: string;
   udpListenAddr: string;
+  interfaceName?: string;
   flow: number;
   trafficRatio: number;
   status: number;
@@ -100,6 +102,7 @@ export default function TunnelPage() {
     protocol: 'tls',
     tcpListenAddr: '0.0.0.0',
     udpListenAddr: '0.0.0.0',
+    interfaceName: '',
     flow: 1,
     trafficRatio: 1.0,
     status: 1
@@ -194,6 +197,7 @@ export default function TunnelPage() {
       protocol: 'tls',
       tcpListenAddr: '0.0.0.0',
       udpListenAddr: '0.0.0.0',
+      interfaceName: '',
       flow: 1,
       trafficRatio: 1.0,
       status: 1
@@ -214,6 +218,7 @@ export default function TunnelPage() {
       protocol: tunnel.protocol || 'tls',
       tcpListenAddr: tunnel.tcpListenAddr || '0.0.0.0',
       udpListenAddr: tunnel.udpListenAddr || '0.0.0.0',
+      interfaceName: tunnel.interfaceName || '',
       flow: tunnel.flow,
       trafficRatio: tunnel.trafficRatio,
       status: tunnel.status
@@ -751,6 +756,19 @@ export default function TunnelPage() {
                       />
                     </div>
 
+                    {/* 隧道转发时显示出口网卡配置 */}
+                    {form.type === 2 && (
+                      <Input
+                        label="出口网卡名或IP"
+                        placeholder="请输入出口网卡名或IP"
+                        value={form.interfaceName}
+                        onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
+                        isInvalid={!!errors.interfaceName}
+                        errorMessage={errors.interfaceName}
+                        variant="bordered"
+                      />
+                    )}
+
                     {/* 隧道转发时显示出口配置 */}
                     {form.type === 2 && (
                       <>
@@ -828,6 +846,13 @@ export default function TunnelPage() {
                         variant="flat"
                         title="TCP,UDP监听地址"
                         description="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明"
+                        className="mt-4"
+                      />
+                      <Alert
+                        color="primary"
+                        variant="flat"
+                        title="出口网卡名或IP"
+                        description="用于多IP服务器指定使用那个IP和出口服务器通讯，不懂的默认为空就行"
                         className="mt-4"
                       />
                   </div>

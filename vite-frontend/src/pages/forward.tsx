@@ -54,6 +54,7 @@ interface Forward {
   inIp: string;
   inPort: number;
   remoteAddr: string;
+  interfaceName?: string;
   strategy: string;
   status: number;
   inFlow: number;
@@ -79,6 +80,7 @@ interface ForwardForm {
   tunnelId: number | null;
   inPort: number | null;
   remoteAddr: string;
+  interfaceName?: string;
   strategy: string;
 }
 
@@ -188,6 +190,7 @@ export default function ForwardPage() {
     tunnelId: null,
     inPort: null,
     remoteAddr: '',
+    interfaceName: '',
     strategy: 'fifo'
   });
   
@@ -440,6 +443,7 @@ export default function ForwardPage() {
       tunnelId: null,
       inPort: null,
       remoteAddr: '',
+      interfaceName: '',
       strategy: 'fifo'
     });
     setSelectedTunnel(null);
@@ -457,6 +461,7 @@ export default function ForwardPage() {
       tunnelId: forward.tunnelId,
       inPort: forward.inPort,
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
+      interfaceName: forward.interfaceName || '',
       strategy: forward.strategy || 'fifo'
     });
     const tunnel = tunnels.find(t => t.id === forward.tunnelId);
@@ -535,6 +540,7 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
+          interfaceName: form.interfaceName,
           strategy: addressCount > 1 ? form.strategy : 'fifo'
         };
         res = await updateForward(updateData);
@@ -545,6 +551,7 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
+          interfaceName: form.interfaceName,
           strategy: addressCount > 1 ? form.strategy : 'fifo'
         };
         res = await createForward(createData);
@@ -1618,6 +1625,17 @@ export default function ForwardPage() {
                       description="格式: IP:端口 或 域名:端口，支持多个地址（每行一个）"
                       minRows={3}
                       maxRows={6}
+                    />
+                    
+                    <Input
+                      label="出口网卡名或IP"
+                      placeholder="请输入出口网卡名或IP"
+                      value={form.interfaceName}
+                      onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
+                      isInvalid={!!errors.interfaceName}
+                      errorMessage={errors.interfaceName}
+                      variant="bordered"
+                      description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
                     />
                     
                     {getAddressCount(form.remoteAddr) > 1 && (

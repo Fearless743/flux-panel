@@ -498,8 +498,14 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         for (Forward forward : userTunnelForwards) {
             String serviceName = buildServiceName(forward.getId(), Long.valueOf(userId), userTunnel.getId());
 
+            String interfaceName = null;
+            // 创建主服务
+            if (tunnel.getType() != 2) { // 不是隧道转发服务才会存在网络接口
+                interfaceName = forward.getInterfaceName();
+            }
+
             // 6. 更新入口节点的主服务限速配置（使用批量UpdateService接口）
-            GostUtil.UpdateService(inNode.getId(), serviceName, forward.getInPort(), speedId, forward.getRemoteAddr(), tunnel.getType(), tunnel, forward.getStrategy());
+            GostUtil.UpdateService(inNode.getId(), serviceName, forward.getInPort(), speedId, forward.getRemoteAddr(), tunnel.getType(), tunnel, forward.getStrategy(), interfaceName);
         }
     }
 }

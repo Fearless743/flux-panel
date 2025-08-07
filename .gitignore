@@ -1,6 +1,7 @@
 # ==========================================
 # 操作系统生成的文件
 # ==========================================
+flutter_app/
 
 # macOS
 .DS_Store
@@ -51,7 +52,7 @@ $RECYCLE.BIN/
 *.iml
 *.ipr
 out/
-
+go-gost/ss/
 # VS Code
 .vscode/
 *.code-workspace

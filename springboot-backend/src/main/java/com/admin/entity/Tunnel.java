@@ -68,4 +68,6 @@ public class Tunnel extends BaseEntity {
     private String tcpListenAddr;
 
     private String udpListenAddr;
+
+    private String interfaceName;
 }

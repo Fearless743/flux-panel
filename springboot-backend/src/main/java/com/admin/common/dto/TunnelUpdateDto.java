@@ -1,5 +1,7 @@
 package com.admin.common.dto;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import lombok.Data;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
@@ -36,4 +38,7 @@ public class TunnelUpdateDto {
     // UDP监听地址
     @NotBlank
     private String udpListenAddr;
+
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
+    private String interfaceName;
 } 

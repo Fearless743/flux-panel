@@ -779,6 +779,42 @@ UPDATE \`forward\`
 SET \`inx\` = 0
 WHERE \`inx\` IS NULL;
 
+-- tunnel 表：添加 interface_name 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'tunnel'
+        AND column_name = 'interface_name'
+    ),
+    'ALTER TABLE \`tunnel\` ADD COLUMN \`interface_name\` VARCHAR(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL;',
+    'SELECT "Column \`interface_name\` already exists in \`tunnel\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward 表：添加 interface_name 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'interface_name'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`interface_name\` VARCHAR(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL;',
+    'SELECT "Column \`interface_name\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 -- 创建 vite_config 表（如果不存在）
 CREATE TABLE IF NOT EXISTS \`vite_config\` (
   \`id\` int(10) NOT NULL AUTO_INCREMENT,

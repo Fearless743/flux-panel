@@ -31,6 +31,8 @@ public class TunnelDto {
     @DecimalMin(value = "0.0", message = "流量倍率不能小于0.0")
     @DecimalMax(value = "100.0", message = "流量倍率不能大于100.0")
     private BigDecimal trafficRatio = new BigDecimal("1.0");
+
+    private String interfaceName;
     
     // 协议类型，默认为tls
     private String protocol;

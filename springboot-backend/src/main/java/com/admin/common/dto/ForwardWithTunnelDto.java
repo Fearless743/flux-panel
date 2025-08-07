@@ -87,4 +87,6 @@ public class ForwardWithTunnelDto {
     private String strategy;
 
     private Integer inx;
+
+    private String interfaceName;
 }

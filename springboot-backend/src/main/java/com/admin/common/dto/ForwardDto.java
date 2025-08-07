@@ -1,5 +1,7 @@
 package com.admin.common.dto;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import lombok.Data;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
@@ -26,5 +28,7 @@ public class ForwardDto {
     @Min(value = 1, message = "端口号不能小于1")
     @Max(value = 65535, message = "端口号不能大于65535")
     private Integer inPort;
+
+    private String interfaceName;
 
 } 

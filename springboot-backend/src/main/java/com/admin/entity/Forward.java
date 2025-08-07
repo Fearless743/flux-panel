@@ -32,6 +32,8 @@ public class Forward extends BaseEntity{
 
     private String remoteAddr;
 
+    private String interfaceName;
+
     private String strategy;
 
     private Long inFlow;

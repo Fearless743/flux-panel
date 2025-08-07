@@ -22,6 +22,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.Data;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
@@ -176,9 +177,11 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         int up = 0;
         if (!Objects.equals(existingTunnel.getTcpListenAddr(), tunnelUpdateDto.getTcpListenAddr()) ||
                 !Objects.equals(existingTunnel.getUdpListenAddr(), tunnelUpdateDto.getUdpListenAddr()) ||
-                !Objects.equals(existingTunnel.getProtocol(), tunnelUpdateDto.getProtocol())) {
+                !Objects.equals(existingTunnel.getProtocol(), tunnelUpdateDto.getProtocol()) ||
+                !Objects.equals(existingTunnel.getInterfaceName(), tunnelUpdateDto.getInterfaceName())) {
             up++;
         }
+
 
         // 5. 更新允许修改的字段
         existingTunnel.setName(tunnelUpdateDto.getName());
@@ -187,9 +190,11 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         existingTunnel.setUdpListenAddr(tunnelUpdateDto.getUdpListenAddr());
         existingTunnel.setTrafficRatio(tunnelUpdateDto.getTrafficRatio());
         existingTunnel.setProtocol(tunnelUpdateDto.getProtocol());
+        existingTunnel.setInterfaceName(tunnelUpdateDto.getInterfaceName());
         this.updateById(existingTunnel);
         int err = 0;
-        if (up == 1){
+        if (up != 0){
+            System.out.println("123123");
             List<Forward> tunnel = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelUpdateDto.getId()));
             if (!tunnel.isEmpty()) {
                 for (Forward forward : tunnel) {
@@ -201,6 +206,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                     forwardUpdateDto.setRemoteAddr(forward.getRemoteAddr());
                     forwardUpdateDto.setStrategy(forward.getStrategy());
                     forwardUpdateDto.setInPort(forward.getInPort());
+                    forwardUpdateDto.setInterfaceName(forward.getInterfaceName());
                     R r = forwardService.updateForward(forwardUpdateDto);
                     if (r.getCode() != 0){
                         err++;
