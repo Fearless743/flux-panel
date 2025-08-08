@@ -2,9 +2,9 @@ package port
 
 import (
 	"fmt"
+	"net"
 	"os/exec"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -21,7 +21,7 @@ func ForceClosePortConnections(addr string) (err error) {
 		return nil
 	}
 
-	_, portStr, err := splitHostPort(addr)
+	_, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
 		fmt.Printf("⚠️ 地址解析失败: %v\n", err)
 		return nil
@@ -55,19 +55,4 @@ func ForceClosePortConnections(addr string) (err error) {
 
 	fmt.Printf("✅ 正在断开端口 %d 上的所有连接...\n", port)
 	return nil
-}
-
-func splitHostPort(addr string) (string, string, error) {
-	if !strings.Contains(addr, ":") {
-		return "", "", fmt.Errorf("missing port in address")
-	}
-	return netSplitHostPortCompat(addr)
-}
-
-func netSplitHostPortCompat(addr string) (string, string, error) {
-	lastColon := strings.LastIndex(addr, ":")
-	if lastColon < 0 {
-		return "", "", fmt.Errorf("missing port")
-	}
-	return addr[:lastColon], addr[lastColon+1:], nil
 }

@@ -1,7 +1,12 @@
 package com.admin.common.task;
 
+import com.admin.common.utils.GostUtil;
+import com.admin.entity.Forward;
+import com.admin.entity.Tunnel;
 import com.admin.entity.User;
 import com.admin.entity.UserTunnel;
+import com.admin.service.ForwardService;
+import com.admin.service.TunnelService;
 import com.admin.service.UserService;
 import com.admin.service.UserTunnelService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -13,6 +18,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.annotation.Resource;
 import java.time.LocalDate;
+import java.util.Date;
 import java.util.List;
 
 @Slf4j
@@ -25,6 +31,12 @@ public class ResetFlowAsync {
 
     @Resource
     UserTunnelService userTunnelService;
+
+    @Resource
+    ForwardService forwardService;
+
+    @Resource
+    TunnelService tunnelService;
 
     /**
      * 每天0点执行流量重置任务
@@ -55,9 +67,18 @@ public class ResetFlowAsync {
             resetUserTunnelFlow(currentDay, lastDayOfMonth);
             
             log.info("流量重置任务执行完成");
+
+
+            // 处理过期账号
+            user();
+
+            // 处理过期隧道
+            userTunnel();
+
+            log.info("到期任务执行完成");
             
         } catch (Exception e) {
-            log.error("流量重置任务执行失败", e);
+            log.error("定时任务执行失败", e);
         }
     }
     
@@ -166,5 +187,58 @@ public class ResetFlowAsync {
         } catch (Exception e) {
             log.error("重置用户隧道流量失败", e);
         }
+    }
+
+
+    public void user(){
+        // 查询过期用户
+        List<User> user_list = userService.list(new QueryWrapper<User>().ne("role_id", 0).eq("status", 1).isNotNull("exp_time").lt("exp_time", new Date().getTime()));
+        for (User user : user_list) {
+            // 查询对应转发
+            List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("user_id", user.getId()).eq("status", 1));
+            for (Forward forward : forwardList) {
+                UserTunnel userTunnel = userTunnelService.getOne(new QueryWrapper<UserTunnel>().eq("user_id", forward.getUserId()).eq("tunnel_id", forward.getTunnelId()));
+                if (userTunnel != null) {
+                    pauseForwardService(forward, userTunnel.getId());
+                    forward.setStatus(0);
+                    forwardService.updateById(forward);
+                }
+            }
+            user.setStatus(0);
+            userService.updateById(user);
+        }
+    }
+
+
+    public void userTunnel(){
+        // 查询过期隧道
+        List<UserTunnel> user_tunnel_list = userTunnelService.list(new QueryWrapper<UserTunnel>().eq("status", 1).isNotNull("exp_time").lt("exp_time", new Date().getTime()));
+        // 查询对应转发
+        for (UserTunnel userTunnel : user_tunnel_list) {
+            List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", userTunnel.getTunnelId()).eq("status", 1));
+            for (Forward forward : forwardList) {
+                pauseForwardService(forward, userTunnel.getId());
+                forward.setStatus(0);
+                forwardService.updateById(forward);
+            }
+            userTunnel.setStatus(0);
+            userTunnelService.updateById(userTunnel);
+        }
+    }
+
+
+    private void pauseForwardService(Forward forward, Integer userTunnelId) {
+        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+        if (tunnel == null) return;
+
+        GostUtil.PauseService(tunnel.getInNodeId(), buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));
+        if (tunnel.getType() == 2){
+            GostUtil.PauseRemoteService(tunnel.getOutNodeId(), buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));
+        }
+    }
+
+
+    private String buildServiceName(Long forwardId, Integer userId, Integer userTunnelId) {
+        return forwardId + "_" + userId + "_" + userTunnelId;
     }
 }

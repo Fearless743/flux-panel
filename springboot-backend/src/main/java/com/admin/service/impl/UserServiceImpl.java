@@ -4,9 +4,6 @@ import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.StrUtil;
 import com.admin.common.dto.*;
 import com.admin.common.lang.R;
-import com.admin.common.task.DelayQueueManager;
-import com.admin.common.task.DelayTask;
-import com.admin.common.task.TaskBase;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.Md5Util;
@@ -23,7 +20,6 @@ import com.admin.service.TunnelService;
 import com.admin.service.UserService;
 import com.admin.service.UserTunnelService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -53,7 +49,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     /** 用户角色常量 */
     private static final int ADMIN_ROLE_ID = 0;        // 管理员角色ID
     private static final int USER_ROLE_ID = 1;         // 普通用户角色ID
-    private static final long ADMIN_USER_ID = 1L;      // 管理员用户ID
     
     /** 用户状态常量 */
     private static final int USER_STATUS_ACTIVE = 1;   // 用户启用状态
@@ -117,9 +112,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Resource
     UserTunnelService userTunnelService;
 
-    @Resource
-    private DelayQueueManager delayQueueManager;
-
     // ========== 公共接口实现 ==========
 
     /**
@@ -173,7 +165,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         if (result) {
             // 3. 添加到期时间延时任务
-            scheduleUserExpirationTask(user);
             return R.ok(SUCCESS_CREATE_MSG);
         } else {
             return R.err(ERROR_CREATE_FAILED);
@@ -223,7 +214,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         if (result) {
             // 5. 处理到期时间延时任务
-            handleUserExpirationTaskUpdate(updateUser);
             return R.ok(SUCCESS_UPDATE_MSG);
         } else {
             return R.err(ERROR_UPDATE_FAILED);
@@ -248,7 +238,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         try {
             // 2. 级联删除用户相关数据
             deleteUserRelatedData(id);
-            delayQueueManager.remove("user_exp_" + id);
             // 3. 删除用户
             boolean result = this.removeById(id);
             return result ? R.ok(SUCCESS_DELETE_MSG) : R.err(ERROR_DELETE_FAILED);
@@ -708,44 +697,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return userMapper.getUserTunnelDetails(userId.intValue());
     }
 
-    /**
-     * 安排用户到期延时任务
-     * 
-     * @param user 用户对象
-     */
-    private void scheduleUserExpirationTask(User user) {
-        // 取消已存在的延时任务（如果有）
-        delayQueueManager.remove("user_exp_" + user.getId());
 
-        // 创建新的延时任务
-        TaskBase taskBase = new TaskBase(user.getId().toString());
-        taskBase.setType("1"); // 账号到期延迟任务
 
-        long delayTime = user.getExpTime() - System.currentTimeMillis();
-        DelayTask delayTask = new DelayTask(taskBase, delayTime);
-
-        delayQueueManager.put(delayTask);
-    }
-
-    /**
-     * 处理用户到期时间更新的延时任务
-     * 
-     * @param newUser 新用户信息
-     */
-    private void handleUserExpirationTaskUpdate(User newUser) {
-        String taskId = "user_exp_" + newUser.getId();
-
-        // 先取消原有的延时任务
-        delayQueueManager.remove(taskId);
-
-        TaskBase taskBase = new TaskBase(newUser.getId().toString());
-        taskBase.setType("1"); // 账号到期延迟任务
-
-        long delayTime = newUser.getExpTime() - System.currentTimeMillis();
-        DelayTask delayTask = new DelayTask(taskBase, delayTime);
-
-        delayQueueManager.put(delayTask);
-    }
 
     // ========== 内部数据类 ==========
 

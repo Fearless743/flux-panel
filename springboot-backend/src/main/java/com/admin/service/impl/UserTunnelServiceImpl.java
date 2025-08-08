@@ -12,7 +12,6 @@ import com.admin.service.TunnelService;
 import com.admin.service.UserTunnelService;
 import com.admin.service.ForwardService;
 import com.admin.service.NodeService;
-import com.admin.common.task.DelayQueueManager;
 import com.admin.common.utils.GostUtil;
 import com.admin.entity.Forward;
 import com.admin.entity.Tunnel;
@@ -62,9 +61,6 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
     // ========== 依赖注入 ==========
     
     @Autowired
-    private DelayQueueManager delayQueueManager;
-    
-    @Autowired
     @Lazy
     private ForwardService forwardService;
     
@@ -98,15 +94,6 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         boolean success = this.save(userTunnel);
         
         if (success) {
-            // 3. 如果是启用状态且有到期时间，添加延迟任务
-            if (isEnabledAndHasExpTime(userTunnel)) {
-                try {
-                    delayQueueManager.addUserTunnelExpirationTask(userTunnel);
-                } catch (Exception e) {
-                    // 延迟任务添加失败不影响主业务逻辑
-                    // 可以考虑记录日志或其他处理方式
-                }
-            }
             return R.ok(SUCCESS_ASSIGN_MSG);
         }
         
@@ -146,13 +133,7 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         } catch (Exception e) {
             // 转发删除失败，记录日志但不阻止权限删除
         }
-        
-        // 3. 移除延迟任务
-        try {
-            delayQueueManager.removeUserTunnelExpirationTask(id);
-        } catch (Exception e) {
-            // 延迟任务移除失败不影响主业务逻辑
-        }
+
         
         // 4. 删除用户隧道权限记录
         boolean success = this.removeById(id);
@@ -206,9 +187,6 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         boolean success = this.updateById(existingUserTunnel);
         
         if (success) {
-            // 5. 处理延迟任务更新
-            handleDelayTaskUpdate(existingUserTunnel, updateDto);
-            
             // 6. 如果限速规则发生变化，更新该用户隧道下的所有转发
             if (speedChanged) {
                 updateUserTunnelForwardsSpeed(existingUserTunnel.getUserId(), existingUserTunnel.getTunnelId(), updateDto.getSpeedId());
@@ -290,29 +268,7 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         }
     }
     
-    /**
-     * 处理延迟任务更新
-     * 
-     * @param userTunnel 更新后的用户隧道对象
-     * @param updateDto 更新数据传输对象
-     */
-    private void handleDelayTaskUpdate(UserTunnel userTunnel, UserTunnelUpdateDto updateDto) {
-        try {
-                         // 如果更新了到期时间，需要重新处理延迟任务
-             if (updateDto.getExpTime() != null) {
-                 // 先移除旧的延迟任务
-                 delayQueueManager.removeUserTunnelExpirationTask(userTunnel.getId());
-                 
-                 // 如果是启用状态且有到期时间，添加新的延迟任务
-                 if (isEnabledAndHasExpTime(userTunnel)) {
-                     delayQueueManager.addUserTunnelExpirationTask(userTunnel);
-                 }
-             }
-        } catch (Exception e) {
-            // 延迟任务处理失败不影响主业务逻辑
-            // 可以考虑记录日志
-        }
-    }
+
     
     /**
      * 删除用户在指定隧道下的所有转发

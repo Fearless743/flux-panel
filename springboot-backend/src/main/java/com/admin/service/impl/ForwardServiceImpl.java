@@ -131,6 +131,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     public R updateForward(ForwardUpdateDto forwardUpdateDto) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
+            User user = userService.getById(currentUser.getUserId());
+            if (user == null) return R.err("用户不存在");
+            if (user.getStatus() == 0) return R.err("用户已到期或被禁用");
+        }
+
         
         // 2. 检查转发是否存在
         Forward existForward = validateForwardExists(forwardUpdateDto.getId(), currentUser);
@@ -321,7 +327,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private R changeForwardStatus(Long id, int targetStatus, String operation, String gostMethod) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
-        
+
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
+            User user = userService.getById(currentUser.getUserId());
+            if (user == null) return R.err("用户不存在");
+            if (user.getStatus() == 0) return R.err("用户已到期或被禁用");
+        }
+
+
         // 2. 检查转发是否存在
         Forward forward = validateForwardExists(id, currentUser);
         if (forward == null) {
