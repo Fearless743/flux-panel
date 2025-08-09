@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -73,12 +74,29 @@ public class FlowController extends BaseController {
         private Long timestamp;
 
         // getters and setters
-        public boolean isEncrypted() { return encrypted; }
-        public void setEncrypted(boolean encrypted) { this.encrypted = encrypted; }
-        public String getData() { return data; }
-        public void setData(String data) { this.data = data; }
-        public Long getTimestamp() { return timestamp; }
-        public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
+        public boolean isEncrypted() {
+            return encrypted;
+        }
+
+        public void setEncrypted(boolean encrypted) {
+            this.encrypted = encrypted;
+        }
+
+        public String getData() {
+            return data;
+        }
+
+        public void setData(String data) {
+            this.data = data;
+        }
+
+        public Long getTimestamp() {
+            return timestamp;
+        }
+
+        public void setTimestamp(Long timestamp) {
+            this.timestamp = timestamp;
+        }
     }
 
     @PostMapping("/config")
@@ -86,7 +104,7 @@ public class FlowController extends BaseController {
     public String config(@RequestBody String rawData, String secret) {
         Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
         if (node == null) return SUCCESS_RESPONSE;
-        
+
         try {
             // 尝试解密数据
             String decryptedData = decryptIfNeeded(rawData, secret);
@@ -94,13 +112,13 @@ public class FlowController extends BaseController {
             // 解析为GostConfigDto
             GostConfigDto gostConfigDto = JSON.parseObject(decryptedData, GostConfigDto.class);
             checkGostConfigAsync.cleanNodeConfigs(node.getId().toString(), gostConfigDto);
-            
-            log.info("🔓 节点 {} 配置数据接收成功{}", node.getId(),  isEncryptedMessage(rawData) ? "（已解密）" : "");
-                    
+
+            log.info("🔓 节点 {} 配置数据接收成功{}", node.getId(), isEncryptedMessage(rawData) ? "（已解密）" : "");
+
         } catch (Exception e) {
             log.error("处理节点 {} 配置数据失败: {}", node.getId(), e.getMessage());
         }
-        
+
         return SUCCESS_RESPONSE;
     }
 
@@ -128,21 +146,19 @@ public class FlowController extends BaseController {
         try {
             // 2. 尝试解密数据
             String decryptedData = decryptIfNeeded(rawData, secret);
-            
+
             // 3. 解析为FlowDto列表
             FlowDto flowDataList = JSONObject.parseObject(decryptedData, FlowDto.class);
-            
             if (Objects.equals(flowDataList.getN(), "web_api")) {
                 return SUCCESS_RESPONSE;
             }
 
             // 记录日志
-            log.debug("🔓 节点流量数据接收成功{}", 
-                     isEncryptedMessage(rawData) ? "（已解密）" : "");
+            log.debug("🔓 节点流量数据接收成功{}", isEncryptedMessage(rawData) ? "（已解密）" : "");
 
             // 4. 处理流量数据
             return processFlowData(flowDataList);
-            
+
         } catch (Exception e) {
             log.error("处理流量数据失败: {}", e.getMessage(), e);
             return SUCCESS_RESPONSE;
@@ -172,7 +188,7 @@ public class FlowController extends BaseController {
         try {
             // 尝试解析为加密消息格式
             EncryptedMessage encryptedMessage = JSON.parseObject(rawData, EncryptedMessage.class);
-            
+
             if (encryptedMessage.isEncrypted() && encryptedMessage.getData() != null) {
                 // 获取或创建加密器
                 AESCrypto crypto = getOrCreateCrypto(secret);
@@ -180,7 +196,7 @@ public class FlowController extends BaseController {
                     log.warn("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
                     return rawData;
                 }
-                
+
                 // 解密数据
                 String decryptedData = crypto.decryptString(encryptedMessage.getData());
                 log.debug("🔓 数据解密成功");
@@ -190,7 +206,7 @@ public class FlowController extends BaseController {
             // 解析失败，可能是非加密格式，直接返回原始数据
             log.debug("数据未加密或解密失败，使用原始数据: {}", e.getMessage());
         }
-        
+
         return rawData;
     }
 
@@ -205,131 +221,134 @@ public class FlowController extends BaseController {
      * 处理流量数据的核心逻辑
      */
     private String processFlowData(FlowDto flowDataList) {
-        // 2. 解析服务名称获取ID信息
         String[] serviceIds = parseServiceName(flowDataList.getN());
         String forwardId = serviceIds[0];
         String userId = serviceIds[1];
         String userTunnelId = serviceIds[2];
 
-        // 3. 一次性查询相关实体，避免后续重复查询
         Forward forward = forwardService.getById(forwardId);
-        User user = userService.getById(userId);
-        UserTunnel userTunnel = null;
-        if (!Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
-            userTunnel = userTunnelService.getById(userTunnelId);
-        }
 
-
-        // 4. 获取流量计费类型
+        // 获取流量计费类型
         int flowType = getFlowType(forward);
-        
-        // 5. 处理流量倍率及单双向计算
+
+        //  处理流量倍率及单双向计算
         FlowDto flowStats = filterFlowData(flowDataList, forward, flowType);
 
-        // 6. 先更新所有流量统计 - 确保流量数据的一致性
-        // 6.1 更新转发流量
-        if (forward != null) {
-            updateForwardFlow(forwardId, flowStats);
-        }
+        // 先更新所有流量统计 - 确保流量数据的一致性
+        updateForwardFlow(forwardId, flowStats);
+        updateUserFlow(userId, flowStats);
+        updateUserTunnelFlow(userTunnelId, flowStats);
 
-        // 6.2 更新用户流量
-        if (user != null) {
-            updateUserFlow(userId, flowStats);
-        }
-
-        // 6.3 更新隧道权限流量
-        if (userTunnel != null) {
-            updateUserTunnelFlow(userTunnelId, flowStats);
-        }
-
-        // 7. 流量更新完成后，再进行各种检查和服务暂停操作
-        // 7.1 用户相关检查
-        if (user != null) {
-            checkUserRelatedLimits(user, userTunnelId);
-        }
-
-        // 7.2 隧道权限相关检查
-        if (userTunnel != null) {
-            checkUserTunnelRelatedLimits(userTunnel, forwardId, userId, userTunnelId, forward);
-        }
-
-        // 7.3 转发状态检查
-        if (forward != null) {
-            checkForwardStatus(forward, userId, userTunnelId);
+        // 7. 检查和服务暂停操作
+        String name = buildServiceName(forwardId, userId, userTunnelId);
+        if (!Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) { // 非管理员的转发需要检测流量限制
+            checkUserRelatedLimits(userId, name);
+            checkUserTunnelRelatedLimits(userTunnelId, name);
         }
 
         return SUCCESS_RESPONSE;
     }
 
+    private void checkUserRelatedLimits(String userId, String name) {
 
+        // 重新查询用户以获取最新的流量数据
+        User updatedUser = userService.getById(userId);
+        if (updatedUser == null) return;
+
+        // 检查用户总流量限制
+        long userFlowLimit = updatedUser.getFlow() * BYTES_TO_GB;
+        long userCurrentFlow = updatedUser.getInFlow() + updatedUser.getOutFlow();
+        if (userFlowLimit < userCurrentFlow) {
+            pauseAllUserServices(userId, name);
+            return;
+        }
+
+        // 检查用户到期时间
+        if (updatedUser.getExpTime() != null && updatedUser.getExpTime() <= new Date().getTime()) {
+            pauseAllUserServices(userId, name);
+            return;
+        }
+
+        // 检查用户状态
+        if (updatedUser.getStatus() != 1) {
+            pauseAllUserServices(userId, name);
+        }
+    }
+
+    public void pauseAllUserServices(String userId, String name) {
+        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("user_id", userId));
+        pauseService(forwardList, name);
+    }
+
+    public void checkUserTunnelRelatedLimits(String userTunnelId, String name) {
+
+        UserTunnel userTunnel = userTunnelService.getById(userTunnelId);
+        if (userTunnel == null) return;
+        long flow = userTunnel.getInFlow() + userTunnel.getOutFlow();
+        if (flow >= userTunnel.getFlow() *  BYTES_TO_GB) {
+            pauseSpecificForward(userTunnel.getTunnelId(), name);
+            return;
+        }
+
+        if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
+            pauseSpecificForward(userTunnel.getTunnelId(), name);
+            return;
+        }
+
+        if (userTunnel.getStatus() != 1) {
+            pauseSpecificForward(userTunnel.getTunnelId(), name);
+        }
+
+
+    }
+
+    private void pauseSpecificForward(Integer tunnelId, String name) {
+        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelId));
+        pauseService(forwardList, name);
+    }
+
+    public void pauseService(List<Forward> forwardList, String name) {
+        for (Forward forward : forwardList) {
+            Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+            if (tunnel != null){
+                GostUtil.PauseService(tunnel.getInNodeId(), name);
+                if (tunnel.getType() == 2){
+                    GostUtil.PauseRemoteService(tunnel.getOutNodeId(), name);
+                }
+            }
+            forward.setStatus(0);
+            forwardService.updateById(forward);
+        }
+    }
 
     private FlowDto filterFlowData(FlowDto flowDto, Forward forward, int flowType) {
-        // 判断 forward 是否不为空，避免空指针异常
-        if (forward != null) {
-            // 根据 forward 中的隧道ID查询隧道对象
-            Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-            // 如果隧道对象存在，继续处理
-            if (tunnel != null){
-                // 获取隧道的流量倍率 trafficRatio
-                BigDecimal trafficRatio = tunnel.getTrafficRatio();
-
-                // 把 flowDto 中的下载流量 D 转换为 BigDecimal 类型
-                BigDecimal originalD = BigDecimal.valueOf(flowDto.getD());
-                // 把 flowDto 中的上传流量 U 转换为 BigDecimal 类型
-                BigDecimal originalU = BigDecimal.valueOf(flowDto.getU());
-
-                // 下载流量乘以流量倍率，得到新的下载流量
-                BigDecimal newD = originalD.multiply(trafficRatio);
-                // 上传流量乘以流量倍率，得到新的上传流量
-                BigDecimal newU = originalU.multiply(trafficRatio);
-
-                // 将计算后的下载流量转换回 long 类型并设置回 flowDto
-                flowDto.setD(newD.longValue() * flowType);
-                // 将计算后的上传流量转换回 long 类型并设置回 flowDto
-                flowDto.setU(newU.longValue() * flowType);
-            }
-        }
-        // 返回处理后的流量数据对象
-        return flowDto;
-    }
-
-    /**
-     * 验证节点是否有效
-     */
-    private boolean isValidNode(String secret) {
-        int nodeCount = nodeService.count(new QueryWrapper<Node>().eq("secret", secret));
-        return nodeCount > 0;
-    }
-
-
-    /**
-     * 解析服务名称获取ID信息
-     */
-    private String[] parseServiceName(String serviceName) {
-        return serviceName.split("_");
-    }
-
-
-    /**
-     * 获取流量计费类型 - 优化版本，使用传入的Forward实体
-     */
-    private int getFlowType(Forward forward) {
-        int defaultFlowType = 2;
-
         if (forward != null) {
             Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
             if (tunnel != null) {
-                return tunnel.getFlow();
+                BigDecimal trafficRatio = tunnel.getTrafficRatio();
+
+                BigDecimal originalD = BigDecimal.valueOf(flowDto.getD());
+                BigDecimal originalU = BigDecimal.valueOf(flowDto.getU());
+
+                BigDecimal newD = originalD.multiply(trafficRatio);
+                BigDecimal newU = originalU.multiply(trafficRatio);
+
+                flowDto.setD(newD.longValue() * flowType);
+                flowDto.setU(newU.longValue() * flowType);
             }
         }
-
-        return defaultFlowType;
+        return flowDto;
     }
 
-    /**
-     * 更新转发流量统计 - 使用原子操作避免并发问题
-     */
-    private boolean updateForwardFlow(String forwardId, FlowDto flowStats) {
+    private int getFlowType(Forward forward) {
+        int defaultFlowType = 2;
+        if (forward == null) return defaultFlowType;
+        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+        if (tunnel == null) return defaultFlowType;
+        return tunnel.getFlow();
+    }
+
+    private void updateForwardFlow(String forwardId, FlowDto flowStats) {
         // 对相同转发的流量更新进行同步，避免并发覆盖
         synchronized (getForwardLock(forwardId)) {
             UpdateWrapper<Forward> updateWrapper = new UpdateWrapper<>();
@@ -337,14 +356,11 @@ public class FlowController extends BaseController {
             updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
             updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
 
-            return forwardService.update(null, updateWrapper);
+            forwardService.update(null, updateWrapper);
         }
     }
 
-    /**
-     * 更新用户流量统计 - 使用原子操作避免并发问题
-     */
-    private boolean updateUserFlow(String userId, FlowDto flowStats) {
+    private void updateUserFlow(String userId, FlowDto flowStats) {
         // 对相同用户的流量更新进行同步，避免并发覆盖
         synchronized (getUserLock(userId)) {
             UpdateWrapper<User> updateWrapper = new UpdateWrapper<>();
@@ -353,16 +369,13 @@ public class FlowController extends BaseController {
             updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
             updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
 
-            return userService.update(null, updateWrapper);
+            userService.update(null, updateWrapper);
         }
     }
 
-    /**
-     * 更新用户隧道流量统计 - 优化版本，仅负责流量更新
-     */
-    private boolean updateUserTunnelFlow(String userTunnelId, FlowDto flowStats) {
+    private void updateUserTunnelFlow(String userTunnelId, FlowDto flowStats) {
         if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
-            return true; // 默认隧道不需要更新，返回成功
+            return; // 默认隧道不需要更新，返回成功
         }
 
         // 对相同用户隧道的流量更新进行同步，避免并发覆盖
@@ -371,292 +384,32 @@ public class FlowController extends BaseController {
             updateWrapper.eq("id", userTunnelId);
             updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
             updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
-
-            return userTunnelService.update(null, updateWrapper);
+            userTunnelService.update(null, updateWrapper);
         }
     }
 
-    /**
-     * 检查用户隧道流量限制 - 优化版本，使用传入的UserTunnel实体
-     */
-    private void checkUserTunnelFlowLimit(UserTunnel userTunnel, String forwardId, String userId, String userTunnelId) {
-        long currentFlow = userTunnel.getInFlow() + userTunnel.getOutFlow();
-
-        long flowLimit = userTunnel.getFlow() * BYTES_TO_GB;
-
-        if (flowLimit < currentFlow) {
-            pauseServiceDueToTunnelLimit(userTunnel.getTunnelId(), forwardId, userId, userTunnelId);
-        }
-    }
-
-    /**
-     * 因隧道流量超限暂停服务
-     */
-    private void pauseServiceDueToTunnelLimit(Integer tunnelId, String forwardId,
-                                              String userId, String userTunnelId) {
-        // 先检查转发状态，如果已经是暂停状态就不需要调用暂停服务
-        Forward currentForward = forwardService.getById(forwardId);
-        if (currentForward == null || currentForward.getStatus() == 0) {
-            return; // 转发不存在或已经暂停，无需处理
-        }
-
-        Tunnel tunnel = tunnelService.getById(tunnelId);
-        if (tunnel != null) {
-            Node node = nodeService.getNodeById(tunnel.getInNodeId());
-            if (node != null) {
-                String serviceName = buildServiceName(forwardId, userId, userTunnelId);
-                GostUtil.PauseService(node.getId(), serviceName);
-
-                // 隧道转发需要同时暂停远端服务
-                if (tunnel.getType() == 2) { // TUNNEL_TYPE_TUNNEL_FORWARD
-                    Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
-                    if (outNode != null) {
-                        GostUtil.PauseRemoteService(outNode.getId(), serviceName);
-                    }
-                }
-            }
-        }
-
-        // 更新转发状态为暂停（只更新状态字段，避免覆盖流量数据）
-        UpdateWrapper<Forward> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", forwardId);
-        updateWrapper.set("status", 0);
-        forwardService.update(null, updateWrapper);
-    }
-
-    /**
-     * 因隧道权限到期暂停服务
-     */
-    private void pauseServiceDueToTunnelExpiration(Integer tunnelId, String forwardId,
-                                                   String userId, String userTunnelId) {
-        // 先检查转发状态，如果已经是暂停状态就不需要调用暂停服务
-        Forward currentForward = forwardService.getById(forwardId);
-        if (currentForward == null || currentForward.getStatus() == 0) {
-            return; // 转发不存在或已经暂停，无需处理
-        }
-
-        Tunnel tunnel = tunnelService.getById(tunnelId);
-        if (tunnel != null) {
-            Node node = nodeService.getNodeById(tunnel.getInNodeId());
-            if (node != null) {
-                String serviceName = buildServiceName(forwardId, userId, userTunnelId);
-                GostUtil.PauseService(node.getId(), serviceName);
-
-                // 隧道转发需要同时暂停远端服务
-                if (tunnel.getType() == 2) { // TUNNEL_TYPE_TUNNEL_FORWARD
-                    Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
-                    if (outNode != null) {
-                        GostUtil.PauseRemoteService(outNode.getId(), serviceName);
-                    }
-                }
-            }
-        }
-
-        // 更新转发状态为暂停（只更新状态字段，避免覆盖流量数据）
-        UpdateWrapper<Forward> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", forwardId);
-        updateWrapper.set("status", 0);
-        forwardService.update(null, updateWrapper);
-    }
-
-    /**
-     * 检查用户相关的所有限制 - 用户存在时统一处理
-     */
-    private void checkUserRelatedLimits(User user, String userTunnelId) {
-        // 重新查询用户以获取最新的流量数据
-        User updatedUser = userService.getById(user.getId());
-        if (updatedUser == null) {
-            return;
-        }
-
-        // 检查用户总流量限制
-        long userFlowLimit = updatedUser.getFlow() * BYTES_TO_GB;
-        long userCurrentFlow = updatedUser.getInFlow() + updatedUser.getOutFlow();
-        if (userFlowLimit < userCurrentFlow) {
-            pauseAllUserServices(updatedUser.getId().toString(), userTunnelId);
-            return; // 用户流量超限，直接返回，不需要再检查其他项
-        }
-
-        // 检查用户到期时间
-        if (updatedUser.getExpTime() != null && updatedUser.getExpTime() <= System.currentTimeMillis()) {
-            pauseAllUserServices(updatedUser.getId().toString(), userTunnelId);
-            return; // 用户到期，直接返回
-        }
-
-        // 检查用户状态
-        if (updatedUser.getStatus() != 1) {
-            pauseAllUserServices(updatedUser.getId().toString(), userTunnelId);
-        }
-    }
-
-    /**
-     * 检查用户隧道权限相关的所有限制 - 隧道权限存在时统一处理
-     */
-    private void checkUserTunnelRelatedLimits(UserTunnel userTunnel, String forwardId, String userId, String userTunnelId, Forward forward) {
-        // 重新查询用户隧道权限以获取最新的流量数据
-        UserTunnel updatedUserTunnel = userTunnelService.getById(userTunnel.getId());
-        if (updatedUserTunnel == null) {
-            return;
-        }
-
-        // 检查隧道权限流量限制
-        checkUserTunnelFlowLimit(updatedUserTunnel, forwardId, userId, userTunnelId);
-
-        // 检查隧道权限到期时间
-        if (updatedUserTunnel.getExpTime() != null && updatedUserTunnel.getExpTime() <= System.currentTimeMillis()) {
-            pauseServiceDueToTunnelExpiration(updatedUserTunnel.getTunnelId(), forwardId, userId, userTunnelId);
-            return; // 隧道权限到期，直接返回
-        }
-
-        // 检查用户隧道权限状态
-        if (updatedUserTunnel.getStatus() != 1) {
-            if (forward != null) {
-                pauseSpecificForward(forward, userId, userTunnelId);
-            }
-        }
-    }
-
-    /**
-     * 检查转发状态 - 优化版本，使用传入的Forward实体
-     */
-    private void checkForwardStatus(Forward forward, String userId, String userTunnelId) {
-        // 检查转发状态是否为正常（1），如果不正常且不是暂停状态，才需要暂停
-        if (forward.getStatus() != 1 && forward.getStatus() != 0) {
-            pauseSpecificForward(forward, userId, userTunnelId);
-        }
-    }
-
-    /**
-     * 暂停指定的转发服务
-     */
-    private void pauseSpecificForward(Forward forward, String userId, String userTunnelId) {
-        // 先检查转发状态，如果已经是暂停状态就不需要调用暂停服务
-        if (forward.getStatus() == 0) {
-            return; // 已经暂停，无需处理
-        }
-
-        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-        if (tunnel != null) {
-            Node node = nodeService.getNodeById(tunnel.getInNodeId());
-            if (node != null) {
-                String serviceName = buildServiceName(String.valueOf(forward.getId()), userId, userTunnelId);
-                GostUtil.PauseService(node.getId(), serviceName);
-
-                // 隧道转发需要同时暂停远端服务
-                if (tunnel.getType() == 2) { // TUNNEL_TYPE_TUNNEL_FORWARD
-                    Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
-                    if (outNode != null) {
-                        GostUtil.PauseRemoteService(outNode.getId(), serviceName);
-                    }
-                }
-            }
-        }
-
-        // 更新转发状态为暂停（只更新状态字段，避免覆盖流量数据）
-        UpdateWrapper<Forward> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", forward.getId());
-        updateWrapper.set("status", 0);
-        forwardService.update(null, updateWrapper);
-    }
-
-    /**
-     * 暂停用户所有服务
-     */
-    private void pauseAllUserServices(String userId, String userTunnelId) {
-        List<Forward> userForwards = forwardService.list(new QueryWrapper<Forward>().eq("user_id", userId));
-
-        for (Forward forward : userForwards) {
-            // 先检查转发状态，如果已经是暂停状态就跳过
-            if (forward.getStatus() == 0) {
-                continue; // 已经暂停，跳过此转发
-            }
-
-            Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-            if (tunnel != null) {
-                Node node = nodeService.getNodeById(tunnel.getInNodeId());
-                if (node != null) {
-                    // 查找该转发对应的正确userTunnelId
-                    String actualUserTunnelId = findActualUserTunnelId(userId, forward.getTunnelId().toString());
-                    String serviceName = buildServiceName(String.valueOf(forward.getId()), userId, actualUserTunnelId);
-                    GostUtil.PauseService(node.getId(), serviceName);
-
-                    // 隧道转发需要同时暂停远端服务
-                    if (tunnel.getType() == 2) { // TUNNEL_TYPE_TUNNEL_FORWARD
-                        Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
-                        if (outNode != null) {
-                            GostUtil.PauseRemoteService(outNode.getId(), serviceName);
-                        }
-                    }
-                }
-            }
-
-            // 更新转发状态为暂停（只更新状态字段，避免覆盖流量数据）
-            UpdateWrapper<Forward> updateWrapper = new UpdateWrapper<>();
-            updateWrapper.eq("id", forward.getId());
-            updateWrapper.set("status", 0);
-            forwardService.update(null, updateWrapper);
-        }
-    }
-
-    /**
-     * 查找用户在指定隧道的实际userTunnelId
-     */
-    private String findActualUserTunnelId(String userId, String tunnelId) {
-        UserTunnel userTunnel = userTunnelService.getOne(
-                new QueryWrapper<UserTunnel>()
-                        .eq("user_id", userId)
-                        .eq("tunnel_id", tunnelId)
-        );
-
-        return userTunnel != null ? String.valueOf(userTunnel.getId()) : DEFAULT_USER_TUNNEL_ID;
-    }
-
-    /**
-     * 构建服务名称
-     */
-    private String buildServiceName(String forwardId, String userId, String userTunnelId) {
-        return forwardId + "_" + userId + "_" + userTunnelId;
-    }
-
-    /**
-     * 获取用户锁对象
-     */
     private Object getUserLock(String userId) {
         return USER_LOCKS.computeIfAbsent(userId, k -> new Object());
     }
 
-    /**
-     * 获取隧道锁对象
-     */
     private Object getTunnelLock(String userTunnelId) {
         return TUNNEL_LOCKS.computeIfAbsent(userTunnelId, k -> new Object());
     }
 
-    /**
-     * 获取转发锁对象
-     */
     private Object getForwardLock(String forwardId) {
         return FORWARD_LOCKS.computeIfAbsent(forwardId, k -> new Object());
     }
 
-    /**
-     * 流量统计数据类
-     */
-    private static class FlowStatistics {
-        private final long upload;
-        private final long download;
+    private boolean isValidNode(String secret) {
+        int nodeCount = nodeService.count(new QueryWrapper<Node>().eq("secret", secret));
+        return nodeCount > 0;
+    }
 
-        public FlowStatistics(long upload, long download) {
-            this.upload = upload;
-            this.download = download;
-        }
+    private String[] parseServiceName(String serviceName) {
+        return serviceName.split("_");
+    }
 
-        public long getUpload() {
-            return upload;
-        }
-
-        public long getDownload() {
-            return download;
-        }
+    private String buildServiceName(String forwardId, String userId, String userTunnelId) {
+        return forwardId + "_" + userId + "_" + userTunnelId;
     }
 }

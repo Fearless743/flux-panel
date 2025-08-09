@@ -404,7 +404,8 @@ export default function UserPage() {
         num: editTunnelForm.num,
         expTime: editTunnelForm.expTime,
         flowResetTime: editTunnelForm.flowResetTime,
-        speedId: editTunnelForm.speedId
+        speedId: editTunnelForm.speedId,
+        status: editTunnelForm.status
       });
 
       if (response.code === 0) {
@@ -994,6 +995,7 @@ export default function UserPage() {
                     <TableColumn>隧道名称</TableColumn>
                     <TableColumn>流量统计</TableColumn>
                     <TableColumn>转发数量</TableColumn>
+                    <TableColumn>状态</TableColumn>
                     <TableColumn>限速规则</TableColumn>
                     <TableColumn>重置时间</TableColumn>
                     <TableColumn>到期时间</TableColumn>
@@ -1023,6 +1025,15 @@ export default function UserPage() {
                           </div>
                         </TableCell>
                         <TableCell>{userTunnel.num}</TableCell>
+                        <TableCell>
+                          <Chip
+                            color={userTunnel.status === 1 ? 'success' : 'danger'}
+                            size="sm"
+                            variant="flat"
+                          >
+                            {userTunnel.status === 1 ? '正常' : '禁用'}
+                          </Chip>
+                        </TableCell>
                         <TableCell>
                           <Chip
                             color={userTunnel.speedLimitName ? 'warning' : 'success'}
@@ -1097,85 +1108,97 @@ export default function UserPage() {
           </ModalHeader>
           <ModalBody>
             {editTunnelForm && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  label="流量限制(GB)"
-                  type="number"
-                  value={editTunnelForm.flow.toString()}
-                  onChange={(e) => {
-                    const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                    setEditTunnelForm(prev => prev ? { ...prev, flow: value } : null);
-                  }}
-                  min="1"
-                  max="99999"
-                />
-                
-                <Input
-                  label="转发数量"
-                  type="number"
-                  value={editTunnelForm.num.toString()}
-                  onChange={(e) => {
-                    const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                    setEditTunnelForm(prev => prev ? { ...prev, num: value } : null);
-                  }}
-                  min="1"
-                  max="99999"
-                />
-                
-                <Select
-                  label="限速规则"
-                  selectedKeys={editTunnelForm.speedId ? [editTunnelForm.speedId.toString()] : ['null']}
-                  onSelectionChange={(keys) => {
-                    const value = Array.from(keys)[0] as string;
-                    setEditTunnelForm(prev => prev ? { ...prev, speedId: value === 'null' ? null : Number(value) } : null);
-                  }}
-                >
-                  {[
-                    <SelectItem key="null" textValue="不限速">不限速</SelectItem>,
-                    ...editAvailableSpeedLimits.map(speedLimit => (
-                      <SelectItem key={speedLimit.id.toString()} textValue={speedLimit.name}>
-                        {speedLimit.name}
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="流量限制(GB)"
+                    type="number"
+                    value={editTunnelForm.flow.toString()}
+                    onChange={(e) => {
+                      const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
+                      setEditTunnelForm(prev => prev ? { ...prev, flow: value } : null);
+                    }}
+                    min="1"
+                    max="99999"
+                  />
+                  
+                  <Input
+                    label="转发数量"
+                    type="number"
+                    value={editTunnelForm.num.toString()}
+                    onChange={(e) => {
+                      const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
+                      setEditTunnelForm(prev => prev ? { ...prev, num: value } : null);
+                    }}
+                    min="1"
+                    max="99999"
+                  />
+                  
+                  <Select
+                    label="限速规则"
+                    selectedKeys={editTunnelForm.speedId ? [editTunnelForm.speedId.toString()] : ['null']}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      setEditTunnelForm(prev => prev ? { ...prev, speedId: value === 'null' ? null : Number(value) } : null);
+                    }}
+                  >
+                    {[
+                      <SelectItem key="null" textValue="不限速">不限速</SelectItem>,
+                      ...editAvailableSpeedLimits.map(speedLimit => (
+                        <SelectItem key={speedLimit.id.toString()} textValue={speedLimit.name}>
+                          {speedLimit.name}
+                        </SelectItem>
+                      ))
+                    ]}
+                  </Select>
+                  
+                  <Select
+                    label="流量重置日期"
+                    selectedKeys={[editTunnelForm.flowResetTime.toString()]}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      setEditTunnelForm(prev => prev ? { ...prev, flowResetTime: Number(value) } : null);
+                    }}
+                  >
+                    <>
+                      <SelectItem key="0" textValue="不重置">
+                        不重置
                       </SelectItem>
-                    ))
-                  ]}
-                </Select>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                      <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
+                        每月{day}号（0点重置）
+                      </SelectItem>
+                    ))}
+                    </>
+                  </Select>
+                  
+                  <DatePicker
+                    label="到期时间"
+                    value={editTunnelForm.expTime ? parseDate(new Date(editTunnelForm.expTime).toISOString().split('T')[0]) as any : null}
+                    onChange={(date) => {
+                      if (date) {
+                        const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
+                        setEditTunnelForm(prev => prev ? { ...prev, expTime: jsDate.getTime() } : null);
+                      } else {
+                        setEditTunnelForm(prev => prev ? { ...prev, expTime: Date.now() } : null);
+                      }
+                    }}
+                    showMonthAndYearPickers
+                    className="cursor-pointer"
+                    isRequired
+                  />
+                </div>
                 
-                <Select
-                  label="流量重置日期"
-                  selectedKeys={[editTunnelForm.flowResetTime.toString()]}
-                  onSelectionChange={(keys) => {
-                    const value = Array.from(keys)[0] as string;
-                    setEditTunnelForm(prev => prev ? { ...prev, flowResetTime: Number(value) } : null);
-                  }}
+                <RadioGroup
+                  label="状态"
+                  value={editTunnelForm.status.toString()}
+                  onValueChange={(value: string) => setEditTunnelForm(prev => prev ? { ...prev, status: Number(value) } : null)}
+                  orientation="horizontal"
                 >
-                  <>
-                    <SelectItem key="0" textValue="不重置">
-                      不重置
-                    </SelectItem>
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                    <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                      每月{day}号（0点重置）
-                    </SelectItem>
-                  ))}
-                  </>
-                </Select>
-                
-                <DatePicker
-                  label="到期时间"
-                  value={editTunnelForm.expTime ? parseDate(new Date(editTunnelForm.expTime).toISOString().split('T')[0]) as any : null}
-                  onChange={(date) => {
-                    if (date) {
-                      const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
-                      setEditTunnelForm(prev => prev ? { ...prev, expTime: jsDate.getTime() } : null);
-                    } else {
-                      setEditTunnelForm(prev => prev ? { ...prev, expTime: Date.now() } : null);
-                    }
-                  }}
-                  showMonthAndYearPickers
-                  className="cursor-pointer"
-                  isRequired
-                />
-              </div>
+                  <Radio value="1">正常</Radio>
+                  <Radio value="0">禁用</Radio>
+                </RadioGroup>
+              </>
             )}
           </ModalBody>
           <ModalFooter>

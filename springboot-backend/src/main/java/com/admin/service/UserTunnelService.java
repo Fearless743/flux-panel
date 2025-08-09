@@ -37,14 +37,7 @@ public interface UserTunnelService extends IService<UserTunnel> {
      * @return 结果
      */
     R removeUserTunnel(Integer id);
-    
-    /**
-     * 更新用户隧道流量限制
-     * @param id ID
-     * @param flow 新的流量限制
-     * @return 结果
-     */
-    R updateUserTunnelFlow(Integer id, Long flow);
+
     
     /**
      * 更新用户隧道权限（包含流量、流量重置时间、到期时间）

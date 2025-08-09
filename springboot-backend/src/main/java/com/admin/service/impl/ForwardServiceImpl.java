@@ -173,6 +173,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     if (userTunnel == null) {
                         return R.err("用户没有该隧道权限");
                     }
+
+                    if (userTunnel.getStatus() != 1) {
+                        return R.err("隧道被禁用");
+                    }
                     
                     // 检查隧道权限到期时间
                     if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
@@ -364,6 +368,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
                 if (userTunnel == null) {
                     return R.err("你没有该隧道权限");
+                }
+
+                if (userTunnel.getStatus() != 1) {
+                    return R.err("隧道被禁用");
                 }
             }
         }
@@ -781,6 +789,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         UserTunnel userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
         if (userTunnel == null) {
             return UserPermissionResult.error("你没有该隧道权限");
+        }
+
+        if (userTunnel.getStatus() != 1) {
+            return  UserPermissionResult.error("隧道被禁用");
         }
         
         // 检查隧道权限到期时间

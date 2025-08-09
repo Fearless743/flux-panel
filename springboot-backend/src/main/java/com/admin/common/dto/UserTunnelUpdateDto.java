@@ -29,6 +29,9 @@ public class UserTunnelUpdateDto {
      */
     @NotNull(message = "到期时间不能为空")
     private Long expTime;
+
+    @NotNull(message = "状态必选")
+    private Integer status;
     
     /**
      * 限速规则ID（可选，null表示不限速）

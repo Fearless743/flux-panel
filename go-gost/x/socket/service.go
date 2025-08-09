@@ -215,7 +215,7 @@ func pauseServices(req pauseServicesRequest) error {
 		name    string
 		service service.Service
 	}
-	var skippedServices []string
+	//var skippedServices []string
 
 	cfg := config.Global()
 	for _, serviceName := range req.Services {
@@ -229,22 +229,22 @@ func pauseServices(req pauseServicesRequest) error {
 			return errors.New(fmt.Sprintf("service %s not found", name))
 		}
 
-		// 检查服务是否已经暂停
-		var serviceConfig *config.ServiceConfig
-		for _, s := range cfg.Services {
-			if s.Name == name {
-				serviceConfig = s
-				break
-			}
-		}
-
-		// 如果服务已经暂停，跳过
-		if serviceConfig != nil && serviceConfig.Metadata != nil {
-			if pausedVal, exists := serviceConfig.Metadata["paused"]; exists && pausedVal == true {
-				skippedServices = append(skippedServices, name)
-				continue
-			}
-		}
+		//// 检查服务是否已经暂停
+		//var serviceConfig *config.ServiceConfig
+		//for _, s := range cfg.Services {
+		//	if s.Name == name {
+		//		serviceConfig = s
+		//		break
+		//	}
+		//}
+		//
+		//// 如果服务已经暂停，跳过
+		//if serviceConfig != nil && serviceConfig.Metadata != nil {
+		//	if pausedVal, exists := serviceConfig.Metadata["paused"]; exists && pausedVal == true {
+		//		skippedServices = append(skippedServices, name)
+		//		continue
+		//	}
+		//}
 
 		servicesToPause = append(servicesToPause, struct {
 			name    string

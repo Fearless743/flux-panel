@@ -103,20 +103,7 @@ public class TunnelController extends BaseController {
         Integer id = Integer.valueOf(params.get("id").toString());
         return userTunnelService.removeUserTunnel(id);
     }
-    
-    /**
-     * 更新用户隧道流量限制
-     * @param params 包含userId、tunnelId和flow的参数
-     * @return 操作结果
-     */
-    @LogAnnotation
-    @RequireRole
-    @PostMapping("/user/updateFlow")
-    public R updateUserTunnelFlow(@RequestBody Map<String, Object> params) {
-        Integer id = Integer.valueOf(params.get("id").toString());
-        Long flow = Long.valueOf(params.get("flow").toString());
-        return userTunnelService.updateUserTunnelFlow(id, flow);
-    }
+
     
     /**
      * 更新用户隧道权限（包含流量、流量重置时间、到期时间）

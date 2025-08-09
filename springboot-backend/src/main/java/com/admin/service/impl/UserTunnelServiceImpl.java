@@ -140,28 +140,7 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         return success ? R.ok(SUCCESS_REMOVE_MSG) : R.err(ERROR_PERMISSION_NOT_FOUND);
     }
 
-    /**
-     * 更新用户隧道流量限制
-     * 
-     * @param id 用户隧道权限ID
-     * @param flow 流量限制值
-     * @return 更新结果响应
-     */
-    @Override
-    public R updateUserTunnelFlow(Integer id, Long flow) {
-        // 1. 验证用户隧道权限是否存在
-        UserTunnel userTunnel = this.getById(id);
-        if (userTunnel == null) {
-            return R.err(ERROR_NOT_EXISTS);
-        }
-        
-        // 2. 更新流量限制并保存
-        userTunnel.setFlow(flow);
-        boolean success = this.updateById(userTunnel);
-        
-        return success ? R.ok(SUCCESS_UPDATE_FLOW_MSG) : R.err(ERROR_PERMISSION_NOT_FOUND);
-    }
-    
+
     /**
      * 更新用户隧道权限
      * 支持更新流量限制、数量限制、流量重置时间、过期时间和限速规则
@@ -250,6 +229,7 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         // 更新可选属性（仅在非空时更新）
         updateOptionalProperty(existingUserTunnel::setFlowResetTime, updateDto.getFlowResetTime());
         updateOptionalProperty(existingUserTunnel::setExpTime, updateDto.getExpTime());
+        updateOptionalProperty(existingUserTunnel::setStatus, updateDto.getStatus());
         
         // 更新限速规则ID（允许设置为null，表示不限速）
         existingUserTunnel.setSpeedId(updateDto.getSpeedId());

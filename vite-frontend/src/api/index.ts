@@ -45,7 +45,6 @@ export const diagnoseTunnel = (tunnelId: number) => Network.post("/tunnel/diagno
 export const assignUserTunnel = (data: any) => Network.post("/tunnel/user/assign", data);
 export const getUserTunnelList = (queryData: any = {}) => Network.post("/tunnel/user/list", queryData);
 export const removeUserTunnel = (params: any) => Network.post("/tunnel/user/remove", params);
-export const updateUserTunnelFlow = (params: any) => Network.post("/tunnel/user/updateFlow", params);
 export const updateUserTunnel = (data: any) => Network.post("/tunnel/user/update", data);
 export const userTunnel = () => Network.post("/tunnel/user/tunnel");
 

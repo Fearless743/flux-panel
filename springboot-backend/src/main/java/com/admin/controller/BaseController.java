@@ -22,4 +22,5 @@ public class BaseController {
 
     @Autowired
     ViteConfigService viteConfigService;
+
 }
