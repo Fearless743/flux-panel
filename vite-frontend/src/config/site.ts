@@ -6,11 +6,7 @@ export type SiteConfig = typeof siteConfig;
 const CACHE_PREFIX = 'vite_config_';
 const VERSION = "1.2.6";
 
-// 缓存策略：
-// - 长期有效，不设置过期时间
-// - 只在以下情况清除：1. 更新配置时 2. 退出登录时（safeLogout会清除localStorage）
 
-// 立即从缓存获取配置（同步操作，避免闪烁）
 const getInitialConfig = () => {
   if (typeof window === 'undefined') {
     return {
