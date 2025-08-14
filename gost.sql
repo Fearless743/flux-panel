@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主机： localhost
--- 生成日期： 2025-07-24 21:52:45
+-- 生成日期： 2025-08-14 21:52:52
 -- 服务器版本： 5.7.40-log
 -- PHP 版本： 7.4.33
 
@@ -20,21 +20,6 @@ SET time_zone = "+00:00";
 --
 -- 数据库： `gost`
 --
-
--- --------------------------------------------------------
-
---
--- 表的结构 `statistics_flow`
---
-
-CREATE TABLE `statistics_flow` (
-  `id` bigint(10) NOT NULL,
-  `user_id` int(10) NOT NULL,
-  `flow` bigint(20) NOT NULL,
-  `total_flow` bigint(20) NOT NULL,
-  `time` varchar(100) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 
 -- --------------------------------------------------------
 
@@ -58,7 +43,7 @@ CREATE TABLE `forward` (
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) NOT NULL,
   `status` int(10) NOT NULL,
-  `inx` int(10) NOT NULL DEFAULT 0
+  `inx` int(10) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -101,6 +86,20 @@ CREATE TABLE `speed_limit` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `statistics_flow`
+--
+
+CREATE TABLE `statistics_flow` (
+  `id` int(10) NOT NULL,
+  `user_id` int(10) NOT NULL,
+  `flow` bigint(20) NOT NULL,
+  `total_flow` bigint(20) NOT NULL,
+  `time` varchar(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `tunnel`
 --
 
@@ -114,10 +113,10 @@ CREATE TABLE `tunnel` (
   `out_ip` varchar(100) NOT NULL,
   `type` int(10) NOT NULL,
   `protocol` varchar(10) NOT NULL DEFAULT 'tls',
-  `interface_name` varchar(200) DEFAULT NULL,
   `flow` int(10) NOT NULL,
   `tcp_listen_addr` varchar(100) NOT NULL DEFAULT '0.0.0.0',
   `udp_listen_addr` varchar(100) NOT NULL DEFAULT '0.0.0.0',
+  `interface_name` varchar(200) DEFAULT NULL,
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) NOT NULL,
   `status` int(10) NOT NULL
@@ -150,7 +149,7 @@ CREATE TABLE `user` (
 --
 
 INSERT INTO `user` (`id`, `user`, `pwd`, `role_id`, `exp_time`, `flow`, `in_flow`, `out_flow`, `flow_reset_time`, `num`, `created_time`, `updated_time`, `status`) VALUES
-(1, 'admin_user', '3c85cdebade1c51cf64ca9f3c09d182d', 0, 2727251700000, 99999, 0, 0, 1, 99999, 1748914865000, 1751434735216, 1);
+(1, 'admin_user', '3c85cdebade1c51cf64ca9f3c09d182d', 0, 2727251700000, 99999, 0, 0, 1, 99999, 1748914865000, 1754011744252, 1);
 
 -- --------------------------------------------------------
 
@@ -190,18 +189,11 @@ CREATE TABLE `vite_config` (
 --
 
 INSERT INTO `vite_config` (`id`, `name`, `value`, `time`) VALUES
-(1, 'app_name', '哆啦A梦', 1753346853111);
+(1, 'app_name', '哆啦A梦', 1755147963000);
 
 --
 -- 转储表的索引
 --
-
-
---
--- 表的索引 `statistics_flow`
---
-ALTER TABLE `statistics_flow`
-  ADD PRIMARY KEY (`id`);
 
 --
 -- 表的索引 `forward`
@@ -219,6 +211,12 @@ ALTER TABLE `node`
 -- 表的索引 `speed_limit`
 --
 ALTER TABLE `speed_limit`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- 表的索引 `statistics_flow`
+--
+ALTER TABLE `statistics_flow`
   ADD PRIMARY KEY (`id`);
 
 --
@@ -251,12 +249,6 @@ ALTER TABLE `vite_config`
 --
 
 --
--- 使用表AUTO_INCREMENT `statistics_flow`
---
-ALTER TABLE `statistics_flow`
-  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
-
---
 -- 使用表AUTO_INCREMENT `forward`
 --
 ALTER TABLE `forward`
@@ -275,6 +267,12 @@ ALTER TABLE `speed_limit`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
+-- 使用表AUTO_INCREMENT `statistics_flow`
+--
+ALTER TABLE `statistics_flow`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
 -- 使用表AUTO_INCREMENT `tunnel`
 --
 ALTER TABLE `tunnel`
@@ -284,7 +282,7 @@ ALTER TABLE `tunnel`
 -- 使用表AUTO_INCREMENT `user`
 --
 ALTER TABLE `user`
-  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
 -- 使用表AUTO_INCREMENT `user_tunnel`
@@ -296,7 +294,7 @@ ALTER TABLE `user_tunnel`
 -- 使用表AUTO_INCREMENT `vite_config`
 --
 ALTER TABLE `vite_config`
-  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
