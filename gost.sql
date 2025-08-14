@@ -24,6 +24,21 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `statistics_flow`
+--
+
+CREATE TABLE `statistics_flow` (
+  `id` bigint(10) NOT NULL,
+  `user_id` int(10) NOT NULL,
+  `flow` bigint(20) NOT NULL,
+  `total_flow` bigint(20) NOT NULL,
+  `time` varchar(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `forward`
 --
 
@@ -181,6 +196,13 @@ INSERT INTO `vite_config` (`id`, `name`, `value`, `time`) VALUES
 -- 转储表的索引
 --
 
+
+--
+-- 表的索引 `statistics_flow`
+--
+ALTER TABLE `statistics_flow`
+  ADD PRIMARY KEY (`id`);
+
 --
 -- 表的索引 `forward`
 --
@@ -227,6 +249,12 @@ ALTER TABLE `vite_config`
 --
 -- 在导出的表使用AUTO_INCREMENT
 --
+
+--
+-- 使用表AUTO_INCREMENT `statistics_flow`
+--
+ALTER TABLE `statistics_flow`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
 -- 使用表AUTO_INCREMENT `forward`

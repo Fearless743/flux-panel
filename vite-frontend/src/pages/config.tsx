@@ -4,6 +4,8 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
 import { Spinner } from "@heroui/spinner";
 import { Divider } from "@heroui/divider";
+import { Switch } from "@heroui/switch";
+import { Select, SelectItem } from "@heroui/select";
 import toast from 'react-hot-toast';
 import { updateConfigs } from '@/api';
 import { SettingsIcon } from '@/components/icons';
@@ -31,17 +33,70 @@ const SaveIcon = ({ className }: { className?: string }) => (
 interface ConfigItem {
   key: string;
   label: string;
-  placeholder: string;
+  placeholder?: string;
   description?: string;
+  type: 'input' | 'switch' | 'select';
+  options?: { label: string; value: string; description?: string }[];
+  dependsOn?: string; // 依赖的配置项key
+  dependsValue?: string; // 依赖的配置项值
 }
 
 // 网站配置项定义
 const CONFIG_ITEMS: ConfigItem[] = [
   {
+    key: 'ip',
+    label: '面板后端地址',
+    placeholder: '请输入面板后端IP:PORT',
+    description: '格式“ip:port”,用于对接节点时使用,ip是你安装面板服务器的公网ip,端口是安装脚本内输入的后端端口。不要套CDN,不支持https,通讯数据有加密',
+    type: 'input'
+  },
+  {
     key: 'app_name',
     label: '应用名称',
     placeholder: '请输入应用名称',
-    description: '在浏览器标签页和导航栏显示的应用名称'
+    description: '在浏览器标签页和导航栏显示的应用名称',
+    type: 'input'
+  },
+  {
+    key: 'captcha_enabled',
+    label: '启用验证码',
+    description: '开启后，用户登录时需要完成验证码验证',
+    type: 'switch'
+  },
+  {
+    key: 'captcha_type',
+    label: '验证码类型',
+    description: '选择验证码的显示类型，不同类型有不同的安全级别',
+    type: 'select',
+    dependsOn: 'captcha_enabled',
+    dependsValue: 'true',
+    options: [
+      { 
+        label: '随机类型', 
+        value: 'RANDOM', 
+        description: '系统随机选择验证码类型' 
+      },
+      { 
+        label: '滑块验证码', 
+        value: 'SLIDER', 
+        description: '拖动滑块完成拼图验证' 
+      },
+      { 
+        label: '文字点选验证码', 
+        value: 'WORD_IMAGE_CLICK', 
+        description: '按顺序点击指定文字' 
+      },
+      { 
+        label: '旋转验证码', 
+        value: 'ROTATE', 
+        description: '旋转图片到正确角度' 
+      },
+      { 
+        label: '拼图验证码', 
+        value: 'CONCAT', 
+        description: '拖动滑块完成图片拼接' 
+      }
+    ]
   }
 ];
 
@@ -49,7 +104,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
 const getInitialConfigs = (): Record<string, string> => {
   if (typeof window === 'undefined') return {};
   
-  const configKeys = ['app_name'];
+  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type'];
   const initialConfigs: Record<string, string> = {};
   
   try {
@@ -124,7 +179,15 @@ export default function ConfigPage() {
 
   // 处理配置项变更
   const handleConfigChange = (key: string, value: string) => {
-    const newConfigs = { ...configs, [key]: value };
+    let newConfigs = { ...configs, [key]: value };
+    
+    // 特殊处理：启用验证码时，如果验证码类型未设置，默认为随机
+    if (key === 'captcha_enabled' && value === 'true') {
+      if (!newConfigs.captcha_type) {
+        newConfigs.captcha_type = 'RANDOM';
+      }
+    }
+    
     setConfigs(newConfigs);
     
     // 检查是否有变更
@@ -174,11 +237,88 @@ export default function ConfigPage() {
     }
   };
 
-  // 重置配置
-  const handleReset = () => {
-    setConfigs({ ...originalConfigs });
-    setHasChanges(false);
-    toast.success('已重置为保存前的状态');
+
+
+  // 检查配置项是否应该显示（依赖检查）
+  const shouldShowItem = (item: ConfigItem): boolean => {
+    if (!item.dependsOn || !item.dependsValue) {
+      return true;
+    }
+    return configs[item.dependsOn] === item.dependsValue;
+  };
+
+  // 渲染不同类型的配置项
+  const renderConfigItem = (item: ConfigItem) => {
+    const isChanged = hasChanges && configs[item.key] !== originalConfigs[item.key];
+    
+    switch (item.type) {
+      case 'input':
+        return (
+          <Input
+            value={configs[item.key] || ''}
+            onChange={(e) => handleConfigChange(item.key, e.target.value)}
+            placeholder={item.placeholder}
+            variant="bordered"
+            size="md"
+            classNames={{
+              input: "text-sm",
+              inputWrapper: isChanged 
+                ? "border-warning-300 data-[hover=true]:border-warning-400" 
+                : ""
+            }}
+          />
+        );
+
+      case 'switch':
+        return (
+          <Switch
+            isSelected={configs[item.key] === 'true'}
+            onValueChange={(checked) => handleConfigChange(item.key, checked ? 'true' : 'false')}
+            color="primary"
+            size="md"
+            classNames={{
+              wrapper: isChanged ? "border-warning-300" : ""
+            }}
+          >
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              {configs[item.key] === 'true' ? '已启用' : '已禁用'}
+            </span>
+          </Switch>
+        );
+
+      case 'select':
+        return (
+          <Select
+            selectedKeys={configs[item.key] ? [configs[item.key]] : []}
+            onSelectionChange={(keys) => {
+              const selectedKey = Array.from(keys)[0] as string;
+              if (selectedKey) {
+                handleConfigChange(item.key, selectedKey);
+              }
+            }}
+            placeholder="请选择验证码类型"
+            variant="bordered"
+            size="md"
+            classNames={{
+              trigger: isChanged 
+                ? "border-warning-300 data-[hover=true]:border-warning-400" 
+                : ""
+            }}
+          >
+            {item.options?.map((option) => (
+              <SelectItem 
+                key={option.value}
+                description={option.description}
+              >
+                {option.label}
+              </SelectItem>
+            )) || []}
+          </Select>
+        );
+
+      default:
+        return null;
+    }
   };
 
   if (loading) {
@@ -215,17 +355,7 @@ export default function ConfigPage() {
                 </p>
               </div>
               <div className="flex gap-2">
-                {hasChanges && (
-                  <Button
-                    color="default"
-                    variant="bordered"
-                    size="sm"
-                    onClick={handleReset}
-                    disabled={saving}
-                  >
-                    重置
-                  </Button>
-                )}
+
                 <Button
                   color="primary"
                   startContent={<SaveIcon className="w-4 h-4" />}
@@ -242,36 +372,39 @@ export default function ConfigPage() {
           <Divider />
 
           <CardBody className="space-y-6 pt-6">
-            {CONFIG_ITEMS.map((item, index) => (
-              <div key={item.key} className="space-y-2">
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {item.label}
-                  </label>
-                  {item.description && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {item.description}
-                    </p>
+            {CONFIG_ITEMS.map((item, index) => {
+              // 检查配置项是否应该显示
+              if (!shouldShowItem(item)) {
+                return null;
+              }
+
+              // 计算是否是最后一个显示的项目（用于决定是否显示分隔线）
+              const remainingItems = CONFIG_ITEMS.slice(index + 1).filter(shouldShowItem);
+              const isLastItem = remainingItems.length === 0;
+
+              return (
+                <div key={item.key} className="space-y-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {item.label}
+                    </label>
+                    {item.description && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {item.description}
+                      </p>
+                    )}
+                  </div>
+                  
+                  {/* 渲染配置项 */}
+                  {renderConfigItem(item)}
+                  
+                  {/* 分隔线 */}
+                  {!isLastItem && (
+                    <Divider className="mt-6" />
                   )}
                 </div>
-                <Input
-                  value={configs[item.key] || ''}
-                  onChange={(e) => handleConfigChange(item.key, e.target.value)}
-                  placeholder={item.placeholder}
-                  variant="bordered"
-                  size="md"
-                  classNames={{
-                    input: "text-sm",
-                    inputWrapper: hasChanges && configs[item.key] !== originalConfigs[item.key] 
-                      ? "border-warning-300 data-[hover=true]:border-warning-400" 
-                      : ""
-                  }}
-                />
-                {index < CONFIG_ITEMS.length - 1 && (
-                  <Divider className="mt-4" />
-                )}
-              </div>
-            ))}
+              );
+            })}
           </CardBody>
         </Card>
 

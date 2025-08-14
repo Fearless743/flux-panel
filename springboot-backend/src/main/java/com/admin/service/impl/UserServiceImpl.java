@@ -1,5 +1,7 @@
 package com.admin.service.impl;
 
+import cloud.tianai.captcha.application.ImageCaptchaApplication;
+import cloud.tianai.captcha.spring.plugins.secondary.SecondaryVerificationApplication;
 import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.StrUtil;
 import com.admin.common.dto.*;
@@ -7,28 +9,24 @@ import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.Md5Util;
-import com.admin.entity.Forward;
-import com.admin.entity.Node;
-import com.admin.entity.Tunnel;
-import com.admin.entity.User;
-import com.admin.entity.UserTunnel;
+import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.UserMapper;
 import com.admin.mapper.UserTunnelMapper;
-import com.admin.service.NodeService;
-import com.admin.service.TunnelService;
-import com.admin.service.UserService;
-import com.admin.service.UserTunnelService;
+import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * <p>
@@ -77,8 +75,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private static final String ERROR_GET_PACKAGE_INFO_FAILED = "获取套餐信息失败";
     private static final String ERROR_CURRENT_PASSWORD_WRONG = "当前密码错误";
     private static final String ERROR_PASSWORD_NOT_MATCH = "新密码和确认密码不匹配";
-    private static final String SUCCESS_PASSWORD_UPDATE = "密码修改成功";
-    
+
     /** 默认账号密码 */
     private static final String DEFAULT_USERNAME = "admin_user";
     private static final String DEFAULT_PASSWORD = "admin_user";
@@ -112,28 +109,48 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Resource
     UserTunnelService userTunnelService;
 
+    @Resource
+    ViteConfigService viteConfigService;
+
+    @Resource
+    StatisticsFlowService statisticsFlowService;
+
+    @Resource
+    private ImageCaptchaApplication application;
+
     // ========== 公共接口实现 ==========
 
     /**
      * 用户登录
-     * 验证用户名密码，检查账户状态，生成JWT令牌
+     * 验证验证码、用户名密码，检查账户状态，生成JWT令牌
      * 
      * @param loginDto 登录数据传输对象
      * @return 登录结果响应，包含令牌和用户信息
      */
     @Override
     public R login(LoginDto loginDto) {
-        // 1. 验证用户凭据
+
+        // 1. 验证验证码
+        ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "captcha_enabled"));
+        if (viteConfig != null && Objects.equals(viteConfig.getValue(), "true")) {
+            if (StringUtils.isBlank(loginDto.getCaptchaId())) return R.err("验证码校验失败");
+            boolean valid = ((SecondaryVerificationApplication) application).secondaryVerification(loginDto.getCaptchaId());
+            if (!valid)  return R.err("验证码校验失败");
+        }
+
+
+
+        // 2. 验证用户凭据
         LoginValidationResult validationResult = validateUserCredentials(loginDto);
         if (validationResult.isHasError()) {
             return R.err(validationResult.getErrorMessage());
         }
 
-        // 2. 生成令牌并返回用户信息
+        // 3. 生成令牌并返回用户信息
         User user = validationResult.getUser();
         String token = JwtUtil.generateToken(user);
         
-        // 3. 检查是否使用默认账号密码
+        // 4. 检查是否使用默认账号密码
         boolean requirePasswordChange = isDefaultCredentials(loginDto.getUsername(), loginDto.getPassword());
         
         return R.ok(MapUtil.builder()
@@ -238,6 +255,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         try {
             // 2. 级联删除用户相关数据
             deleteUserRelatedData(id);
+            statisticsFlowService.remove(new QueryWrapper<StatisticsFlow>().eq("user_id", id));
             // 3. 删除用户
             boolean result = this.removeById(id);
             return result ? R.ok(SUCCESS_DELETE_MSG) : R.err(ERROR_DELETE_FAILED);
@@ -344,6 +362,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     // ========== 私有辅助方法 ==========
+
 
     /**
      * 验证用户登录凭据
@@ -655,12 +674,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         // 3. 获取转发详情
         List<UserPackageDto.UserForwardDetailDto> forwards = userMapper.getUserForwardDetails(user.getId().intValue());
+
+        // 4. 查询最近24小时流量信息，没有的补0
+        List<StatisticsFlow> statisticsFlows = getLast24HoursFlowStatistics(user.getId());
         
-        // 4. 构造返回结果
+        // 5. 构造返回结果
         UserPackageDto packageDto = new UserPackageDto();
         packageDto.setUserInfo(userInfo);
         packageDto.setTunnelPermissions(tunnelPermissions);
         packageDto.setForwards(forwards);
+        packageDto.setStatisticsFlows(statisticsFlows);
         
         return packageDto;
     }
@@ -696,6 +719,104 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private List<UserPackageDto.UserTunnelDetailDto> getTunnelPermissions(Long userId) {
         return userMapper.getUserTunnelDetails(userId.intValue());
     }
+
+    /**
+     * 获取用户最近24小时的流量统计数据，没有数据的时间点补0
+     * 
+     * @param userId 用户ID
+     * @return 最近24小时流量统计列表
+     */
+    private List<StatisticsFlow> getLast24HoursFlowStatistics(Long userId) {
+        try {
+            // 按ID倒序查最近24条记录（ID越大越新，时间就是23:00, 22:00, 21:00...这样倒序）
+            List<StatisticsFlow> recentFlows = statisticsFlowService.list(
+                    new QueryWrapper<StatisticsFlow>()
+                            .eq("user_id", userId)
+                            .orderByDesc("id")
+                            .last("LIMIT 24")
+            );
+            
+            List<StatisticsFlow> result = new ArrayList<>(recentFlows);
+            
+            // 如果查出来的记录不足24条，需要补0和对应的时间
+            if (result.size() < 24) {
+                // 获取最早记录的时间，继续往前推
+                int startHour = getCurrentHour();
+                if (!result.isEmpty()) {
+                    // 从最后一条记录的时间继续往前推
+                    String lastTime = result.get(result.size() - 1).getTime();
+                    startHour = parseHour(lastTime) - 1;
+                }
+                
+                // 补0到24条
+                while (result.size() < 24) {
+                    if (startHour < 0) startHour = 23; // 跨天处理
+                    
+                    StatisticsFlow emptyFlow = new StatisticsFlow();
+                    emptyFlow.setUserId(userId);
+                    emptyFlow.setFlow(0L);
+                    emptyFlow.setTotalFlow(0L);
+                    emptyFlow.setTime(String.format("%02d:00", startHour));
+                    result.add(emptyFlow);
+                    
+                    startHour--;
+                }
+            }
+            
+            log.debug("用户 {} 获取到 {} 条实际记录，补齐为 {} 条24小时记录", userId, recentFlows.size(), result.size());
+            return result;
+            
+        } catch (Exception e) {
+            log.error("获取用户 {} 最近24小时流量统计失败", userId, e);
+            // 返回24条全0数据，时间从当前小时往前推
+            return generateEmpty24HourData(userId);
+        }
+    }
+
+    /**
+     * 获取当前小时（0-23）
+     */
+    private int getCurrentHour() {
+        return java.time.LocalDateTime.now().getHour();
+    }
+
+    /**
+     * 解析时间字符串获取小时数
+     */
+    private int parseHour(String timeStr) {
+        try {
+            if (timeStr != null && timeStr.contains(":")) {
+                return Integer.parseInt(timeStr.split(":")[0]);
+            }
+        } catch (Exception e) {
+            // 解析失败，返回当前小时
+        }
+        return getCurrentHour();
+    }
+
+    /**
+     * 生成24小时全0数据（异常情况使用）
+     */
+    private List<StatisticsFlow> generateEmpty24HourData(Long userId) {
+        List<StatisticsFlow> result = new ArrayList<>();
+        int currentHour = getCurrentHour();
+        
+        for (int i = 0; i < 24; i++) {
+            StatisticsFlow emptyFlow = new StatisticsFlow();
+            emptyFlow.setUserId(userId);
+            emptyFlow.setFlow(0L);
+            emptyFlow.setTotalFlow(0L);
+            emptyFlow.setTime(String.format("%02d:00", currentHour));
+            result.add(emptyFlow);
+            
+            currentHour--;
+            if (currentHour < 0) currentHour = 23;
+        }
+        
+        return result;
+    }
+
+
 
 
 

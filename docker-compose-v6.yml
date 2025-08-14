@@ -36,7 +36,6 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       LOG_DIR: /app/logs
-      SERVER_ADDR: ${SERVER_HOST}
       JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
       - "${BACKEND_PORT}:6365"

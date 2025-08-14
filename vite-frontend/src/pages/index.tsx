@@ -1,27 +1,63 @@
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardBody, CardHeader } from "@heroui/card";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
 
 import { title } from "@/components/primitives";
 import DefaultLayout from "@/layouts/default";
-import { login, LoginData } from "@/api";
+import { login, LoginData, checkCaptcha } from "@/api";
+import "@/utils/tac.css";
+import "@/utils/tac.min.js";
+
 
 interface LoginForm {
   username: string;
   password: string;
+  captchaId: string;
+}
+
+
+
+interface CaptchaConfig {
+  requestCaptchaDataUrl: string;
+  validCaptchaUrl: string;
+  bindEl: string;
+  validSuccess: (res: any, captcha: any, tac: any) => void;
+  validFail?: (res: any, captcha: any, tac: any) => void;
+  btnCloseFun?: (event: any, tac: any) => void;
+  btnRefreshFun?: (event: any, tac: any) => void;
+}
+
+interface CaptchaStyle {
+  logoUrl?: string | null;
+  moveTrackMaskBgColor?: string;
+  moveTrackMaskBorderColor?: string;
 }
 
 export default function IndexPage() {
   const [form, setForm] = useState<LoginForm>({
     username: "",
-    password: ""
+    password: "",
+    captchaId: "",
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<LoginForm>>({});
+  const [showCaptcha, setShowCaptcha] = useState(false);
   const navigate = useNavigate();
+  const tacInstanceRef = useRef<any>(null);
+  const captchaContainerRef = useRef<HTMLDivElement>(null);
+
+  // 清理验证码实例
+  useEffect(() => {
+    return () => {
+      if (tacInstanceRef.current) {
+        tacInstanceRef.current.destroyWindow();
+        tacInstanceRef.current = null;
+      }
+    };
+  }, []);
 
   // 验证表单
   const validateForm = (): boolean => {
@@ -37,6 +73,7 @@ export default function IndexPage() {
       newErrors.password = '密码长度至少6位';
     }
 
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -50,21 +87,81 @@ export default function IndexPage() {
     }
   };
 
-  const handleLogin = async () => {
-    if (!validateForm()) return;
+  // 初始化验证码
+  const initCaptcha = async () => {
+    if (!window.TAC || !captchaContainerRef.current) {
+      return;
+    }
 
-    setLoading(true);
+    try {
+      // 清理之前的验证码实例
+      if (tacInstanceRef.current) {
+        tacInstanceRef.current.destroyWindow();
+        tacInstanceRef.current = null;
+      }
+
+      // 获取API基础URL
+      const baseURL = import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1` : '/api/v1';
+      
+      const config: CaptchaConfig = {
+        requestCaptchaDataUrl: `${baseURL}/captcha/generate`,
+        validCaptchaUrl: `${baseURL}/captcha/verify`, 
+        bindEl: "#captcha-container",
+        validSuccess: (res: any, _: any, tac: any) => {
+          
+
+          form.captchaId = res.data.validToken
+
+          setShowCaptcha(false);
+          tac.destroyWindow();
+          performLogin();
+        },
+        validFail: (_: any, _captcha: any, tac: any) => {
+          toast.error("验证码验证失败，请重试");
+          tac.reloadCaptcha();
+        },
+        btnCloseFun: (_event: any, tac: any) => {
+          setShowCaptcha(false);
+          tac.destroyWindow();
+          setLoading(false);
+        },
+        btnRefreshFun: (_event: any, tac: any) => {
+          tac.reloadCaptcha();
+        }
+      };
+
+      const style: CaptchaStyle = {
+        logoUrl: null, // 去除默认logo
+        moveTrackMaskBgColor: "#0298f8",
+        moveTrackMaskBorderColor: "#0298f8"
+      };
+
+      tacInstanceRef.current = new window.TAC(config, style);
+      tacInstanceRef.current.init();
+
+    } catch (error) {
+      console.error('初始化验证码失败:', error);
+      toast.error('验证码初始化失败，请刷新页面重试');
+      setShowCaptcha(false);
+      setLoading(false);
+    }
+  };
+
+  // 执行登录请求
+  const performLogin = async () => {
+
 
     try {
       const loginData: LoginData = {
         username: form.username.trim(),
-        password: form.password
+        password: form.password,
+        captchaId: form.captchaId,
       };
 
       const response = await login(loginData);
       
       if (response.code !== 0) {
-        toast.error(response.msg || "登陆失败");
+        toast.error(response.msg || "登录失败");
         return;
       }
 
@@ -73,32 +170,64 @@ export default function IndexPage() {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem("role_id", response.data.role_id.toString());
         localStorage.setItem("name", response.data.name);
-        // 设置admin字段 - role_id为0的是管理员
         localStorage.setItem("admin", (response.data.role_id === 0).toString());
         toast.success('检测到默认密码，即将跳转到修改密码页面');
-        // 直接跳转到修改密码页面
         navigate("/change-password");
         return;
       }
 
-      // 保存登陆信息
+      // 保存登录信息
       localStorage.setItem('token', response.data.token);
       localStorage.setItem("role_id", response.data.role_id.toString());
       localStorage.setItem("name", response.data.name);
-      // 设置admin字段 - role_id为0的是管理员
       localStorage.setItem("admin", (response.data.role_id === 0).toString());
 
-      // 登陆成功
-      toast.success('登陆成功');
+      // 登录成功
+      toast.success('登录成功');
       navigate("/dashboard");
 
     } catch (error) {
-      console.error('登陆错误:', error);
+      console.error('登录错误:', error);
       toast.error("网络错误，请稍后重试");
     } finally {
       setLoading(false);
     }
   };
+
+  const handleLogin = async () => {
+    if (!validateForm()) return;
+
+    setLoading(true);
+
+    try {
+      // 先检查是否需要验证码
+      const checkResponse = await checkCaptcha();
+      
+      if (checkResponse.code !== 0) {
+        toast.error("检查验证码状态失败，请重试");
+        setLoading(false);
+        return;
+      }
+
+      // 根据返回值决定是否显示验证码
+      if (checkResponse.data === 0) {
+        // 不需要验证码，直接登录
+        await performLogin();
+      } else {
+        // 需要验证码，显示验证码弹层
+        setShowCaptcha(true);
+        // 延时初始化验证码，确保DOM已渲染
+        setTimeout(() => {
+          initCaptcha();
+        }, 100);
+      }
+    } catch (error) {
+      console.error('检查验证码状态错误:', error);
+      toast.error("网络错误，请稍后重试");
+      setLoading(false);
+    }
+  };
+
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !loading) {
@@ -139,8 +268,8 @@ export default function IndexPage() {
                   variant="bordered"
                   isDisabled={loading}
                   isInvalid={!!errors.password}
-                  errorMessage={errors.password}
                 />
+
                 
                 <Button
                   color="primary"
@@ -150,12 +279,28 @@ export default function IndexPage() {
                   disabled={loading}
                   className="mt-2"
                 >
-                  {loading ? "登陆中..." : "登陆"}
+                  {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
                 </Button>
               </div>
             </CardBody>
           </Card>
         </div>
+
+        {/* 验证码弹层 */}
+        {showCaptcha && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* 背景遮罩层 - 模糊效果 */}
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm captcha-backdrop-enter" />
+           {/* 验证码容器 */}
+           <div className="mb-4">
+                <div 
+                  id="captcha-container" 
+                  ref={captchaContainerRef}
+                  className="w-full flex justify-center"
+                />
+              </div>
+          </div>
+        )}
       </section>
     </DefaultLayout>
   );

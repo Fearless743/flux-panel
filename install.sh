@@ -16,6 +16,15 @@ show_menu() {
   echo "==============================================="
 }
 
+# 删除脚本自身
+delete_self() {
+  echo ""
+  echo "🗑️ 操作已完成，正在清理脚本文件..."
+  SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+  sleep 1
+  rm -f "$SCRIPT_PATH" && echo "✅ 脚本文件已删除" || echo "❌ 删除脚本文件失败"
+}
+
 # 检查并安装 tcpkill
 check_and_install_tcpkill() {
   # 检查 tcpkill 是否已安装
@@ -304,6 +313,7 @@ main() {
   # 如果提供了命令行参数，直接执行安装
   if [[ -n "$SERVER_ADDR" && -n "$SECRET" ]]; then
     install_gost
+    delete_self
     exit 0
   fi
 
@@ -315,18 +325,22 @@ main() {
     case $choice in
       1)
         install_gost
-        break
+        delete_self
+        exit 0
         ;;
       2)
         update_gost
-        break
+        delete_self
+        exit 0
         ;;
       3)
         uninstall_gost
-        break
+        delete_self
+        exit 0
         ;;
       4)
         echo "👋 退出脚本"
+        delete_self
         exit 0
         ;;
       *)

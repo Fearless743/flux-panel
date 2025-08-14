@@ -48,7 +48,7 @@ public class ResetFlowAsync {
      * - 不会影响DelayQueueManager的到期任务对status等其他字段的更新
      * - 避免了并发修改导致的数据覆盖问题
      */
-    @Scheduled(cron = "0 0 0 * * ?")
+    @Scheduled(cron = "5 0 0 * * ?")
     public void reset_flow(){
         log.info("开始执行流量重置任务");
         

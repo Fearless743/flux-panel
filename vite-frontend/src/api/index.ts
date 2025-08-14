@@ -4,6 +4,7 @@ import Network from './network';
 export interface LoginData {
   username: string;
   password: string;
+  captchaId: string;
 }
 
 export interface LoginResponse {
@@ -81,4 +82,10 @@ export const resetUserFlow = (data: { id: number; type: number }) => Network.pos
 export const getConfigs = () => Network.post("/config/list");
 export const getConfigByName = (name: string) => Network.post("/config/get", { name });
 export const updateConfigs = (configMap: Record<string, string>) => Network.post("/config/update", configMap);
-export const updateConfig = (name: string, value: string) => Network.post("/config/update-single", { name, value }); 
+export const updateConfig = (name: string, value: string) => Network.post("/config/update-single", { name, value });
+
+
+// 验证码相关接口
+export const checkCaptcha = () => Network.post("/captcha/check");
+export const generateCaptcha = () => Network.post(`/captcha/generate`);
+export const verifyCaptcha = (data: { captchaId: string; trackData: string }) => Network.post("/captcha/verify", data); 

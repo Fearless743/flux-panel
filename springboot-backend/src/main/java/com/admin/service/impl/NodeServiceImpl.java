@@ -7,10 +7,12 @@ import com.admin.common.dto.NodeUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.entity.Node;
 import com.admin.entity.Tunnel;
+import com.admin.entity.ViteConfig;
 import com.admin.mapper.NodeMapper;
 import com.admin.mapper.TunnelMapper;
 import com.admin.service.NodeService;
 import com.admin.service.TunnelService;
+import com.admin.service.ViteConfigService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -69,8 +71,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     @Lazy
     private TunnelService tunnelService;
 
-    @Value("${server-addr}")
-    private String serverAddr;
+    @Resource
+    ViteConfigService viteConfigService;
+
 
     // ========== 公共接口实现 ==========
 
@@ -321,9 +324,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         }
 
         // 2. 构建安装命令
-        String installCommand = buildInstallCommand(node);
-        
-        return R.ok(installCommand);
+        return buildInstallCommand(node);
     }
 
     /**
@@ -332,7 +333,10 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      * @param node 节点对象
      * @return 格式化的安装命令
      */
-    private String buildInstallCommand(Node node) {
+    private R buildInstallCommand(Node node) {
+        ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ip"));
+        if (viteConfig == null) return R.err("请先前往网站配置中设置ip");
+
         StringBuilder command = new StringBuilder();
         
         // 第一部分：下载安装脚本  
@@ -340,14 +344,14 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                .append(" -o ./install.sh && chmod +x ./install.sh && ");
         
         // 处理服务器地址，如果是IPv6需要添加方括号
-        String processedServerAddr = processServerAddress(serverAddr);
+        String processedServerAddr = processServerAddress(viteConfig.getValue());
         
         // 第二部分：执行安装脚本（去掉-u参数）
         command.append("./install.sh")
                .append(" -a ").append(processedServerAddr)  // 服务器地址
                .append(" -s ").append(node.getSecret());    // 节点密钥
         
-        return command.toString();
+        return R.ok(command.toString());
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.admin.common.dto;
 
+import com.admin.entity.StatisticsFlow;
 import lombok.Data;
 
 import java.util.List;
@@ -24,6 +25,11 @@ public class UserPackageDto {
      * 用户转发列表
      */
     private List<UserForwardDetailDto> forwards;
+
+    /**
+     * 用户转发列表
+     */
+    private List<StatisticsFlow> statisticsFlows;
     
     /**
      * 用户基本信息
