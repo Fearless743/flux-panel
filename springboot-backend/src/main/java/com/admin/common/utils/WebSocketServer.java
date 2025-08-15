@@ -161,7 +161,6 @@ public class WebSocketServer extends TextWebSocketHandler {
                 
                 // 解密数据
                 String decryptedData = crypto.decryptString(encryptedMessage.getData());
-                log.info("🔓 WebSocket消息解密成功");
                 return decryptedData;
             }
         } catch (Exception e) {
@@ -191,7 +190,6 @@ public class WebSocketServer extends TextWebSocketHandler {
                 encryptedMessage.put("data", encryptedData);
                 encryptedMessage.put("timestamp", System.currentTimeMillis());
                 
-                log.info("🔐 WebSocket消息加密成功");
                 return encryptedMessage.toJSONString();
             }
         } catch (Exception e) {

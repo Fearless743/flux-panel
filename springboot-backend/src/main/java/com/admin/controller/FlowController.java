@@ -154,8 +154,7 @@ public class FlowController extends BaseController {
             }
 
             // 记录日志
-            log.info("🔓 节点流量数据接收成功{}", isEncryptedMessage(rawData) ? "（已解密）" : "");
-
+            log.info("节点上报流量数据{}", flowDataList);
             // 4. 处理流量数据
             return processFlowData(flowDataList);
 
@@ -199,7 +198,6 @@ public class FlowController extends BaseController {
 
                 // 解密数据
                 String decryptedData = crypto.decryptString(encryptedMessage.getData());
-                log.info("🔓 数据解密成功");
                 return decryptedData;
             }
         } catch (Exception e) {
