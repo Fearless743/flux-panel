@@ -143,25 +143,19 @@ public class FlowController extends BaseController {
             return SUCCESS_RESPONSE;
         }
 
-        try {
-            // 2. 尝试解密数据
-            String decryptedData = decryptIfNeeded(rawData, secret);
+        // 2. 尝试解密数据
+        String decryptedData = decryptIfNeeded(rawData, secret);
 
-            // 3. 解析为FlowDto列表
-            FlowDto flowDataList = JSONObject.parseObject(decryptedData, FlowDto.class);
-            if (Objects.equals(flowDataList.getN(), "web_api")) {
-                return SUCCESS_RESPONSE;
-            }
-
-            // 记录日志
-            log.info("节点上报流量数据{}", flowDataList);
-            // 4. 处理流量数据
-            return processFlowData(flowDataList);
-
-        } catch (Exception e) {
-            log.error("处理流量数据失败: {}", e.getMessage(), e);
+        // 3. 解析为FlowDto列表
+        FlowDto flowDataList = JSONObject.parseObject(decryptedData, FlowDto.class);
+        if (Objects.equals(flowDataList.getN(), "web_api")) {
             return SUCCESS_RESPONSE;
         }
+
+        // 记录日志
+        log.info("节点上报流量数据{}", flowDataList);
+        // 4. 处理流量数据
+        return processFlowData(flowDataList);
     }
 
     /**

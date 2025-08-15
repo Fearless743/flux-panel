@@ -353,7 +353,6 @@ func (s *defaultService) observeStats(ctx context.Context) {
 			}
 
 			isUpdated := st.IsUpdated()
-			fmt.Println("isUpdated", isUpdated)
 			if isUpdated {
 				inputBytes := st.Get(stats.KindInputBytes)
 				outputBytes := st.Get(stats.KindOutputBytes)

@@ -788,32 +788,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return getCurrentHour();
     }
 
-    /**
-     * 生成24小时全0数据（异常情况使用）
-     */
-    private List<StatisticsFlow> generateEmpty24HourData(Long userId) {
-        List<StatisticsFlow> result = new ArrayList<>();
-        int currentHour = getCurrentHour();
-        
-        for (int i = 0; i < 24; i++) {
-            StatisticsFlow emptyFlow = new StatisticsFlow();
-            emptyFlow.setUserId(userId);
-            emptyFlow.setFlow(0L);
-            emptyFlow.setTotalFlow(0L);
-            emptyFlow.setTime(String.format("%02d:00", currentHour));
-            result.add(emptyFlow);
-            
-            currentHour--;
-            if (currentHour < 0) currentHour = 23;
-        }
-        
-        return result;
-    }
-
-
-
-
-
 
     // ========== 内部数据类 ==========
 

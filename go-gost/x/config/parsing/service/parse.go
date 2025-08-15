@@ -346,20 +346,15 @@ func ParseService(cfg *config.ServiceConfig) (service.Service, error) {
 		handlerLogger.Error("init: ", err)
 		return nil, err
 	}
-	fmt.Println("开始注册观察器")
 	var observer observer.Observer
 	// 如果服务名以_tls结尾，则不启用观察器
 	if strings.HasSuffix(cfg.Name, "_tls") {
 		observer = nil
 		fmt.Println("服务名以_tls结尾，跳过观察器启用")
 	} else if cfg.Observer != "" {
-		fmt.Println("def")
 		observer = registry.ObserverRegistry().Get(cfg.Observer)
 	} else if pStats != nil {
-		fmt.Println("console")
 		observer = registry.ObserverRegistry().Get("console")
-	} else {
-		fmt.Println("err")
 	}
 
 	s := xservice.NewService(cfg.Name, ln, h,
