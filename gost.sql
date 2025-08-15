@@ -94,7 +94,8 @@ CREATE TABLE `statistics_flow` (
   `user_id` int(10) NOT NULL,
   `flow` bigint(20) NOT NULL,
   `total_flow` bigint(20) NOT NULL,
-  `time` varchar(100) NOT NULL
+  `time` varchar(100) NOT NULL,
+  `created_time` bigint(20) NOT NULL,
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------

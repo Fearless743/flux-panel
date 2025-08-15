@@ -10,6 +10,7 @@ import DefaultLayout from "@/layouts/default";
 import { login, LoginData, checkCaptcha } from "@/api";
 import "@/utils/tac.css";
 import "@/utils/tac.min.js";
+import bgImage from "@/images/bg.jpg";
 
 
 interface LoginForm {
@@ -31,6 +32,8 @@ interface CaptchaConfig {
 }
 
 interface CaptchaStyle {
+  btnUrl?: string;
+  bgUrl?: string;
   logoUrl?: string | null;
   moveTrackMaskBgColor?: string;
   moveTrackMaskBorderColor?: string;
@@ -117,7 +120,6 @@ export default function IndexPage() {
           performLogin();
         },
         validFail: (_: any, _captcha: any, tac: any) => {
-          toast.error("验证码验证失败，请重试");
           tac.reloadCaptcha();
         },
         btnCloseFun: (_event: any, tac: any) => {
@@ -130,10 +132,19 @@ export default function IndexPage() {
         }
       };
 
+      // 检测暗黑模式
+      const isDarkMode = document.documentElement.classList.contains('dark') || 
+                        document.documentElement.getAttribute('data-theme') === 'dark' ||
+                        window.matchMedia('(prefers-color-scheme: dark)').matches;
+      
+      // 根据主题调整颜色
+      const trackColor = isDarkMode ? "#4a5568" : "#7db0be"; // 暗黑模式使用更深的灰蓝色
+      
       const style: CaptchaStyle = {
-        logoUrl: null, // 去除默认logo
-        moveTrackMaskBgColor: "#0298f8",
-        moveTrackMaskBorderColor: "#0298f8"
+        bgUrl: bgImage,
+        logoUrl: null,
+        moveTrackMaskBgColor: trackColor,
+        moveTrackMaskBorderColor: trackColor
       };
 
       tacInstanceRef.current = new window.TAC(config, style);
@@ -289,14 +300,20 @@ export default function IndexPage() {
         {/* 验证码弹层 */}
         {showCaptcha && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            {/* 背景遮罩层 - 模糊效果 */}
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm captcha-backdrop-enter" />
+            {/* 背景遮罩层 - 模糊效果，暗黑模式下更深 */}
+            <div className="absolute inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm captcha-backdrop-enter" />
            {/* 验证码容器 */}
            <div className="mb-4">
                 <div 
                   id="captcha-container" 
                   ref={captchaContainerRef}
                   className="w-full flex justify-center"
+                  style={{
+                    filter: document.documentElement.classList.contains('dark') || 
+                           document.documentElement.getAttribute('data-theme') === 'dark' ||
+                           window.matchMedia('(prefers-color-scheme: dark)').matches 
+                           ? 'brightness(0.8) contrast(0.9)' : 'none'
+                  }}
                 />
               </div>
           </div>

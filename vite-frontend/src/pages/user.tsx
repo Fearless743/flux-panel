@@ -988,7 +988,7 @@ export default function UserPage() {
                   aria-label="用户隧道权限列表"
                   classNames={{
                     wrapper: "shadow-none",
-                    th: "bg-gray-50 text-gray-700 font-medium"
+                    th: "bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium"
                   }}
                 >
                   <TableHeader>

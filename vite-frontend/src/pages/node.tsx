@@ -879,21 +879,9 @@ export default function NodePage() {
                 <Alert
                         color="primary"
                         variant="flat"
-                        description="服务器ip是你要添加的服务器的ip地址，不是面板的ip地址"
+                        description="服务器ip是你要添加的服务器的ip地址，不是面板的ip地址。入口ip是用于展示在转发页面，面向用户的访问地址。实在理解不到说明你没这个需求，都填节点的服务器ip就行！"
                         className="mt-4"
                       />
-                <Alert
-                        color="primary"
-                        variant="flat"
-                        description="入口ip是用于展示在转发页面，面向用户的访问地址"
-                        className="mt-4"
-                      />
-                <Alert
-                              color="primary"
-                              variant="flat"
-                              description="实在理解不到说明你没这个需求，都填节点的服务器ip就行"
-                              className="mt-4"
-                            />
               </div>
             </ModalBody>
             <ModalFooter>

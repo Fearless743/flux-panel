@@ -16,6 +16,7 @@ import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @Slf4j
@@ -33,6 +34,19 @@ public class StatisticsFlowAsync {
     public void statistics_flow() {
         LocalDateTime currentHour = LocalDateTime.now().withMinute(0).withSecond(0).withNano(0);
         String hourString = currentHour.format(DateTimeFormatter.ofPattern("HH:mm"));
+        long time = new Date().getTime();
+
+        // 删除48小时前的数据
+        long nowMs = System.currentTimeMillis();
+        long cutoffMs = nowMs - 48L * 60 * 60 * 1000;
+        statisticsFlowService.remove(
+                new LambdaQueryWrapper<StatisticsFlow>()
+                        .lt(StatisticsFlow::getCreateTime, cutoffMs)
+        );
+
+
+
+
 
         List<User> list = userService.list();
         List<StatisticsFlow> statisticsFlowList = new ArrayList<>();
@@ -65,6 +79,7 @@ public class StatisticsFlowAsync {
             statisticsFlow.setFlow(incrementFlow);        
             statisticsFlow.setTotalFlow(currentTotalFlow); 
             statisticsFlow.setTime(hourString);
+            statisticsFlow.setCreateTime(time);
 
             statisticsFlowList.add(statisticsFlow);
         }

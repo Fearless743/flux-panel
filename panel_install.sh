@@ -809,8 +809,32 @@ CREATE TABLE IF NOT EXISTS \`statistics_flow\` (
   \`flow\` bigint(20) NOT NULL,
   \`total_flow\` bigint(20) NOT NULL,
   \`time\` varchar(100) NOT NULL,
+  \`created_time\` bigint(20) NOT NULL,
   PRIMARY KEY (\`id\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- statistics_flow 表：添加 created_time 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'statistics_flow'
+        AND column_name = 'created_time'
+    ),
+    'ALTER TABLE \`statistics_flow\` ADD COLUMN \`created_time\` BIGINT(20) NOT NULL DEFAULT 0 COMMENT "创建时间毫秒时间戳";',
+    'SELECT "Column \`created_time\` already exists in \`statistics_flow\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 为现有记录设置当前毫秒时间戳（仅当 created_time 为 0 或 NULL 时）
+UPDATE \`statistics_flow\`
+SET \`created_time\` = UNIX_TIMESTAMP() * 1000
+WHERE \`created_time\` = 0 OR \`created_time\` IS NULL;
 
 
 
