@@ -95,7 +95,7 @@ CREATE TABLE `statistics_flow` (
   `flow` bigint(20) NOT NULL,
   `total_flow` bigint(20) NOT NULL,
   `time` varchar(100) NOT NULL,
-  `created_time` bigint(20) NOT NULL,
+  `created_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -115,8 +115,8 @@ CREATE TABLE `tunnel` (
   `type` int(10) NOT NULL,
   `protocol` varchar(10) NOT NULL DEFAULT 'tls',
   `flow` int(10) NOT NULL,
-  `tcp_listen_addr` varchar(100) NOT NULL DEFAULT '0.0.0.0',
-  `udp_listen_addr` varchar(100) NOT NULL DEFAULT '0.0.0.0',
+  `tcp_listen_addr` varchar(100) NOT NULL DEFAULT '[::]',
+  `udp_listen_addr` varchar(100) NOT NULL DEFAULT '[::]',
   `interface_name` varchar(200) DEFAULT NULL,
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) NOT NULL,
