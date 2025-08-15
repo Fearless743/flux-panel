@@ -154,7 +154,7 @@ public class FlowController extends BaseController {
             }
 
             // 记录日志
-            log.debug("🔓 节点流量数据接收成功{}", isEncryptedMessage(rawData) ? "（已解密）" : "");
+            log.info("🔓 节点流量数据接收成功{}", isEncryptedMessage(rawData) ? "（已解密）" : "");
 
             // 4. 处理流量数据
             return processFlowData(flowDataList);
@@ -193,18 +193,18 @@ public class FlowController extends BaseController {
                 // 获取或创建加密器
                 AESCrypto crypto = getOrCreateCrypto(secret);
                 if (crypto == null) {
-                    log.warn("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
+                    log.info("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
                     return rawData;
                 }
 
                 // 解密数据
                 String decryptedData = crypto.decryptString(encryptedMessage.getData());
-                log.debug("🔓 数据解密成功");
+                log.info("🔓 数据解密成功");
                 return decryptedData;
             }
         } catch (Exception e) {
             // 解析失败，可能是非加密格式，直接返回原始数据
-            log.debug("数据未加密或解密失败，使用原始数据: {}", e.getMessage());
+            log.info("数据未加密或解密失败，使用原始数据: {}", e.getMessage());
         }
 
         return rawData;

@@ -42,9 +42,9 @@ public class AESCrypto {
             this.secretKey = new SecretKeySpec(keyBytes, ALGORITHM);
             this.secureRandom = new SecureRandom();
             
-            log.debug("AES加密器初始化成功");
+            log.info("AES加密器初始化成功");
         } catch (Exception e) {
-            log.error("AES加密器初始化失败", e);
+            log.info("AES加密器初始化失败", e);
             throw new RuntimeException("AES加密器初始化失败: " + e.getMessage(), e);
         }
     }
@@ -83,7 +83,7 @@ public class AESCrypto {
             return Base64.getEncoder().encodeToString(buffer.array());
             
         } catch (Exception e) {
-            log.error("数据加密失败", e);
+            log.info("数据加密失败", e);
             throw new RuntimeException("数据加密失败: " + e.getMessage(), e);
         }
     }
@@ -137,7 +137,7 @@ public class AESCrypto {
             return cipher.doFinal(ciphertext);
             
         } catch (Exception e) {
-            log.error("数据解密失败", e);
+            log.info("数据解密失败", e);
             throw new RuntimeException("数据解密失败: " + e.getMessage(), e);
         }
     }
@@ -161,7 +161,7 @@ public class AESCrypto {
         try {
             return new AESCrypto(secret);
         } catch (Exception e) {
-            log.error("创建AES加密器失败: {}", e.getMessage());
+            log.info("创建AES加密器失败: {}", e.getMessage());
             return null;
         }
     }

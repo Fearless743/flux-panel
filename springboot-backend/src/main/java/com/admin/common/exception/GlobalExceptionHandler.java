@@ -21,20 +21,20 @@ public class GlobalExceptionHandler {
     public R MethodArgumentNotValidException(MethodArgumentNotValidException e) {
         BindingResult result = e.getBindingResult();
         ObjectError objectError = result.getAllErrors().stream().findFirst().get();
-        log.error("实体校验异常：----------------{}", objectError.getDefaultMessage());
+        log.info("实体校验异常：----------------{}", objectError.getDefaultMessage());
         return R.err(500, objectError.getDefaultMessage());
     }
 
     // 未授权异常捕获
     @ExceptionHandler(value = UnauthorizedException.class)
     public R handleUnauthorizedException(UnauthorizedException e) {
-        log.error("未授权异常：----------------{}", e.getMessage());
+        log.info("未授权异常：----------------{}", e.getMessage());
         return R.err(401, e.getMessage());
     }
 
     @ExceptionHandler(value = Exception.class)
     public R Exception(Exception e){
-        log.error("异常：----------------{}", e.getMessage());
+        log.info("异常：----------------{}", e.getMessage());
         return R.err(-2, e.getMessage());
     }
 

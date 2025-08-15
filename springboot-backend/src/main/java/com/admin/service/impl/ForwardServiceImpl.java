@@ -1060,7 +1060,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         R deleteResult = deleteOldGostServices(existForward, oldTunnel);
         if (deleteResult.getCode() != 0) {
             // 删除失败时记录日志，但不影响后续创建（可能原配置已不存在）
-            log.warn("删除原隧道{}的Gost配置失败: {}", oldTunnel.getId(), deleteResult.getMsg());
+            log.info("删除原隧道{}的Gost配置失败: {}", oldTunnel.getId(), deleteResult.getMsg());
         }
 
         // 3. 创建新的Gost服务配置
@@ -1088,7 +1088,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (!oldNodeInfo.isHasError() && oldNodeInfo.getInNode() != null) {
             GostDto serviceResult = GostUtil.DeleteService(oldNodeInfo.getInNode().getId(), serviceName);
             if (!isGostOperationSuccess(serviceResult)) {
-                log.warn("删除主服务失败: {}", serviceResult.getMsg());
+                log.info("删除主服务失败: {}", serviceResult.getMsg());
             }
         }
 
@@ -1098,7 +1098,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             if (!oldNodeInfo.isHasError() && oldNodeInfo.getInNode() != null) {
                 GostDto chainResult = GostUtil.DeleteChains(oldNodeInfo.getInNode().getId(), serviceName);
                 if (!isGostOperationSuccess(chainResult)) {
-                    log.warn("删除链服务失败: {}", chainResult.getMsg());
+                    log.info("删除链服务失败: {}", chainResult.getMsg());
                 }
             }
 
@@ -1114,7 +1114,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             if (outNode != null) {
                 GostDto remoteResult = GostUtil.DeleteRemoteService(outNode.getId(), serviceName);
                 if (!isGostOperationSuccess(remoteResult)) {
-                    log.warn("删除远程服务失败: {}", remoteResult.getMsg());
+                    log.info("删除远程服务失败: {}", remoteResult.getMsg());
                 }
             }
         }

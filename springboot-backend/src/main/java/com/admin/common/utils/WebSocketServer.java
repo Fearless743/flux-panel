@@ -112,7 +112,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                             }
                         }
                     } catch (Exception e) {
-                        log.error("处理响应消息失败: {}", e.getMessage(), e);
+                        log.info("处理响应消息失败: {}", e.getMessage(), e);
                     }
                 } else {
                     log.info("收到消息: {}", decryptedPayload);
@@ -135,7 +135,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 }
             }
         } catch (Exception e) {
-            log.error("处理WebSocket消息时发生异常: {}", e.getMessage(), e);
+            log.info("处理WebSocket消息时发生异常: {}", e.getMessage(), e);
         }
     }
 
@@ -155,18 +155,18 @@ public class WebSocketServer extends TextWebSocketHandler {
                 // 获取或创建加密器
                 AESCrypto crypto = getOrCreateCrypto(nodeSecret);
                 if (crypto == null) {
-                    log.warn("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
+                    log.info("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
                     return payload;
                 }
                 
                 // 解密数据
                 String decryptedData = crypto.decryptString(encryptedMessage.getData());
-                log.debug("🔓 WebSocket消息解密成功");
+                log.info("🔓 WebSocket消息解密成功");
                 return decryptedData;
             }
         } catch (Exception e) {
             // 解析失败，可能是非加密格式，直接返回原始数据
-            log.debug("WebSocket消息未加密或解密失败，使用原始数据: {}", e.getMessage());
+            log.info("WebSocket消息未加密或解密失败，使用原始数据: {}", e.getMessage());
         }
         
         return payload;
@@ -191,11 +191,11 @@ public class WebSocketServer extends TextWebSocketHandler {
                 encryptedMessage.put("data", encryptedData);
                 encryptedMessage.put("timestamp", System.currentTimeMillis());
                 
-                log.debug("🔐 WebSocket消息加密成功");
+                log.info("🔐 WebSocket消息加密成功");
                 return encryptedMessage.toJSONString();
             }
         } catch (Exception e) {
-            log.warn("⚠️ WebSocket消息加密失败，发送原始数据: {}", e.getMessage());
+            log.info("⚠️ WebSocket消息加密失败，发送原始数据: {}", e.getMessage());
         }
 
         return message;
@@ -232,7 +232,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 // 检查是否已有该节点的连接，如果有则记录日志但直接覆盖
                 WebSocketSession existingSession = nodeSessions.get(nodeId);
                 if (existingSession != null && existingSession.isOpen()) {
-                    log.warn("节点 {} 已有连接存在: {}，新连接将覆盖旧连接", nodeId, existingSession.getId());
+                    log.info("节点 {} 已有连接存在: {}，新连接将覆盖旧连接", nodeId, existingSession.getId());
                     // 清理旧连接的锁对象
                     sessionLocks.remove(existingSession.getId());
                 }
@@ -246,7 +246,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                         log.info("主动关闭节点 {} 的旧连接: {}", nodeId, existingSession.getId());
                         existingSession.close();
                     } catch (Exception e) {
-                        log.error("关闭节点 {} 旧连接失败: {}", nodeId, e.getMessage());
+                        log.info("关闭节点 {} 旧连接失败: {}", nodeId, e.getMessage());
                     }
                 }
                 
@@ -270,17 +270,17 @@ public class WebSocketServer extends TextWebSocketHandler {
                         res.put("data", 1);
                         broadcastMessage(res.toJSONString());
                     } else {
-                        log.error("节点 {} 状态更新失败", nodeId);
+                        log.info("节点 {} 状态更新失败", nodeId);
                     }
                 } else {
-                    log.error("节点 {} 不存在，无法更新状态", nodeId);
+                    log.info("节点 {} 不存在，无法更新状态", nodeId);
                     // 移除无效的会话
                     nodeSessions.remove(nodeId);
                 }
             }
 
         } catch (Exception e) {
-            log.error("建立连接时发生异常: {}", e.getMessage(), e);
+            log.info("建立连接时发生异常: {}", e.getMessage(), e);
             // 异常情况下，确保清理会话
             try {
                 String id = session.getAttributes().get("id").toString();
@@ -288,10 +288,10 @@ public class WebSocketServer extends TextWebSocketHandler {
                 if (Objects.equals(type, "1")) {
                     Long nodeId = Long.valueOf(id);
                     nodeSessions.remove(nodeId);
-                    log.warn("由于异常，移除节点 {} 的会话", nodeId);
+                    log.info("由于异常，移除节点 {} 的会话", nodeId);
                 }
             } catch (Exception cleanupException) {
-                log.error("清理异常会话时出错: {}", cleanupException.getMessage());
+                log.info("清理异常会话时出错: {}", cleanupException.getMessage());
             }
         }
     }
@@ -341,10 +341,10 @@ public class WebSocketServer extends TextWebSocketHandler {
                             res.put("data", 0);
                             broadcastMessage(res.toJSONString());
                         } else {
-                            log.error("节点 {} 状态更新为离线失败", nodeId);
+                            log.info("节点 {} 状态更新为离线失败", nodeId);
                         }
                     } else {
-                        log.warn("节点 {} 不存在，无法更新离线状态", nodeId);
+                        log.info("节点 {} 不存在，无法更新离线状态", nodeId);
                     }
             }
             
@@ -352,7 +352,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             sessionLocks.remove(sessionId);
 
         } catch (Exception e) {
-            log.error("关闭连接时发生异常: {}", e.getMessage(), e);
+            log.info("关闭连接时发生异常: {}", e.getMessage(), e);
         }
     }
 
@@ -383,7 +383,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                         socketSession.sendMessage(new TextMessage(finalMessage));
                     }
                 } catch (Exception e) {
-                    log.error("发送WebSocket消息失败 [sessionId={}]: {}", sessionId, e.getMessage());
+                    log.info("发送WebSocket消息失败 [sessionId={}]: {}", sessionId, e.getMessage());
                     cleanupSession(socketSession);
                 }
             }
@@ -428,14 +428,14 @@ public class WebSocketServer extends TextWebSocketHandler {
         WebSocketSession nodeSession = nodeSessions.get(node_id);
 
         if (nodeSession == null) {
-            log.warn("发送消息失败：节点 {} 不在线或会话不存在", node_id);
+            log.info("发送消息失败：节点 {} 不在线或会话不存在", node_id);
             GostDto result = new GostDto();
             result.setMsg("节点不在线");
             return result;
         }
 
         if (!nodeSession.isOpen()) {
-            log.warn("发送消息失败：节点 {} 连接已断开，清理会话", node_id);
+            log.info("发送消息失败：节点 {} 连接已断开，清理会话", node_id);
             nodeSessions.remove(node_id);
             sessionLocks.remove(nodeSession.getId());
             GostDto result = new GostDto();
@@ -461,7 +461,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             sendToUser(nodeSession, data.toJSONString(), nodeSecret);
             GostDto result = future.get(10, TimeUnit.SECONDS);
             
-            log.debug("成功发送消息到节点 {} 并收到响应: {}", node_id, result.getMsg());
+            log.info("成功发送消息到节点 {} 并收到响应: {}", node_id, result.getMsg());
             return result;
             
         } catch (Exception e) {
@@ -471,10 +471,10 @@ public class WebSocketServer extends TextWebSocketHandler {
             GostDto result = new GostDto();
             if (e instanceof java.util.concurrent.TimeoutException) {
                 result.setMsg("等待响应超时");
-                log.warn("节点 {} 响应超时，可能存在连接问题", node_id);
+                log.info("节点 {} 响应超时，可能存在连接问题", node_id);
             } else {
                 result.setMsg("发送消息失败: " + e.getMessage());
-                log.error("发送消息到节点 {} 失败: {}", node_id, e.getMessage(), e);
+                log.info("发送消息到节点 {} 失败: {}", node_id, e.getMessage(), e);
             }
             return result;
         }

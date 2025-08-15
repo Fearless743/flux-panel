@@ -762,7 +762,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             }
         }
 
-        log.debug("用户 {} 获取到 {} 条实际记录，补齐为 {} 条24小时记录", userId, recentFlows.size(), result.size());
+        log.info("用户 {} 获取到 {} 条实际记录，补齐为 {} 条24小时记录", userId, recentFlows.size(), result.size());
         return result;
 
     }

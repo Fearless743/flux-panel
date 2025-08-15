@@ -74,7 +74,7 @@ public class CheckGostConfigAsync {
                     if (Objects.equals(type, "tcp")) { // 只处理TCP，避免重复处理
                         Forward forward = forwardService.getById(forwardId);
                         if (forward == null) {
-                            log.warn("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
+                            log.info("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
                             GostDto gostDto = GostUtil.DeleteService(node.getId(), forwardId + "_" + userId + "_" + userTunnelId);
                             System.out.println(gostDto);
                         }
@@ -82,7 +82,7 @@ public class CheckGostConfigAsync {
                     if (Objects.equals(type, "tls")) {
                         Forward forward = forwardService.getById(forwardId);
                         if (forward == null) {
-                            log.warn("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
+                            log.info("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
                             GostUtil.DeleteRemoteService(node.getId(), forwardId+"_"+userId+"_"+userTunnelId);
                         }
                     }
@@ -112,7 +112,7 @@ public class CheckGostConfigAsync {
                     if (Objects.equals(type, "chains")) {
                         Forward forward = forwardService.getById(forwardId);
                         if (forward == null) {
-                            log.warn("删除孤立的链: {} (节点: {})", chain.getName(), node.getId());
+                            log.info("删除孤立的链: {} (节点: {})", chain.getName(), node.getId());
                             GostUtil.DeleteChains(node.getId(), forwardId+"_"+userId+"_"+userTunnelId);
                         }
                     }
@@ -134,7 +134,7 @@ public class CheckGostConfigAsync {
             safeExecute(() -> {
                 SpeedLimit speedLimit = speedLimitService.getById(limiter.getName());
                 if (speedLimit == null) {
-                    log.warn("删除孤立的限流器: {} (节点: {})", limiter.getName(), node.getId());
+                    log.info("删除孤立的限流器: {} (节点: {})", limiter.getName(), node.getId());
                     GostUtil.DeleteLimiters(node.getId(), Long.parseLong(limiter.getName()));
                 }
             }, "清理限流器 " + limiter.getName());
@@ -148,7 +148,7 @@ public class CheckGostConfigAsync {
         try {
             operation.run();
         } catch (Exception e) {
-            log.error("执行操作失败: {}", operationDesc, e);
+            log.info("执行操作失败: {}", operationDesc, e);
         }
     }
 

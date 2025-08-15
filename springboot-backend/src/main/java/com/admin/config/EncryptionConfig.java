@@ -57,7 +57,7 @@ public class EncryptionConfig {
     public static void clearCrypto(String secret) {
         if (secret != null) {
             CRYPTO_CACHE.remove(secret);
-            log.debug("已清理密钥对应的加密器实例");
+            log.info("已清理密钥对应的加密器实例");
         }
     }
     

@@ -137,9 +137,9 @@ public class LogAspect {
             );
             
             // 打印单条完整异常日志
-            log.error(errorMessage, ex);
+            log.info(errorMessage, ex);
         } catch (Exception e) {
-            log.error("记录异常日志时出错: {}", e.getMessage());
+            log.info("记录异常日志时出错: {}", e.getMessage());
         }
     }
     
