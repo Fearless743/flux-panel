@@ -215,7 +215,7 @@ export default function IndexPage() {
       const checkResponse = await checkCaptcha();
       
       if (checkResponse.code !== 0) {
-        toast.error("检查验证码状态失败，请重试");
+        toast.error("检查验证码状态失败，请重试" + checkResponse.msg);
         setLoading(false);
         return;
       }
@@ -234,7 +234,7 @@ export default function IndexPage() {
       }
     } catch (error) {
       console.error('检查验证码状态错误:', error);
-      toast.error("网络错误，请稍后重试");
+      toast.error("网络错误，请稍后重试" + error);
       setLoading(false);
     }
   };

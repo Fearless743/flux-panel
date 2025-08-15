@@ -836,9 +836,6 @@ UPDATE \`statistics_flow\`
 SET \`created_time\` = UNIX_TIMESTAMP() * 1000
 WHERE \`created_time\` = 0 OR \`created_time\` IS NULL;
 
-
-
-
 EOF
   
   # 检查数据库容器

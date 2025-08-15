@@ -28,7 +28,7 @@ public class StatisticsFlow  {
 
     private String time;
 
-    private Long createTime;
+    private Long createdTime;
 
 
 }

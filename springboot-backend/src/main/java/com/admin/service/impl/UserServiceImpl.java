@@ -727,50 +727,44 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @return 最近24小时流量统计列表
      */
     private List<StatisticsFlow> getLast24HoursFlowStatistics(Long userId) {
-        try {
-            // 按ID倒序查最近24条记录（ID越大越新，时间就是23:00, 22:00, 21:00...这样倒序）
-            List<StatisticsFlow> recentFlows = statisticsFlowService.list(
-                    new QueryWrapper<StatisticsFlow>()
-                            .eq("user_id", userId)
-                            .orderByDesc("id")
-                            .last("LIMIT 24")
-            );
-            
-            List<StatisticsFlow> result = new ArrayList<>(recentFlows);
-            
-            // 如果查出来的记录不足24条，需要补0和对应的时间
-            if (result.size() < 24) {
-                // 获取最早记录的时间，继续往前推
-                int startHour = getCurrentHour();
-                if (!result.isEmpty()) {
-                    // 从最后一条记录的时间继续往前推
-                    String lastTime = result.get(result.size() - 1).getTime();
-                    startHour = parseHour(lastTime) - 1;
-                }
-                
-                // 补0到24条
-                while (result.size() < 24) {
-                    if (startHour < 0) startHour = 23; // 跨天处理
-                    
-                    StatisticsFlow emptyFlow = new StatisticsFlow();
-                    emptyFlow.setUserId(userId);
-                    emptyFlow.setFlow(0L);
-                    emptyFlow.setTotalFlow(0L);
-                    emptyFlow.setTime(String.format("%02d:00", startHour));
-                    result.add(emptyFlow);
-                    
-                    startHour--;
-                }
+        // 按ID倒序查最近24条记录（ID越大越新，时间就是23:00, 22:00, 21:00...这样倒序）
+        List<StatisticsFlow> recentFlows = statisticsFlowService.list(
+                new QueryWrapper<StatisticsFlow>()
+                        .eq("user_id", userId)
+                        .orderByDesc("id")
+                        .last("LIMIT 24")
+        );
+
+        List<StatisticsFlow> result = new ArrayList<>(recentFlows);
+
+        // 如果查出来的记录不足24条，需要补0和对应的时间
+        if (result.size() < 24) {
+            // 获取最早记录的时间，继续往前推
+            int startHour = getCurrentHour();
+            if (!result.isEmpty()) {
+                // 从最后一条记录的时间继续往前推
+                String lastTime = result.get(result.size() - 1).getTime();
+                startHour = parseHour(lastTime) - 1;
             }
-            
-            log.debug("用户 {} 获取到 {} 条实际记录，补齐为 {} 条24小时记录", userId, recentFlows.size(), result.size());
-            return result;
-            
-        } catch (Exception e) {
-            log.error("获取用户 {} 最近24小时流量统计失败", userId, e);
-            // 返回24条全0数据，时间从当前小时往前推
-            return generateEmpty24HourData(userId);
+
+            // 补0到24条
+            while (result.size() < 24) {
+                if (startHour < 0) startHour = 23; // 跨天处理
+
+                StatisticsFlow emptyFlow = new StatisticsFlow();
+                emptyFlow.setUserId(userId);
+                emptyFlow.setFlow(0L);
+                emptyFlow.setTotalFlow(0L);
+                emptyFlow.setTime(String.format("%02d:00", startHour));
+                result.add(emptyFlow);
+
+                startHour--;
+            }
         }
+
+        log.debug("用户 {} 获取到 {} 条实际记录，补齐为 {} 条24小时记录", userId, recentFlows.size(), result.size());
+        return result;
+
     }
 
     /**
