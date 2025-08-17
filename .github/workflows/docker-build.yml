@@ -60,7 +60,7 @@ jobs:
         if: steps.gost-changes.outputs.gost == 'true'
         working-directory: ./go-gost
         run: |
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
 
       - name: Compress with UPX
         if: steps.gost-changes.outputs.gost == 'true'
