@@ -83,9 +83,10 @@ jobs:
             gh release create gost-latest gost-latest \
               --title "GOST Binary Latest" \
               --notes "GOST binary compiled from commit ${{ github.sha }}
-- Platform: Linux AMD64
-- Compressed with UPX
-- Build date: ${{ github.event.head_commit.timestamp }}" \
+          
+          - Platform: Linux AMD64
+          - Compressed with UPX
+          - Build date: ${{ github.event.head_commit.timestamp }}" \
               --repo ${{ github.repository }}
           fi
 
