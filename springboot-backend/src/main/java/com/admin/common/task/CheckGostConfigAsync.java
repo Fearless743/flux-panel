@@ -89,7 +89,6 @@ public class CheckGostConfigAsync {
                     }
                 }, "清理服务 " + service.getName());
             }
-
         }
 
 
@@ -118,6 +117,7 @@ public class CheckGostConfigAsync {
                     }
                     List<Long> diff = new ArrayList<>(speedLimits_ids);
                     diff.removeAll(limiters_ids);
+                    System.out.println(diff);
                     if (!diff.isEmpty()) {
 
                         for (Long speed_id : diff) {
@@ -164,6 +164,7 @@ public class CheckGostConfigAsync {
                     }
                     List<Long> diff = new ArrayList<>(forward_ids);
                     diff.removeAll(services_ids);
+                    System.out.println(diff);
                     if (!diff.isEmpty()) {
                         for (Long forward_id : diff) {
                             Forward forward = forwardService.getById(forward_id);

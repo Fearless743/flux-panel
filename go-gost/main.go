@@ -115,21 +115,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if runtime.GOOS == "linux" {
-		go func() {
+	// if runtime.GOOS == "linux" {
+	// 	go func() {
 
-			ruleFile := "./rules.yaml"
-			if _, err := os.Stat(ruleFile); os.IsNotExist(err) {
-				if err := os.WriteFile(ruleFile, []byte(""), 0644); err != nil {
-					log.Printf("failed to create rules file: %v", err)
-				} else {
-					log.Printf("created empty rules file: %s", ruleFile)
-				}
-			}
+	// 		ruleFile := "./rules.yaml"
+	// 		if _, err := os.Stat(ruleFile); os.IsNotExist(err) {
+	// 			if err := os.WriteFile(ruleFile, []byte(""), 0644); err != nil {
+	// 				log.Printf("failed to create rules file: %v", err)
+	// 			} else {
+	// 				log.Printf("created empty rules file: %s", ruleFile)
+	// 			}
+	// 		}
 
-			cmd.Execute([]string{ruleFile})
-		}()
-	}
+	// 		cmd.Execute([]string{ruleFile})
+	// 	}()
+	// }
 
 	fmt.Println("✅ 配置加载成功 - addr: %s", config.Addr)
 

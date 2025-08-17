@@ -12,7 +12,7 @@ show_menu() {
   echo "1. 安装"
   echo "2. 更新"  
   echo "3. 卸载"
-  echo "4. 屏蔽协议"
+ # echo "4. 屏蔽协议"
   echo "5. 退出"
   echo "==============================================="
 }
@@ -201,11 +201,11 @@ block_protocol() {
   
   echo "✅ GOST 服务检测通过"
   
-  # 检查并安装 iptables
-  # if ! check_and_install_iptables; then
-  #   echo "❌ iptables 检查失败，无法继续"
-  #   return 1
-  # fi
+  检查并安装 iptables
+  if ! check_and_install_iptables; then
+    echo "❌ iptables 检查失败，无法继续"
+    return 1
+  fi
 
     # 验证 IPv4
   is_ipv4() {
