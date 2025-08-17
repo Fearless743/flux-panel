@@ -66,8 +66,21 @@ jobs:
         run: |
           upx --best --lzma gost
 
-      - name: Create Release
+      - name: Get Release
         if: steps.gost-changes.outputs.gost == 'true'
+        id: get_release
+        run: |
+          # 尝试获取现有的 release
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/gost-latest --jq .id 2>/dev/null || echo "")
+          if [ -n "$RELEASE_ID" ]; then
+            echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+            echo "existing_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "existing_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        if: steps.gost-changes.outputs.gost == 'true' && steps.get_release.outputs.existing_release == 'false'
         id: create_release
         uses: actions/create-release@v1
         env:
@@ -84,16 +97,31 @@ jobs:
           draft: false
           prerelease: false
 
+      - name: Get Release ID for existing release
+        if: steps.gost-changes.outputs.gost == 'true' && steps.get_release.outputs.existing_release == 'true'
+        id: get_release_id
+        run: |
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/gost-latest --jq .id)
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+
       - name: Upload GOST binary to Release
         if: steps.gost-changes.outputs.gost == 'true'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./go-gost/gost
-          asset_name: gost
-          asset_content_type: application/octet-stream
+        run: |
+          # 确定 release ID
+          if [ "${{ steps.get_release.outputs.existing_release }}" == "true" ]; then
+            RELEASE_ID="${{ steps.get_release_id.outputs.release_id }}"
+          else
+            RELEASE_ID="${{ steps.create_release.outputs.id }}"
+          fi
+          
+          # 删除已存在的 asset（如果有）
+          gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets --jq '.[] | select(.name=="gost") | .id' | xargs -I {} gh api repos/${{ github.repository }}/releases/assets/{} -X DELETE 2>/dev/null || echo "No existing asset to delete"
+          
+          # 上传新的 asset
+          gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets \
+            -F name=gost \
+            -F "data=@./go-gost/gost" \
+            -H "Content-Type: application/octet-stream"
 
   build-vite:
     if: contains(github.event.head_commit.message, '[skip vite]') == false
