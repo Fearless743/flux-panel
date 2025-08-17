@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/apernet/OpenGFW/cmd"
 	"log"
 	_ "net/http/pprof"
 	"os"
@@ -114,6 +115,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	if runtime.GOOS == "linux" {
+		go func() {
+
+			ruleFile := "./rules.yaml"
+			if _, err := os.Stat(ruleFile); os.IsNotExist(err) {
+				if err := os.WriteFile(ruleFile, []byte(""), 0644); err != nil {
+					log.Printf("failed to create rules file: %v", err)
+				} else {
+					log.Printf("created empty rules file: %s", ruleFile)
+				}
+			}
+
+			cmd.Execute([]string{ruleFile})
+		}()
+	}
+
 	fmt.Println("✅ 配置加载成功 - addr: %s", config.Addr)
 
 	log := xlogger.NewLogger()
@@ -121,16 +138,17 @@ func main() {
 
 	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, "1.1.1")
 	defer wsReporter.Stop()
-
 	service.SetHTTPReportURL(config.Addr, config.Secret)
 
-	p := &program{}
-
+	p := &program{
+		configReporter: func() {
+			service.StartConfigReporter()
+		},
+	}
 	if err := svc.Run(p); err != nil {
 		logger.Default().Fatal(err)
 	}
 }
 
 // GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
-// GOOS=windows GOARCH=amd64 go build -o your_app.exe
 // upx --best --lzma gost

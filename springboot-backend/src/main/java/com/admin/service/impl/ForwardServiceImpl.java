@@ -17,6 +17,7 @@ import com.alibaba.fastjson.JSONObject;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
@@ -61,6 +62,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Resource
     NodeService nodeService;
+
 
 
     @Override
@@ -231,7 +233,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             // 隧道未变化时：直接更新配置
             gostResult = updateGostServices(updatedForward, tunnel,  permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
         }
-        
+
         if (gostResult.getCode() != 0) {
             return gostResult;
         }
@@ -285,8 +287,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 7. 删除转发记录
         boolean result = this.removeById(id);
         if (result) {
-            // 归还用户转发条数（普通用户才需要归还）
-            returnUserForwardQuota(currentUser);
             return R.ok("端口转发删除成功");
         } else {
             return R.err("端口转发删除失败");
@@ -317,8 +317,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 3. 直接删除转发记录，跳过GOST服务删除
         boolean result = this.removeById(id);
         if (result) {
-            // 归还用户转发条数（普通用户才需要归还）
-            returnUserForwardQuota(currentUser);
             return R.ok("端口转发强制删除成功");
         } else {
             return R.err("端口转发强制删除失败");
@@ -1013,8 +1011,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     /**
      * 更新Gost服务
      */
-    private R updateGostServices(Forward forward, Tunnel tunnel, Integer limiter, 
-                               NodeInfo nodeInfo, UserTunnel userTunnel) {
+    private R updateGostServices(Forward forward, Tunnel tunnel, Integer limiter,  NodeInfo nodeInfo, UserTunnel userTunnel) {
         String serviceName = buildServiceName(forward.getId(), forward.getUserId(), userTunnel);
 
         // 隧道转发需要更新链和远程服务
@@ -1246,20 +1243,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
-     * 归还用户转发配额
-     */
-    private void returnUserForwardQuota(UserInfo currentUser) {
-        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
-            User user = userService.getById(currentUser.getUserId());
-            if (user != null) {
-                user.setNum(user.getNum() + 1);
-                user.setUpdatedTime(System.currentTimeMillis());
-                userService.updateById(user);
-            }
-        }
-    }
-
-    /**
      * 检查Gost操作是否成功
      */
     private boolean isGostOperationSuccess(GostDto gostResult) {
@@ -1390,6 +1373,27 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         int userTunnelId = (userTunnel != null) ? userTunnel.getId() : 0;
         return forwardId + "_" + userId + "_" + userTunnelId;
     }
+
+
+    public void updateForwardA(Forward forward) {
+        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        if (tunnel == null) {
+            return ;
+        }
+        UserTunnel userTunnel = getUserTunnel(forward.getUserId(), tunnel.getId().intValue());
+        NodeInfo nodeInfo = getRequiredNodes(tunnel);
+        if (nodeInfo.isHasError()) {
+            return ;
+        }
+        Integer limiter;
+        if (userTunnel == null) {
+            limiter = null;
+        }else {
+            limiter = userTunnel.getSpeedId();
+        }
+        updateGostServices(forward, tunnel,  limiter, nodeInfo, userTunnel);
+    }
+
 
     // ========== 内部数据类 ==========
 

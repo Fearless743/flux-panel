@@ -3,13 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
-
 	"github.com/go-gost/core/auth"
 	"github.com/go-gost/core/logger"
 	"github.com/go-gost/core/service"
@@ -22,8 +15,12 @@ import (
 	xmetrics "github.com/go-gost/x/metrics"
 	metrics "github.com/go-gost/x/metrics/service"
 	"github.com/go-gost/x/registry"
-	xservice "github.com/go-gost/x/service"
 	"github.com/judwhite/go-svc"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 )
 
 type program struct {
@@ -32,6 +29,7 @@ type program struct {
 	srvProfiling *http.Server
 
 	cancel context.CancelFunc
+	configReporter func() // 配置上报器启动函数
 }
 
 func (p *program) Init(env svc.Environment) error {
@@ -67,6 +65,11 @@ func (p *program) Start() error {
 		return err
 	}
 
+	// 配置加载完成后启动配置上报器
+	if p.configReporter != nil {
+		go p.configReporter()
+	}
+
 	if err := p.run(cfg); err != nil {
 		return err
 	}
@@ -74,16 +77,6 @@ func (p *program) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 	go p.reload(ctx)
-
-	// 延迟启动配置定时上报器（等待30秒让WebSocket连接稳定）
-	go func() {
-		select {
-		case <-time.After(10 * time.Second):
-			xservice.StartConfigReporter(ctx)
-		case <-ctx.Done():
-			return
-		}
-	}()
 
 	return nil
 }

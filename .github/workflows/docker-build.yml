@@ -8,9 +8,75 @@ on:
       - 'vue-frontend/**'
       - 'vite-frontend/**'
       - 'springboot-backend/**'
+      - 'go-gost/**'
       - '.github/workflows/docker-build.yml'
 
 jobs:
+  build-gost:
+    if: contains(github.event.head_commit.message, '[skip gost]') == false
+    name: Build & Compress GOST Binary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for GOST changes
+        uses: dorny/paths-filter@v2
+        id: gost-changes
+        with:
+          filters: |
+            gost:
+              - 'go-gost/**'
+
+      - name: Set up Go
+        if: steps.gost-changes.outputs.gost == 'true'
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        if: steps.gost-changes.outputs.gost == 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install UPX
+        if: steps.gost-changes.outputs.gost == 'true'
+        run: |
+          wget https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
+          tar -xf upx-4.2.1-amd64_linux.tar.xz
+          sudo mv upx-4.2.1-amd64_linux/upx /usr/local/bin/
+          rm -rf upx-4.2.1-amd64_linux*
+
+      - name: Build GOST binary
+        if: steps.gost-changes.outputs.gost == 'true'
+        working-directory: ./go-gost
+        run: |
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
+
+      - name: Compress with UPX
+        if: steps.gost-changes.outputs.gost == 'true'
+        working-directory: ./go-gost
+        run: |
+          upx --best --lzma gost
+
+      - name: Commit and push GOST binary
+        if: steps.gost-changes.outputs.gost == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add go-gost/gost
+          git commit -m "Update GOST binary [skip ci]" || echo "No changes to commit"
+          git push
+
   build-vite:
     if: contains(github.event.head_commit.message, '[skip vite]') == false
     name: Build & Push Vite Frontend

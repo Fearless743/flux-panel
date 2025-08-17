@@ -1,24 +1,18 @@
 package com.admin.common.task;
 
-import com.admin.common.dto.ConfigItem;
-import com.admin.common.dto.GostConfigDto;
-import com.admin.common.dto.GostDto;
+import com.admin.common.dto.*;
+import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
-import com.admin.entity.Forward;
-import com.admin.entity.Node;
-import com.admin.entity.SpeedLimit;
-import com.admin.service.ForwardService;
-import com.admin.service.NodeService;
-import com.admin.service.SpeedLimitService;
+import com.admin.entity.*;
+import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -30,10 +24,17 @@ public class CheckGostConfigAsync {
     private NodeService nodeService;
 
     @Resource
+    @Lazy
     private ForwardService forwardService;
 
     @Resource
+    @Lazy
     private SpeedLimitService speedLimitService;
+
+    @Resource
+    @Lazy
+    private TunnelService tunnelService;
+
 
 
     /**
@@ -53,42 +54,134 @@ public class CheckGostConfigAsync {
      * 清理孤立的服务
      */
     private void cleanOrphanedServices(GostConfigDto gostConfig, Node node) {
-        if (gostConfig.getServices() == null) {
-            return;
+        if (gostConfig.getServices() != null) {
+            for (ConfigItem service : gostConfig.getServices()) {
+                safeExecute(() -> {
+                    if (Objects.equals(service.getName(), "web_api")) {
+                        return; // 排除API服务
+                    }
+
+                    String[] serviceIds = parseServiceName(service.getName());
+                    if (serviceIds.length == 4) {
+                        String forwardId = serviceIds[0];
+                        String userId = serviceIds[1];
+                        String userTunnelId = serviceIds[2];
+                        String type = serviceIds[3];
+
+                        if (Objects.equals(type, "tcp")) { // 只处理TCP，避免重复处理
+                            Forward forward = forwardService.getById(forwardId);
+                            if (forward == null) {
+                                log.info("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
+                                GostDto gostDto = GostUtil.DeleteService(node.getId(), forwardId + "_" + userId + "_" + userTunnelId);
+                                System.out.println(gostDto);
+                            }
+                        }
+
+
+                        if (Objects.equals(type, "tls")) {
+                            Forward forward = forwardService.getById(forwardId);
+                            if (forward == null) {
+                                log.info("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
+                                GostUtil.DeleteRemoteService(node.getId(), forwardId+"_"+userId+"_"+userTunnelId);
+                            }
+                        }
+
+                    }
+                }, "清理服务 " + service.getName());
+            }
+
         }
 
-        
-        for (ConfigItem service : gostConfig.getServices()) {
-            safeExecute(() -> {
-                if (Objects.equals(service.getName(), "web_api")) {
-                    return; // 排除API服务
+
+
+        List<Tunnel> tunnelList = tunnelService.list(new QueryWrapper<Tunnel>().eq("in_node_id", node.getId()));
+
+        try {
+            if (tunnelList != null  && !tunnelList.isEmpty()) {
+                StringBuilder tunnelIds = new StringBuilder();
+                for (Tunnel tunnel : tunnelList) {
+                    tunnelIds.append(tunnel.getId()).append(",");
                 }
-                
-                String[] serviceIds = parseServiceName(service.getName());
-                if (serviceIds.length == 4) {
-                    String forwardId = serviceIds[0];
-                    String userId = serviceIds[1];
-                    String userTunnelId = serviceIds[2];
-                    String type = serviceIds[3];
-                    
-                    if (Objects.equals(type, "tcp")) { // 只处理TCP，避免重复处理
-                        Forward forward = forwardService.getById(forwardId);
-                        if (forward == null) {
-                            log.info("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
-                            GostDto gostDto = GostUtil.DeleteService(node.getId(), forwardId + "_" + userId + "_" + userTunnelId);
-                            System.out.println(gostDto);
+                String ids = tunnelIds.deleteCharAt(tunnelIds.length() - 1).toString();
+                List<SpeedLimit> speedLimits = speedLimitService.list(new QueryWrapper<SpeedLimit>().in("tunnel_id", ids));
+                if (speedLimits != null && !speedLimits.isEmpty()) {
+                    List<ConfigItem> limiters = gostConfig.getLimiters();
+                    List<Long> limiters_ids = new ArrayList<>();
+                    List<Long>  speedLimits_ids = new ArrayList<>();
+                    if (limiters != null){
+                        for (ConfigItem limiter : limiters) {
+                            limiters_ids.add(Long.valueOf(limiter.getName()));
                         }
                     }
-                    if (Objects.equals(type, "tls")) {
-                        Forward forward = forwardService.getById(forwardId);
-                        if (forward == null) {
-                            log.info("删除孤立的服务: {} (节点: {})", service.getName(), node.getId());
-                            GostUtil.DeleteRemoteService(node.getId(), forwardId+"_"+userId+"_"+userTunnelId);
+                    for (SpeedLimit speedLimit : speedLimits) {
+                        speedLimits_ids.add(speedLimit.getId());
+                    }
+                    List<Long> diff = new ArrayList<>(speedLimits_ids);
+                    diff.removeAll(limiters_ids);
+                    if (!diff.isEmpty()) {
+
+                        for (Long speed_id : diff) {
+                            SpeedLimit speedLimit = speedLimitService.getById(speed_id);
+                            if (speedLimit != null) {
+                                SpeedLimitUpdateDto speedLimitUpdateDto = new SpeedLimitUpdateDto();
+                                speedLimitUpdateDto.setId(speed_id);
+                                speedLimitUpdateDto.setName(speedLimit.getName());
+                                speedLimitUpdateDto.setSpeed(speedLimit.getSpeed());
+                                speedLimitUpdateDto.setTunnelId(speedLimit.getTunnelId());
+                                speedLimitUpdateDto.setTunnelName(speedLimit.getTunnelName());
+                                speedLimitService.updateSpeedLimit(speedLimitUpdateDto);
+                            }
                         }
                     }
                 }
-            }, "清理服务 " + service.getName());
+            }
+        }catch (Exception e){
+            log.info("同步限速器" + e.getMessage());
         }
+
+
+
+        try {
+            if (tunnelList != null  && !tunnelList.isEmpty()) {
+                StringBuilder tunnelIds = new StringBuilder();
+                for (Tunnel tunnel : tunnelList) {
+                    tunnelIds.append(tunnel.getId()).append(",");
+                }
+                String ids = tunnelIds.deleteCharAt(tunnelIds.length() - 1).toString();
+                List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().in("tunnel_id", ids));
+                if (forwardList != null && !forwardList.isEmpty()) {
+                    List<ConfigItem> services = gostConfig.getServices();
+                    List<Long> services_ids = new ArrayList<>();
+                    List<Long>  forward_ids = new ArrayList<>();
+                    if (services != null){
+                        for (ConfigItem limiter : services) {
+                            String[] strings = parseServiceName(limiter.getName());
+                            services_ids.add(Long.valueOf(strings[0]));
+                        }
+                    }
+                    for (Forward forward : forwardList) {
+                        forward_ids.add(forward.getId());
+                    }
+                    List<Long> diff = new ArrayList<>(forward_ids);
+                    diff.removeAll(services_ids);
+                    if (!diff.isEmpty()) {
+                        for (Long forward_id : diff) {
+                            Forward forward = forwardService.getById(forward_id);
+                            if (forward != null) {
+                                forwardService.updateForwardA(forward);
+                            }
+
+                        }
+                    }
+
+                }
+
+            }
+        }catch (Exception e){
+            log.info("同步转发" + e.getMessage());
+        }
+
+
     }
 
     /**

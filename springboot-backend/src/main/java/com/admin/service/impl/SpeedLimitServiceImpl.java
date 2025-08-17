@@ -73,6 +73,7 @@ public class SpeedLimitServiceImpl extends ServiceImpl<SpeedLimitMapper, SpeedLi
     // ========== 依赖注入 ==========
     
     @Autowired
+    @Lazy
     private TunnelService tunnelService;
 
     @Autowired
