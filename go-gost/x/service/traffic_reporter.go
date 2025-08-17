@@ -189,8 +189,7 @@ func sendConfigReport(ctx context.Context) (bool, error) {
 }
 
 // StartConfigReporter 启动配置定时上报器（每10分钟上报一次）
-func StartConfigReporter() {
-	ctx, _ := context.WithCancel(context.Background())
+func StartConfigReporter(ctx context.Context) {
 	if configReportURL == "" {
 		fmt.Printf("⚠️ 配置上报URL未设置，跳过定时上报\n")
 		return

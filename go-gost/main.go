@@ -140,11 +140,7 @@ func main() {
 	defer wsReporter.Stop()
 	service.SetHTTPReportURL(config.Addr, config.Secret)
 
-	p := &program{
-		configReporter: func() {
-			service.StartConfigReporter()
-		},
-	}
+	p := &program{}
 	if err := svc.Run(p); err != nil {
 		logger.Default().Fatal(err)
 	}

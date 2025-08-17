@@ -266,7 +266,7 @@ block_protocol() {
   [[ "$block_socks5" == "y" ]] && echo "  - SOCKS5 已屏蔽" || echo "  - SOCKS5 未屏蔽"
 
   # 生成 rules.yaml 文件
-  local file="rules.yaml"
+  local file="/etc/gost/rules.yaml"
   > "$file"
 
   # 构造 IP 排除字符串
