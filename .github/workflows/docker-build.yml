@@ -16,12 +16,8 @@ jobs:
     if: contains(github.event.head_commit.message, '[skip gost]') == false
     name: Build & Compress GOST Binary
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for GOST changes
         uses: dorny/paths-filter@v2
@@ -68,14 +64,34 @@ jobs:
         run: |
           upx --best --lzma gost
 
-      - name: Commit and push GOST binary
+      - name: Create Release
         if: steps.gost-changes.outputs.gost == 'true'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add go-gost/gost
-          git commit -m "Update GOST binary [skip ci]" || echo "No changes to commit"
-          git push
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: gost-latest
+          release_name: GOST Binary Latest
+          body: |
+            GOST binary compiled from commit ${{ github.sha }}
+            
+            - Platform: Linux AMD64
+            - Compressed with UPX
+            - Build date: ${{ github.event.head_commit.timestamp }}
+          draft: false
+          prerelease: false
+
+      - name: Upload GOST binary to Release
+        if: steps.gost-changes.outputs.gost == 'true'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./go-gost/gost
+          asset_name: gost
+          asset_content_type: application/octet-stream
 
   build-vite:
     if: contains(github.event.head_commit.message, '[skip vite]') == false
