@@ -66,59 +66,30 @@ jobs:
         run: |
           upx --best --lzma gost
 
-      - name: Get Release
+      - name: Create or Update Release
         if: steps.gost-changes.outputs.gost == 'true'
-        id: get_release
         run: |
-          # 尝试获取现有的 release
-          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/gost-latest --jq .id 2>/dev/null || echo "")
-          if [ -n "$RELEASE_ID" ]; then
-            echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
-            echo "existing_release=true" >> $GITHUB_OUTPUT
-          else
-            echo "existing_release=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create Release
-        if: steps.gost-changes.outputs.gost == 'true' && steps.get_release.outputs.existing_release == 'false'
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: gost-latest
-          release_name: GOST Binary Latest
-          body: |
-            GOST binary compiled from commit ${{ github.sha }}
+          # 删除已存在的 release 和 tag
+          gh release delete gost-latest --yes 2>/dev/null || echo "No existing release to delete"
+          
+          # 创建新的 release
+          gh release create gost-latest \
+            --title "GOST Binary Latest" \
+            --notes "GOST binary compiled from commit ${{ github.sha }}
             
-            - Platform: Linux AMD64
-            - Compressed with UPX
-            - Build date: ${{ github.event.head_commit.timestamp }}
-          draft: false
-          prerelease: false
-
-      - name: Get Release ID for existing release
-        if: steps.gost-changes.outputs.gost == 'true' && steps.get_release.outputs.existing_release == 'true'
-        id: get_release_id
-        run: |
-          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/gost-latest --jq .id)
-          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          - Platform: Linux AMD64
+          - Compressed with UPX
+          - Build date: ${{ github.event.head_commit.timestamp }}" \
+            --repo ${{ github.repository }}
 
       - name: Upload GOST binary to Release
         if: steps.gost-changes.outputs.gost == 'true'
         run: |
-          # 确定 release ID
-          if [ "${{ steps.get_release.outputs.existing_release }}" == "true" ]; then
-            RELEASE_ID="${{ steps.get_release_id.outputs.release_id }}"
-          else
-            RELEASE_ID="${{ steps.create_release.outputs.id }}"
-          fi
-          
           # 删除已存在的 asset（如果有）
-          gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets --jq '.[] | select(.name=="gost") | .id' | xargs -I {} gh api repos/${{ github.repository }}/releases/assets/{} -X DELETE 2>/dev/null || echo "No existing asset to delete"
+          gh api repos/${{ github.repository }}/releases/tags/gost-latest/assets --jq '.[] | select(.name=="gost") | .id' | xargs -I {} gh api repos/${{ github.repository }}/releases/assets/{} -X DELETE 2>/dev/null || echo "No existing asset to delete"
           
           # 上传新的 asset
-          gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets \
+          gh api repos/${{ github.repository }}/releases/tags/gost-latest/assets \
             -F name=gost \
             -F "data=@./go-gost/gost" \
             -H "Content-Type: application/octet-stream"
