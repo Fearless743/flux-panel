@@ -68,6 +68,8 @@ jobs:
 
       - name: Create or Update Release
         if: steps.gost-changes.outputs.gost == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # 删除已存在的 release 和 tag
           gh release delete gost-latest --yes 2>/dev/null || echo "No existing release to delete"
@@ -84,6 +86,8 @@ jobs:
 
       - name: Upload GOST binary to Release
         if: steps.gost-changes.outputs.gost == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # 删除已存在的 asset（如果有）
           gh api repos/${{ github.repository }}/releases/tags/gost-latest/assets --jq '.[] | select(.name=="gost") | .id' | xargs -I {} gh api repos/${{ github.repository }}/releases/assets/{} -X DELETE 2>/dev/null || echo "No existing asset to delete"
