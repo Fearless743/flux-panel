@@ -71,32 +71,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 删除已存在的 release 和 tag
-          gh release delete gost-latest --yes 2>/dev/null || echo "No existing release to delete"
-          
-          # 创建新的 release
-          gh release create gost-latest \
-            --title "GOST Binary Latest" \
-            --notes "GOST binary compiled from commit ${{ github.sha }}
-            
-          - Platform: Linux AMD64
-          - Compressed with UPX
-          - Build date: ${{ github.event.head_commit.timestamp }}" \
-            --repo ${{ github.repository }}
+          # 确保 tag 指向当前 commit
+          git tag -f gost-latest ${{ github.sha }}
+          git push origin gost-latest --force
 
-      - name: Upload GOST binary to Release
-        if: steps.gost-changes.outputs.gost == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # 删除已存在的 asset（如果有）
-          gh api repos/${{ github.repository }}/releases/tags/gost-latest/assets --jq '.[] | select(.name=="gost") | .id' | xargs -I {} gh api repos/${{ github.repository }}/releases/assets/{} -X DELETE 2>/dev/null || echo "No existing asset to delete"
-          
-          # 上传新的 asset
-          gh api repos/${{ github.repository }}/releases/tags/gost-latest/assets \
-            -F name=gost \
-            -F "data=@./go-gost/gost" \
-            -H "Content-Type: application/octet-stream"
+          # 检查 release 是否存在，不存在则创建
+          if gh release view gost-latest 2>/dev/null; then
+            echo "Release exists, will update assets"
+          else
+            echo "Release not found, creating new release"
+            gh release create gost-latest gost-latest \
+              --title "GOST Binary Latest" \
+              --notes "GOST binary compiled from commit ${{ github.sha }}
+- Platform: Linux AMD64
+- Compressed with UPX
+- Build date: ${{ github.event.head_commit.timestamp }}" \
+              --repo ${{ github.repository }}
+          fi
+
+          # 上传 asset 并覆盖同名文件
+          gh release upload gost-latest ./go-gost/gost --clobber
+
 
   build-vite:
     if: contains(github.event.head_commit.message, '[skip vite]') == false
