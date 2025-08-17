@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/apernet/OpenGFW/cmd"
+	//"github.com/apernet/OpenGFW/cmd"
 	"log"
 	_ "net/http/pprof"
 	"os"
