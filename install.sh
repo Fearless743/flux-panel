@@ -272,25 +272,16 @@ block_protocol() {
   # 构造 IP 排除字符串
   ip_expr=""
   for ip in "${ips[@]}"; do
-    ip_expr+="    ip.src != \"$ip\" && ip.dst != \"$ip\" && "
+    ip_expr+="ip.src != \"$ip\" && "
   done
   ip_expr=${ip_expr% && }
-
-  # 内网和本机流量规则
-  net_expr="!cidr(ip.src, \"127.0.0.0/8\") && !cidr(ip.dst, \"127.0.0.0/8\") &&
-    !cidr(ip.src, \"192.168.0.0/16\") && !cidr(ip.dst, \"192.168.0.0/16\") &&
-    !cidr(ip.src, \"10.0.0.0/8\") && !cidr(ip.dst, \"10.0.0.0/8\") &&
-    !cidr(ip.src, \"172.16.0.0/12\") && !cidr(ip.dst, \"172.16.0.0/12\")"
 
   # 写入规则
   [[ "$block_http" == "y" ]] && cat >> "$file" <<EOF
 - name: block http
   action: block
   log: true
-  expr: >
-    http != nil &&
-    $net_expr &&
-$ip_expr
+  expr: http != nil && $ip_expr
 EOF
 
   [[ "$block_tls" == "y" ]] && cat >> "$file" <<EOF
@@ -298,10 +289,7 @@ EOF
 - name: block tls
   action: block
   log: true
-  expr: >
-    tls != nil &&
-    $net_expr &&
-$ip_expr
+  expr: tls != nil && $ip_expr
 EOF
 
   [[ "$block_socks5" == "y" ]] && cat >> "$file" <<EOF
@@ -309,10 +297,7 @@ EOF
 - name: block socks
   action: block
   log: true
-  expr: >
-    socks != nil &&
-    $net_expr &&
-$ip_expr
+  expr: socks != nil && $ip_expr
 EOF
 
     echo "📝 已生成 $file"
