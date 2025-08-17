@@ -792,10 +792,6 @@ export default function TunnelPage() {
                           <SelectItem key="tls">TLS</SelectItem>
                           <SelectItem key="wss">WSS</SelectItem>
                           <SelectItem key="tcp">TCP</SelectItem>
-                          <SelectItem key="mtls">mTLS</SelectItem>
-                          <SelectItem key="mwss">mWSS</SelectItem>
-                          <SelectItem key="mtcp">mTCP</SelectItem>
-                          <SelectItem key="quic">QUIC</SelectItem>
                         </Select>
 
                         <Select
