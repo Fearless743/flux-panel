@@ -116,10 +116,9 @@ curl -L https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/p
 ---
 
 **⭐ 喝杯咖啡！**
-
-BNB(BEP20): 0x755492c03728851bbf855daa28a1e089f9aca4d1
-TRC20     : TYh2L3xxXpuJhAcBWnt3yiiADiCSJLgUm7
-Aptos     : 0xf2f9fb14749457748506a8281628d556e8540d1eb586d202cd8b02b99d369ef8
+ - BNB(BEP20): 0x755492c03728851bbf855daa28a1e089f9aca4d1
+ - TRC20     : TYh2L3xxXpuJhAcBWnt3yiiADiCSJLgUm7
+ - Aptos     : 0xf2f9fb14749457748506a8281628d556e8540d1eb586d202cd8b02b99d369ef8
 
 
 ---
