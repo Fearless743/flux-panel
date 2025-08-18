@@ -1,5 +1,6 @@
 # 哆啦A梦转发面板
 
+
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://.com/go-gost/x) 两个开源库，实现了转发面板。
 ---
 ## 文档地址
@@ -111,6 +112,16 @@ curl -L https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/p
 作者对因使用本项目所造成的任何直接或间接损失概不负责，也不提供任何形式的担保或技术支持。
 
 请确保在合法、合规、安全的前提下使用本项目。
+
+---
+
+**⭐ 喝杯咖啡！**
+
+BNB(BEP20): 0x755492c03728851bbf855daa28a1e089f9aca4d1
+TRC20     : TYh2L3xxXpuJhAcBWnt3yiiADiCSJLgUm7
+Aptos     : 0xf2f9fb14749457748506a8281628d556e8540d1eb586d202cd8b02b99d369ef8
+
+
 ---
 
 **⭐ 如果这个项目对您有帮助，请给个 Star 支持一下！**
