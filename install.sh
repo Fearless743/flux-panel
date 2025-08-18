@@ -12,8 +12,7 @@ show_menu() {
   echo "1. 安装"
   echo "2. 更新"  
   echo "3. 卸载"
- # echo "4. 屏蔽协议"
-  echo "5. 退出"
+  echo "4. 退出"
   echo "==============================================="
 }
 
@@ -94,232 +93,6 @@ check_and_install_tcpkill() {
   return 0
 }
 
-# 检查并安装 iptables
-check_and_install_iptables() {
-  echo "🔍 检查 iptables..."
-  
-  # 检查 iptables 是否已安装
-  if command -v iptables &> /dev/null; then
-    echo "✅ iptables 已安装"
-    return 0
-  fi
-  
-  echo "📦 iptables 未安装，正在安装..."
-  
-  # 检查是否需要 sudo
-  if [[ $EUID -ne 0 ]]; then
-    SUDO_CMD="sudo"
-  else
-    SUDO_CMD=""
-  fi
-  
-  # 检测操作系统类型
-  OS_TYPE=$(uname -s)
-  
-  if [[ "$OS_TYPE" == "Darwin" ]]; then
-    echo "⚠️  macOS 系统不支持 iptables，请手动安装或使用 pfctl"
-    return 1
-  fi
-  
-  # 检测 Linux 发行版并安装对应的包
-  if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    DISTRO=$ID
-  elif [ -f /etc/redhat-release ]; then
-    DISTRO="rhel"
-  elif [ -f /etc/debian_version ]; then
-    DISTRO="debian"
-  else
-    echo "❌ 无法识别的操作系统"
-    return 1
-  fi
-  
-  case $DISTRO in
-    ubuntu|debian)
-      $SUDO_CMD apt update &> /dev/null
-      $SUDO_CMD apt install -y iptables &> /dev/null
-      ;;
-    centos|rhel|fedora)
-      if command -v dnf &> /dev/null; then
-        $SUDO_CMD dnf install -y iptables &> /dev/null
-      elif command -v yum &> /dev/null; then
-        $SUDO_CMD yum install -y iptables &> /dev/null
-      fi
-      ;;
-    alpine)
-      $SUDO_CMD apk add --no-cache iptables &> /dev/null
-      ;;
-    arch|manjaro)
-      $SUDO_CMD pacman -S --noconfirm iptables &> /dev/null
-      ;;
-    opensuse*|sles)
-      $SUDO_CMD zypper install -y iptables &> /dev/null
-      ;;
-    gentoo)
-      $SUDO_CMD emerge --ask=n net-firewall/iptables &> /dev/null
-      ;;
-    void)
-      $SUDO_CMD xbps-install -Sy iptables &> /dev/null
-      ;;
-  esac
-  
-  # 验证安装
-  if command -v iptables &> /dev/null; then
-    echo "✅ iptables 安装成功"
-    return 0
-  else
-    echo "❌ iptables 安装失败"
-    return 1
-  fi
-}
-
-
-# 屏蔽协议功能
-block_protocol() {
-  echo "🛡️ 屏蔽协议功能"
-  echo "==============================================="
-  
-  # 检查 GOST 是否已安装
-  if [[ ! -d "$INSTALL_DIR" || ! -f "$INSTALL_DIR/gost" ]]; then
-    echo "❌ GOST 服务未安装，请先选择安装选项"
-    echo "💡 提示：请先运行选项 1 安装 GOST 服务"
-    return 1
-  fi
-  
-  # 检查 GOST 服务是否正在运行
-  if ! systemctl is-active --quiet gost; then
-    echo "⚠️  GOST 服务未运行，正在启动..."
-    systemctl start gost
-    sleep 2
-    
-    if ! systemctl is-active --quiet gost; then
-      echo "❌ GOST 服务启动失败，请检查配置"
-      echo "💡 提示：请运行 'journalctl -u gost -f' 查看详细错误信息"
-      return 1
-    fi
-  fi
-  
-  echo "✅ GOST 服务检测通过"
-  
-  检查并安装 iptables
-  if ! check_and_install_iptables; then
-    echo "❌ iptables 检查失败，无法继续"
-    return 1
-  fi
-
-    # 验证 IPv4
-  is_ipv4() {
-    [[ $1 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && return 0 || return 1
-  }
-
-  # 验证 IPv6（简单正则）
-  is_ipv6() {
-    [[ $1 =~ ^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$ ]] && return 0 || return 1
-  }
-
-
-  ips=()  # 用于存储所有输入的 IP
-
-  while true; do
-    read -p "请输入 IP（多个用逗号分隔，输入 n 结束）: " input
-    # 判断是否输入 n
-    if [[ "$input" == "n" ]]; then
-      break
-    fi
-
-    # 使用逗号分割
-    IFS=',' read -ra arr <<< "$input"
-    for ip in "${arr[@]}"; do
-      ip_trimmed=$(echo "$ip" | xargs)  # 去掉首尾空格
-      if [[ -z "$ip_trimmed" ]]; then
-        continue
-      fi
-
-      if is_ipv4 "$ip_trimmed" || is_ipv6 "$ip_trimmed"; then
-        ips+=("$ip_trimmed")
-      else
-        echo "⚠️ 无效 IP: $ip_trimmed"
-      fi
-    done
-  done
-
-  
-  # 打印记录的 IP
-  for ip in "${ips[@]}"; do
-    echo -e "\e[32m$ip\e[0m"
-  done
-
-  echo ""
-  read -p "是否屏蔽 HTTP? (y/n) [n]: " block_http
-  block_http=${block_http:-n}
-
-  read -p "是否屏蔽 TLS? (y/n) [n]: " block_tls
-  block_tls=${block_tls:-n}
-
-  read -p "是否屏蔽 SOCKS5? (y/n) [n]: " block_socks5
-  block_socks5=${block_socks5:-n}
-
-  echo ""
-  echo "🛡️ 屏蔽设置结果:"
-  [[ "$block_http" == "y" ]] && echo "  - HTTP 已屏蔽" || echo "  - HTTP 未屏蔽"
-  [[ "$block_tls" == "y" ]] && echo "  - TLS 已屏蔽" || echo "  - TLS 未屏蔽"
-  [[ "$block_socks5" == "y" ]] && echo "  - SOCKS5 已屏蔽" || echo "  - SOCKS5 未屏蔽"
-
-  # 生成 rules.yaml 文件
-  local file="/etc/gost/rules.yaml"
-  > "$file"
-
-  # 构造 IP 排除字符串
-  ip_expr=""
-  for ip in "${ips[@]}"; do
-    ip_expr+="ip.src != \"$ip\" && "
-  done
-  ip_expr=${ip_expr% && }
-
-  # 写入规则
-  [[ "$block_http" == "y" ]] && cat >> "$file" <<EOF
-- name: block http
-  action: block
-  log: true
-  expr: http != nil && $ip_expr
-EOF
-
-  [[ "$block_tls" == "y" ]] && cat >> "$file" <<EOF
-
-- name: block tls
-  action: block
-  log: true
-  expr: tls != nil && $ip_expr
-EOF
-
-  [[ "$block_socks5" == "y" ]] && cat >> "$file" <<EOF
-
-- name: block socks
-  action: block
-  log: true
-  expr: socks != nil && $ip_expr
-EOF
-
-    echo "📝 已生成 $file"
-  
-  # 重启 GOST 服务
-  echo ""
-  echo "🔄 重启 GOST 服务..."
-  systemctl restart gost
-  echo "5s后检查服务状态"
-  sleep 5
-  # 检查状态
-  echo "检查服务状态..."
-  if systemctl is-active --quiet gost; then
-    echo "✅ 配置完成，gost服务已重启并正常运行。"
-    echo "📁 配置目录: $INSTALL_DIR"
-    echo "🔧 服务状态: $(systemctl is-active gost)"
-  else
-    echo "❌ gost服务启动失败，请执行以下命令查看日志："
-    echo "journalctl -u gost -f"
-  fi
-
-}
 
 # 获取用户输入的配置参数
 get_config_params() {
@@ -370,9 +143,7 @@ install_gost() {
     # 检查并安装 tcpkill
   check_and_install_tcpkill
   
-  # 检查并安装 iptables
-  check_and_install_iptables
-  
+
   mkdir -p "$INSTALL_DIR"
 
   # 停止并禁用已有服务
@@ -477,9 +248,6 @@ update_gost() {
   
   # 检查并安装 tcpkill
   check_and_install_tcpkill
-  
-  # 检查并安装 iptables
-  check_and_install_iptables
   
   # 先下载新版本
   echo "⬇️ 下载最新版本..."

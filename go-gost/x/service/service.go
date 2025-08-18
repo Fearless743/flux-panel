@@ -1,11 +1,15 @@
 package service
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -40,7 +44,24 @@ type options struct {
 	logger         logger.Logger
 }
 
+var isTls = 0
+
+var isHttp = 0
+
+var isSocks = 0
+
+var needWrap = false
+
 type Option func(opts *options)
+
+func init() {
+	_, err := LoadConfig("config.json")
+	fmt.Println("config.json loaded")
+	if err != nil {
+		log.Fatal(err)
+	}
+	needWrap = isTls+isSocks+isHttp > 0
+}
 
 func AdmissionOption(admission admission.Admission) Option {
 	return func(opts *options) {
@@ -138,6 +159,7 @@ func (s *defaultService) Addr() net.Addr {
 }
 
 func (s *defaultService) Serve() error {
+
 	s.execCmds("post-up", s.options.postUp)
 	s.setState(StateReady)
 	s.status.addEvent(Event{
@@ -166,6 +188,7 @@ func (s *defaultService) Serve() error {
 	for {
 		conn, e := s.listener.Accept()
 		if e != nil {
+
 			// TODO: remove Temporary checking
 			if ne, ok := e.(net.Error); ok && ne.Temporary() {
 				if tempDelay == 0 {
@@ -254,6 +277,10 @@ func (s *defaultService) Serve() error {
 				defer func() {
 					v.Observe(float64(time.Since(start).Seconds()))
 				}()
+			}
+
+			if needWrap {
+				conn = wrapConnPDetection(conn)
 			}
 
 			if err := s.handler.Handle(ctx, conn); err != nil {
@@ -405,4 +432,151 @@ type ServiceEvent struct {
 
 func (ServiceEvent) Type() observer.EventType {
 	return observer.EventStatus
+}
+
+func wrapConnPDetection(conn net.Conn) net.Conn {
+	return &detectConn{
+		Conn:   conn,
+		reader: bufio.NewReader(conn),
+	}
+}
+
+type detectConn struct {
+	net.Conn
+	reader   *bufio.Reader
+	detected bool
+}
+
+func (c *detectConn) Read(b []byte) (int, error) {
+	n, err := c.reader.Read(b)
+	if n > 0 && !c.detected {
+		c.detected = true
+		if detectProtocol(b[:n], c.Conn) {
+			return 0, fmt.Errorf("connection blocked")
+		}
+	}
+	return n, err
+}
+
+func detectProtocol(data []byte, conn net.Conn) (blocked bool) {
+	if isHttp == 1 && detectHTTP(data) {
+		conn.Close()
+		return false
+	}
+
+	if isTls == 1 && detectTLS(data) {
+		conn.Close()
+		return true
+	}
+
+	if isSocks == 1 && detectSOCKS(data) {
+		conn.Close()
+		return true
+	}
+
+	return false
+}
+
+func detectHTTP(data []byte) bool {
+	if len(data) < 3 {
+		return false
+	}
+	switch {
+	case len(data) >= 3 && data[0] == 'G' && data[1] == 'E' && data[2] == 'T':
+		return true
+	case len(data) >= 4 && data[0] == 'P' && data[1] == 'O' && data[2] == 'S' && data[3] == 'T':
+		return true
+	case len(data) >= 3 && data[0] == 'P' && data[1] == 'U' && data[2] == 'T':
+		return true
+	case len(data) >= 6 && data[0] == 'D' && data[1] == 'E' && data[2] == 'L' &&
+		data[3] == 'E' && data[4] == 'T' && data[5] == 'E':
+		return true
+	case len(data) >= 4 && data[0] == 'H' && data[1] == 'E' && data[2] == 'A' && data[3] == 'D':
+		return true
+	case len(data) >= 7 && data[0] == 'O' && data[1] == 'P' && data[2] == 'T' &&
+		data[3] == 'I' && data[4] == 'O' && data[5] == 'N' && data[6] == 'S':
+		return true
+	case len(data) >= 5 && data[0] == 'P' && data[1] == 'A' && data[2] == 'T' &&
+		data[3] == 'C' && data[4] == 'H':
+		return true
+	case len(data) >= 7 && data[0] == 'C' && data[1] == 'O' && data[2] == 'N' &&
+		data[3] == 'N' && data[4] == 'E' && data[5] == 'C' && data[6] == 'T': // HTTPS proxy
+		return true
+	default:
+		return false
+	}
+}
+
+func detectTLS(data []byte) bool {
+	if len(data) < 5 {
+		return false
+	}
+	if data[0] == 0x16 && data[1] == 0x03 && data[2] >= 0x01 && data[2] <= 0x04 {
+		return true
+	}
+	return false
+}
+
+func detectSOCKS(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+
+	switch data[0] {
+	case 0x04:
+		if len(data) < 7 {
+			return false
+		}
+		cmd := data[1]
+		if cmd != 0x01 && cmd != 0x02 {
+			return false
+		}
+		return true
+	case 0x05:
+		if len(data) < 2 {
+			return false
+		}
+		nMethods := int(data[1])
+		if len(data) < 2+nMethods {
+			return false
+		}
+		for _, method := range data[2 : 2+nMethods] {
+			if method == 0x00 || method == 0x02 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Config 配置结构体
+type Config struct {
+	Addr   string `json:"addr"`
+	Secret string `json:"secret"`
+	Http   int    `json:"http"`
+	Tls    int    `json:"tls"`
+	Socks  int    `json:"socks"`
+}
+
+func LoadConfig(configPath string) (string, error) {
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("配置文件不存在: %s", configPath)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return "", fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	isTls = config.Tls
+	isSocks = config.Socks
+	isHttp = config.Http
+
+	return "", nil
+
 }
