@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from "@heroui/button";
 
 import { Logo } from '@/components/icons';
@@ -11,15 +11,27 @@ export default function H5SimpleLayout({
   children: React.ReactNode;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // 路由切换时回到顶部，避免上一页滚动位置保留
+  React.useEffect(() => {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    } catch (e) {
+      window.scrollTo(0, 0);
+    }
+    document.body.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+  }, [location.pathname]);
 
   const handleBack = () => {
     navigate('/profile');
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100 dark:bg-black">
+    <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-black">
       {/* 顶部导航栏 */}
-      <header className="bg-white dark:bg-black shadow-sm border-b border-gray-200 dark:border-gray-600 h-14 flex items-center justify-between px-4 relative z-10">
+      <header className="bg-white dark:bg-black shadow-sm border-b border-gray-200 dark:border-gray-600 h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
         <div className="flex items-center gap-2">
           <Button
             isIconOnly
@@ -40,7 +52,7 @@ export default function H5SimpleLayout({
       </header>
 
       {/* 主内容区域 */}
-      <main className="flex-1 overflow-y-auto bg-gray-100 dark:bg-black">
+      <main className="flex-1 bg-gray-100 dark:bg-black pb-0">
         {children}
       </main>
     </div>

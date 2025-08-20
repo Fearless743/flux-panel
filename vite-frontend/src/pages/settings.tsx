@@ -119,7 +119,7 @@ export const SettingsPage = () => {
         loadPanelAddresses();
       }
     } catch (error) {
-      toast.error('添加失败');
+      toast.error('添加失败' + error);
     }
   };
 

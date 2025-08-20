@@ -7,6 +7,16 @@ html, body {
   overflow-x: hidden;
 }
 
+/* 现代浏览器使用 100dvh，避免地址栏收起/展开导致的布局跳动 */
+@supports (height: 100dvh) {
+  .h-screen {
+    height: 100dvh;
+  }
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+}
+
 /* 解决移动端100vh问题 */
 @supports (-webkit-touch-callout: none) {
   .h-screen {
@@ -27,6 +37,21 @@ html, body {
   body {
     overscroll-behavior-y: none;
   }
+}
+
+
+/* 安全区域变量与工具类（适配刘海/底部手势条） */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-top {
+  padding-top: var(--safe-area-top);
+}
+
+.safe-bottom {
+  padding-bottom: var(--safe-area-bottom);
 }
 
 

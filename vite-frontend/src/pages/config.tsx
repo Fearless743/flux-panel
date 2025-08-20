@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
@@ -121,6 +122,7 @@ const getInitialConfigs = (): Record<string, string> => {
 };
 
 export default function ConfigPage() {
+  const navigate = useNavigate();
   const initialConfigs = getInitialConfigs();
   const [configs, setConfigs] = useState<Record<string, string>>(initialConfigs);
   const [loading, setLoading] = useState(Object.keys(initialConfigs).length === 0); // 如果有缓存数据，不显示loading
@@ -132,10 +134,10 @@ export default function ConfigPage() {
   useEffect(() => {
     if (!isAdmin()) {
       toast.error('权限不足，只有管理员可以访问此页面');
-      window.location.href = '/dashboard';
+      navigate('/dashboard', { replace: true });
       return;
     }
-  }, []);
+  }, [navigate]);
 
   // 加载配置数据（优先从缓存）
   const loadConfigs = async (currentConfigs?: Record<string, string>) => {

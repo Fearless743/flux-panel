@@ -95,7 +95,7 @@ export default function ProfilePage() {
   // 退出登录
   const handleLogout = () => {
     safeLogout();
-    window.location.href = '/';
+    navigate('/', { replace: true });
   };
 
   // 密码表单验证

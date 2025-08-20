@@ -98,10 +98,21 @@ export default function H5Layout({
     !item.adminOnly || isAdmin
   );
 
+  // 路由切换时回到页面顶部，避免上一页的滚动位置遗留
+  useEffect(() => {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    } catch (e) {
+      window.scrollTo(0, 0);
+    }
+    document.body.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+  }, [location.pathname]);
+
   return (
-    <div className="flex flex-col h-screen bg-gray-100 dark:bg-black">
+    <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-black">
       {/* 顶部导航栏 */}
-      <header className="bg-white dark:bg-black shadow-sm border-b border-gray-200 dark:border-gray-600 h-14 flex items-center justify-between px-4 relative z-10">
+      <header className="bg-white dark:bg-black shadow-sm border-b border-gray-200 dark:border-gray-600 h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
         <div className="flex items-center gap-2">
           <Logo size={20} />
           <h1 className="text-sm font-bold text-foreground">{siteConfig.name}</h1>
@@ -112,12 +123,15 @@ export default function H5Layout({
       </header>
 
       {/* 主内容区域 */}
-      <main className="flex-1 overflow-y-auto bg-gray-100 dark:bg-black">
+      <main className="flex-1 bg-gray-100 dark:bg-black">
         {children}
       </main>
 
+      {/* 用于给固定 Tabbar 腾出空间的占位元素 */}
+      <div aria-hidden className="h-16 safe-bottom" />
+
       {/* 底部Tabbar */}
-      <nav className="bg-white dark:bg-black border-t border-gray-200 dark:border-gray-600 h-16 flex items-center justify-around px-2 relative z-10">
+      <nav className="bg-white dark:bg-black border-t border-gray-200 dark:border-gray-600 h-16 safe-bottom flex-shrink-0 flex items-center justify-around px-2 fixed bottom-0 left-0 right-0 z-30">
         {filteredTabItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (

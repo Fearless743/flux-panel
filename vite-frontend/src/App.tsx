@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 
 import IndexPage from "@/pages/index";
@@ -58,17 +58,18 @@ const useH5Mode = () => {
   return isH5;
 };
 
-// 简化的路由保护组件 - 使用浏览器重定向避免React循环
+// 简化的路由保护组件 - 使用 React Router 导航避免循环
 const ProtectedRoute = ({ children, useSimpleLayout = false }: { children: React.ReactNode, useSimpleLayout?: boolean }) => {
   const authenticated = isLoggedIn();
   const isH5 = useH5Mode();
+  const navigate = useNavigate();
   
   useEffect(() => {
     if (!authenticated) {
-      // 使用浏览器原生重定向，避免React渲染循环
-      window.location.replace('/');
+      // 使用 React Router 导航，避免无限跳转
+      navigate('/', { replace: true });
     }
-  }, [authenticated]);
+  }, [authenticated, navigate]);
 
   if (!authenticated) {
     return (
@@ -95,13 +96,14 @@ const ProtectedRoute = ({ children, useSimpleLayout = false }: { children: React
 // 登录页面路由组件 - 已登录则重定向到dashboard
 const LoginRoute = () => {
   const authenticated = isLoggedIn();
+  const navigate = useNavigate();
   
   useEffect(() => {
     if (authenticated) {
-      // 使用浏览器原生重定向
-      window.location.replace('/dashboard');
+      // 使用 React Router 导航，避免无限跳转
+      navigate('/dashboard', { replace: true });
     }
-  }, [authenticated]);
+  }, [authenticated, navigate]);
   
   if (authenticated) {
     return (

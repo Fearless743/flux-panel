@@ -1,33 +1,39 @@
 package com.doraemon
 
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.WindowInsetsController
 import androidx.appcompat.app.AppCompatActivity
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.webkit.WebSettings
+import android.webkit.*
+import androidx.webkit.WebViewAssetLoader
 import android.content.res.Configuration
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private lateinit var assetLoader: WebViewAssetLoader
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
+        WebView.setWebContentsDebuggingEnabled(true)
+        setupAssetLoader()
         setupWebView()
         loadUrl()
 
-        // 设置状态栏和导航栏颜色跟随系统主题
         setupSystemBars()
-
-        // 设置根布局背景色
         setupRootBackground()
+    }
+
+    private fun setupAssetLoader() {
+        assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
     }
 
     private fun setupWebView() {
@@ -40,28 +46,22 @@ class MainActivity : AppCompatActivity() {
         settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
-        
-        // 允许加载本地文件
-        settings.allowFileAccess = true
-        settings.allowContentAccess = true
-        settings.allowFileAccessFromFileURLs = true
-        settings.allowUniversalAccessFromFileURLs = true
-        
-        // 设置混合内容模式
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+
+        // 隐藏滚动条但不影响滚动
+        webView.isVerticalScrollBarEnabled = false
+        webView.isHorizontalScrollBarEnabled = false
+        webView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
 
-        // 设置WebView背景色跟随系统主题
         val isDarkTheme = resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
+                Configuration.UI_MODE_NIGHT_MASK ==
+                Configuration.UI_MODE_NIGHT_YES
 
-        if (isDarkTheme) {
-            webView.setBackgroundColor(Color.BLACK)
-        } else {
-            webView.setBackgroundColor(Color.WHITE)
-        }
+        webView.setBackgroundColor(if (isDarkTheme) Color.BLACK else Color.WHITE)
+
 
         // 添加JavaScript接口
         webView.addJavascriptInterface(object {
@@ -138,6 +138,19 @@ class MainActivity : AppCompatActivity() {
         }, "AndroidInterface")
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                val response = request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+                // 👉 fallback: 如果没有匹配静态文件，返回 index.html
+                return response ?: if (request?.url?.path?.startsWith("/assets/") == true) {
+                    assetLoader.shouldInterceptRequest(
+                        Uri.parse("https://appassets.androidplatform.net/assets/index.html")
+                    )
+                } else null
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                 url?.let { view?.loadUrl(it) }
                 return true
@@ -146,48 +159,36 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadUrl() {
-        webView.getSettings().setJavaScriptEnabled(true);
-        webView.getSettings().setAllowFileAccess(true); // 允许访问 assets
-        webView.getSettings().setAllowFileAccessFromFileURLs(true); // Android 4.1+
-        webView.getSettings().setAllowUniversalAccessFromFileURLs(true); // Android 4.1+
-
-        webView.loadUrl("file:///android_asset/index.html")
+        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
     }
 
     private fun setupSystemBars() {
-        // 检测当前是否为暗色主题
         val isDarkTheme = resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
+                Configuration.UI_MODE_NIGHT_MASK ==
+                Configuration.UI_MODE_NIGHT_YES
 
         if (isDarkTheme) {
-            // 暗色主题：深色状态栏，浅色文字
             window.statusBarColor = Color.BLACK
             window.navigationBarColor = Color.BLACK
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 window.insetsController?.setSystemBarsAppearance(
-                    0, // 清除浅色状态栏标志
+                    0,
                     WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
                             WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
                 )
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 @Suppress("DEPRECATION")
                 window.decorView.systemUiVisibility =
-                    window.decorView.systemUiVisibility and
-                            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+                    window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     @Suppress("DEPRECATION")
                     window.decorView.systemUiVisibility =
-                        window.decorView.systemUiVisibility and
-                                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+                        window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
                 }
             }
         } else {
-            // 浅色主题：浅色状态栏，深色文字
             window.statusBarColor = Color.WHITE
             window.navigationBarColor = Color.WHITE
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 window.insetsController?.setSystemBarsAppearance(
                     WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
@@ -214,7 +215,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // 当系统主题变化时，重新设置状态栏、WebView背景色和根布局背景色
         setupSystemBars()
         setupWebViewBackground()
         setupRootBackground()
@@ -222,26 +222,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupWebViewBackground() {
         val isDarkTheme = resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-
-        if (isDarkTheme) {
-            webView.setBackgroundColor(Color.BLACK)
-        } else {
-            webView.setBackgroundColor(Color.WHITE)
-        }
+                Configuration.UI_MODE_NIGHT_MASK ==
+                Configuration.UI_MODE_NIGHT_YES
+        webView.setBackgroundColor(if (isDarkTheme) Color.BLACK else Color.WHITE)
     }
 
     private fun setupRootBackground() {
         val isDarkTheme = resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-
-        val rootView = findViewById<android.view.View>(android.R.id.content)
-        if (isDarkTheme) {
-            rootView.setBackgroundColor(Color.BLACK)
-        } else {
-            rootView.setBackgroundColor(Color.WHITE)
-        }
+                Configuration.UI_MODE_NIGHT_MASK ==
+                Configuration.UI_MODE_NIGHT_YES
+        val rootView = findViewById<View>(android.R.id.content)
+        rootView.setBackgroundColor(if (isDarkTheme) Color.BLACK else Color.WHITE)
     }
 }
