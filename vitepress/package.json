@@ -1,7 +1,7 @@
 {
-  "name": "doraemon-docs",
+  "name": "flux-panel-docs",
   "version": "1.0.0",
-  "description": "哆啦A梦转发面板文档",
+  "description": "flux-panel转发面板文档",
   "type": "module",
   "scripts": {
     "dev": "vitepress dev",

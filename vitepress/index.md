@@ -2,19 +2,19 @@
 layout: home
 
 hero:
-  name: "哆啦A梦"
+  name: "Flux"
   text: "基于gost的转发面板"
   tagline: "功能强大的流量转发管理平台，支持灵活的流量计费和限速功能"
   actions:
     - theme: brand
-      text: "感谢 DreamCloud"
+      text: "DreamCloud"
       link: https://whmcs.as211392.com/
     - theme: brand
       text: 快速开始
       link: /getting-started
     - theme: alt
       text: 查看源码
-      link: https://github.com/bqlpfy/forward-panel
+      link: https://github.com/bqlpfy/flux-panel
 
 features:
   - icon: 🔄
@@ -50,16 +50,15 @@ features:
     details: 支持 Docker Compose 一键部署，简化安装和维护流程
 ---
 
-**[DreamCloud](https://whmcs.as211392.com/)**
 
 ## 社区支持
 
 如果您在使用过程中遇到问题或有功能建议，欢迎：
 
 - 📱 [加入 Telegram 群组](https://t.me/+wdVDni1fdyI0YzE1)
-- 🐛 [报告问题](https://github.com/bqlpfy/forward-panel/issues)
-- 💡 [功能建议](https://github.com/bqlpfy/forward-panel/issues)
-- 🤝 [参与贡献](https://github.com/bqlpfy/forward-panel/pulls)
+- 🐛 [报告问题](https://github.com/bqlpfy/flux-panel/issues)
+- 💡 [功能建议](https://github.com/bqlpfy/flux-panel/issues)
+- 🤝 [参与贡献](https://github.com/bqlpfy/flux-panel/pulls)
 
 ## 免责声明
 

@@ -190,7 +190,7 @@ CREATE TABLE `vite_config` (
 --
 
 INSERT INTO `vite_config` (`id`, `name`, `value`, `time`) VALUES
-(1, 'app_name', '哆啦A梦', 1755147963000);
+(1, 'app_name', 'flux', 1755147963000);
 
 --
 -- 转储表的索引

@@ -10,7 +10,7 @@ const VERSION = "1.2.11";
 const getInitialConfig = () => {
   if (typeof window === 'undefined') {
     return {
-      name: "哆啦A梦",
+      name: "flux-panel",
       version: VERSION,
     };
   }
@@ -23,7 +23,7 @@ const getInitialConfig = () => {
       };
     }
   return {
-    name: "哆啦A梦",
+    name: "flux-panel",
     version: VERSION,
   };
 };

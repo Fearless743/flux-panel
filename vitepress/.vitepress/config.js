@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: '哆啦A梦',
+  title: 'flux-panel',
   description: '基于gost的转发面板',
   
   themeConfig: {
@@ -13,7 +13,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/bqlpfy/forward-panel' },
+      { icon: 'github', link: 'https://github.com/bqlpfy/flux-panel' },
       { icon: 'telegram', link: 'https://t.me/+wdVDni1fdyI0YzE1'}
     ]
   }

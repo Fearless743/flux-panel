@@ -1,4 +1,4 @@
-# 哆啦A梦转发面板
+# flux-panel转发面板
 
 
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
@@ -75,7 +75,7 @@
 #### 快速部署
 
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 
 ```
 
@@ -128,5 +128,5 @@ curl -L https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/p
 
 **⭐ 如果这个项目对您有帮助，请给个 Star 支持一下！**
 
-[![Star History Chart](https://api.star-history.com/svg?repos=bqlpfy/forward-panel&type=Date)](https://www.star-history.com/#bqlpfy/forward-panel&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=bqlpfy/flux-panel&type=Date)](https://www.star-history.com/#bqlpfy/flux-panel&Date)
 

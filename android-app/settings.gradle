@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Doraemon"
+rootProject.name = "Flux"
 include ':app'

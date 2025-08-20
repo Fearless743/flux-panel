@@ -1,4 +1,4 @@
-package com.doraemon
+package com.flux
 
 import org.junit.Test
 

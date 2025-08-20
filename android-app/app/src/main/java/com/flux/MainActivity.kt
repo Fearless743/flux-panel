@@ -1,4 +1,4 @@
-package com.doraemon
+package com.flux
 
 import android.graphics.Color
 import android.net.Uri
@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import android.webkit.*
 import androidx.webkit.WebViewAssetLoader
 import android.content.res.Configuration
+
 
 class MainActivity : AppCompatActivity() {
 

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.doraemon'
+    namespace 'com.flux'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.doraemon"
+        applicationId "com.flux"
         minSdk 24
         targetSdk 34
         versionCode 1
