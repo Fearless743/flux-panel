@@ -18,18 +18,26 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         document.documentElement.classList.remove('dark');
         document.documentElement.style.colorScheme = 'light';
       }
-      // 保存到localStorage
-      localStorage.setItem('heroui-theme', currentTheme);
     };
 
-    // 初始化时检查localStorage
-    const savedTheme = localStorage.getItem('heroui-theme');
-    if (savedTheme && savedTheme !== theme) {
-      setTheme(savedTheme);
+    // 始终跟随系统主题
+    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    if (systemTheme !== theme) {
+      setTheme(systemTheme);
     }
 
     // 监听主题变化
     updateThemeClass(theme);
+
+    // 监听系统主题变化
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleThemeChange = (e: MediaQueryListEvent) => {
+      const newTheme = e.matches ? 'dark' : 'light';
+      setTheme(newTheme);
+    };
+
+    mediaQuery.addEventListener('change', handleThemeChange);
+    return () => mediaQuery.removeEventListener('change', handleThemeChange);
   }, [theme, setTheme]);
 
   return <>{children}</>;

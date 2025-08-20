@@ -235,7 +235,7 @@ public class FlowController extends BaseController {
         String name = buildServiceName(forwardId, userId, userTunnelId);
         if (!Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) { // 非管理员的转发需要检测流量限制
             checkUserRelatedLimits(userId, name);
-            checkUserTunnelRelatedLimits(userTunnelId, name);
+            checkUserTunnelRelatedLimits(userTunnelId, name, userId);
         }
 
         return SUCCESS_RESPONSE;
@@ -272,30 +272,30 @@ public class FlowController extends BaseController {
         pauseService(forwardList, name);
     }
 
-    public void checkUserTunnelRelatedLimits(String userTunnelId, String name) {
+    public void checkUserTunnelRelatedLimits(String userTunnelId, String name, String userId) {
 
         UserTunnel userTunnel = userTunnelService.getById(userTunnelId);
         if (userTunnel == null) return;
         long flow = userTunnel.getInFlow() + userTunnel.getOutFlow();
         if (flow >= userTunnel.getFlow() *  BYTES_TO_GB) {
-            pauseSpecificForward(userTunnel.getTunnelId(), name);
+            pauseSpecificForward(userTunnel.getTunnelId(), name, userId);
             return;
         }
 
         if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
-            pauseSpecificForward(userTunnel.getTunnelId(), name);
+            pauseSpecificForward(userTunnel.getTunnelId(), name, userId);
             return;
         }
 
         if (userTunnel.getStatus() != 1) {
-            pauseSpecificForward(userTunnel.getTunnelId(), name);
+            pauseSpecificForward(userTunnel.getTunnelId(), name, userId);
         }
 
 
     }
 
-    private void pauseSpecificForward(Integer tunnelId, String name) {
-        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelId));
+    private void pauseSpecificForward(Integer tunnelId, String name, String userId) {
+        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelId).eq("user_id", userId));
         pauseService(forwardList, name);
     }
 

@@ -4,7 +4,7 @@ export type SiteConfig = typeof siteConfig;
 
 // 缓存相关常量
 const CACHE_PREFIX = 'vite_config_';
-const VERSION = "1.2.10";
+const VERSION = "1.2.11";
 
 
 const getInitialConfig = () => {

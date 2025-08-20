@@ -12,6 +12,16 @@ DOCKER_COMPOSEV4_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/ref
 DOCKER_COMPOSEV6_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/docker-compose-v6.yml"
 GOST_SQL_URL="https://raw.githubusercontent.com/bqlpfy/forward-panel/refs/heads/main/gost.sql"
 
+COUNTRY=$(curl -s https://ipinfo.io/country)
+if [ "$COUNTRY" = "CN" ]; then
+    # 拼接 URL
+    DOCKER_COMPOSEV4_URL="https://ghfast.top/${DOCKER_COMPOSEV4_URL}"
+    DOCKER_COMPOSEV6_URL="https://ghfast.top/${DOCKER_COMPOSEV6_URL}"
+    GOST_SQL_URL="https://ghfast.top/${GOST_SQL_URL}"
+fi
+
+
+
 # 根据IPv6支持情况选择docker-compose URL
 get_docker_compose_url() {
   if check_ipv6_support > /dev/null 2>&1; then

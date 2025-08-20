@@ -1,5 +1,5 @@
 import { Route, Routes } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import IndexPage from "@/pages/index";
 import ChangePasswordPage from "@/pages/change-password";
@@ -8,15 +8,60 @@ import ForwardPage from "@/pages/forward";
 import TunnelPage from "@/pages/tunnel";
 import NodePage from "@/pages/node";
 import UserPage from "@/pages/user";
+import ProfilePage from "@/pages/profile";
 import LimitPage from "@/pages/limit";
 import ConfigPage from "@/pages/config";
+import { SettingsPage } from "@/pages/settings";
+
+import AdminLayout from "@/layouts/admin";
+import H5Layout from "@/layouts/h5";
+import H5SimpleLayout from "@/layouts/h5-simple";
 
 import { isLoggedIn } from "@/utils/auth";
 import { siteConfig } from "@/config/site";
 
+// 检测是否为H5模式
+const useH5Mode = () => {
+  // 立即检测H5模式，避免初始渲染时的闪屏
+  const getInitialH5Mode = () => {
+    // 检测移动设备或小屏幕
+    const isMobile = window.innerWidth <= 768;
+    // 检测是否为移动端浏览器
+    const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    // 检测URL参数是否包含h5模式
+    const urlParams = new URLSearchParams(window.location.search);
+    const isH5Param = urlParams.get('h5') === 'true';
+    
+    return isMobile || isMobileBrowser || isH5Param;
+  };
+
+  const [isH5, setIsH5] = useState(getInitialH5Mode);
+
+  useEffect(() => {
+    const checkH5Mode = () => {
+      // 检测移动设备或小屏幕
+      const isMobile = window.innerWidth <= 768;
+      // 检测是否为移动端浏览器
+      const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      // 检测URL参数是否包含h5模式
+      const urlParams = new URLSearchParams(window.location.search);
+      const isH5Param = urlParams.get('h5') === 'true';
+      
+      setIsH5(isMobile || isMobileBrowser || isH5Param);
+    };
+
+    window.addEventListener('resize', checkH5Mode);
+    
+    return () => window.removeEventListener('resize', checkH5Mode);
+  }, []);
+
+  return isH5;
+};
+
 // 简化的路由保护组件 - 使用浏览器重定向避免React循环
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const ProtectedRoute = ({ children, useSimpleLayout = false }: { children: React.ReactNode, useSimpleLayout?: boolean }) => {
   const authenticated = isLoggedIn();
+  const isH5 = useH5Mode();
   
   useEffect(() => {
     if (!authenticated) {
@@ -27,13 +72,23 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (!authenticated) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">重定向中...</div>
+      <div className="flex items-center justify-center min-h-screen bg-white dark:bg-black">
+        <div className="text-lg text-gray-700 dark:text-gray-200"></div>
       </div>
     );
   }
 
-  return <>{children}</>;
+  // 根据模式和页面类型选择布局
+  let Layout;
+  if (isH5 && useSimpleLayout) {
+    Layout = H5SimpleLayout;
+  } else if (isH5) {
+    Layout = H5Layout;
+  } else {
+    Layout = AdminLayout;
+  }
+  
+  return <Layout>{children}</Layout>;
 };
 
 
@@ -50,8 +105,8 @@ const LoginRoute = () => {
   
   if (authenticated) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">重定向中...</div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-black">
+        <div className="text-lg text-gray-700 dark:text-gray-200"></div>
       </div>
     );
   }
@@ -130,15 +185,23 @@ function App() {
       <Route 
         path="/user" 
         element={
-          <ProtectedRoute>
+          <ProtectedRoute useSimpleLayout={true}>
             <UserPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/profile" 
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
           </ProtectedRoute>
         } 
       />
       <Route 
         path="/limit" 
         element={
-          <ProtectedRoute>
+          <ProtectedRoute useSimpleLayout={true}>
             <LimitPage />
           </ProtectedRoute>
         } 
@@ -146,10 +209,14 @@ function App() {
       <Route 
         path="/config" 
         element={
-          <ProtectedRoute>
+          <ProtectedRoute useSimpleLayout={true}>
             <ConfigPage />
           </ProtectedRoute>
         } 
+      />
+      <Route 
+        path="/settings" 
+        element={<SettingsPage />}
       />
     </Routes>
   );

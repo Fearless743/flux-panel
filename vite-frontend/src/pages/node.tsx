@@ -9,8 +9,9 @@ import { Spinner } from "@heroui/spinner";
 import { Alert } from "@heroui/alert";
 import { Progress } from "@heroui/progress";
 import toast from 'react-hot-toast';
+import axios from 'axios';
 
-import AdminLayout from "@/layouts/admin";
+
 import { 
   createNode, 
   getNodeList, 
@@ -120,9 +121,9 @@ export default function NodePage() {
       closeWebSocket();
     }
     
-    // 构建WebSocket URL，使用与API相同的地址逻辑
-    let baseUrl = import.meta.env.VITE_API_BASE || window.location.origin;
-    const wsUrl = baseUrl.replace(/^http/, 'ws') + `/system-info?type=0&secret=${localStorage.getItem('token')}`;
+    // 构建WebSocket URL，使用axios的baseURL
+    const baseUrl = axios.defaults.baseURL || (import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/');
+    const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/api\/v1\/$/, '') + `/system-info?type=0&secret=${localStorage.getItem('token')}`;
     
     try {
       websocketRef.current = new WebSocket(wsUrl);
@@ -546,43 +547,23 @@ export default function NodePage() {
   };
 
   return (
-    <AdminLayout>
+    
       <div className="px-3 lg:px-6 py-8">
         {/* 页面头部 */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-foreground">节点管理</h1>
-          <div className="flex gap-2">
-            <Button 
-              color="primary" 
-              onPress={handleAdd}
-              startContent={
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                </svg>
-              }
-            >
-              新增节点
-            </Button>
-          </div>
+        <div className="flex-1">
         </div>
 
-        {/* WebSocket支持说明 */}
-        <div className="mb-6 p-4 bg-warning-50 dark:bg-warning-100/10 border border-warning-200 dark:border-warning-300/20 rounded-lg">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 mt-0.5">
-              <svg className="w-5 h-5 text-warning-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="flex-1">
-
-              <p className="text-sm text-warning-700 dark:text-warning-300">
-                节点实时监控依赖WebSocket连接。如果面板开启了<strong>反向代理</strong>或使用了<strong>CDN</strong>，
-                请确保已开启WebSocket支持，否则节点状态可能不显示节点信息。
-                具体配置方法请自行搜索相关教程或询问AI助手。
-              </p>
-            </div>
-          </div>
+        <Button
+              size="sm"
+              variant="flat"
+              color="primary"
+              onPress={handleAdd}
+             
+            >
+              新增
+            </Button>
+     
         </div>
 
         {/* 节点列表 */}
@@ -954,6 +935,6 @@ export default function NodePage() {
           </ModalContent>
         </Modal>
       </div>
-    </AdminLayout>
+    
   );
 } 

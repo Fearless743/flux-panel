@@ -27,7 +27,7 @@ public class JwtUtil {
     private static String SECRET_KEY;
     
     // token有效期，7天
-    private static final long EXPIRE_TIME = 7 * 24 * 60 * 60 * 1000;
+    private static final long EXPIRE_TIME = 90L * 24 * 60 * 60 * 1000;
     // 算法
     private static final String ALGORITHM = "HmacSHA256";
 

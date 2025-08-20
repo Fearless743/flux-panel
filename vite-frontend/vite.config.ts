@@ -1,10 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import legacy from "@vitejs/plugin-legacy";
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    legacy({
+      targets: ['defaults', 'not IE 11']
+    }),
+    react()
+  ],
+  base: './',    
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -15,11 +21,12 @@ export default defineConfig({
     host: '0.0.0.0'
   },
   build: {
+    target: ['es2015', 'chrome63'],
     outDir: 'dist',
     sourcemap: false,
-    minify: false,       // 先关闭压缩，排查是否压缩导致
+    minify: false,  
     rollupOptions: {
-      treeshake: false,  // 关闭 treeshake（摇树优化），排查是否优化导致
+      treeshake: false,
     }
   }
 });

@@ -9,7 +9,7 @@ import { Select, SelectItem } from "@heroui/select";
 import toast from 'react-hot-toast';
 import { updateConfigs } from '@/api';
 import { SettingsIcon } from '@/components/icons';
-import AdminLayout from "@/layouts/admin";
+
 import { isAdmin } from '@/utils/auth';
 import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/site';
 
@@ -323,16 +323,16 @@ export default function ConfigPage() {
 
   if (loading) {
     return (
-      <AdminLayout>
+      
         <div className="flex items-center justify-center min-h-[400px]">
           <Spinner size="lg" label="加载配置中..." />
         </div>
-      </AdminLayout>
+      
     );
   }
 
   return (
-    <AdminLayout>
+    
       <div className="p-6 max-w-4xl mx-auto">
         {/* 页面标题 */}
         <div className="flex items-center gap-3 mb-6">
@@ -422,6 +422,6 @@ export default function ConfigPage() {
           </Card>
         )}
       </div>
-    </AdminLayout>
+    
   );
 } 

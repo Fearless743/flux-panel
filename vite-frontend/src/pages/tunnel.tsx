@@ -10,7 +10,7 @@ import { Divider } from "@heroui/divider";
 import { Alert } from "@heroui/alert";
 import toast from 'react-hot-toast';
 
-import AdminLayout from "@/layouts/admin";
+
 import { 
   createTunnel, 
   getTunnelList, 
@@ -412,34 +412,35 @@ export default function TunnelPage() {
 
   if (loading) {
     return (
-      <AdminLayout>
+      
         <div className="flex items-center justify-center h-64">
           <div className="flex items-center gap-3">
             <Spinner size="sm" />
             <span className="text-default-600">正在加载...</span>
           </div>
         </div>
-      </AdminLayout>
+      
     );
   }
 
   return (
-    <AdminLayout>
+    
       <div className="px-3 lg:px-6 py-8">
         {/* 页面头部 */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-foreground">隧道管理</h1>
-          <Button 
-            color="primary" 
-            onPress={handleAdd}
-            startContent={
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-            }
-          >
-            新增隧道
-          </Button>
+        <div className="flex-1">
+        </div>
+
+        <Button
+              size="sm"
+              variant="flat"
+              color="primary"
+              onPress={handleAdd}
+             
+            >
+              新增
+            </Button>
+     
         </div>
 
         {/* 隧道卡片网格 */}
@@ -1039,6 +1040,6 @@ export default function TunnelPage() {
           </ModalContent>
         </Modal>
       </div>
-    </AdminLayout>
+    
   );
 } 

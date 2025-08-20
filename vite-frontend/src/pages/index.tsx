@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
+import axios from 'axios';
 
 import { title } from "@/components/primitives";
 import DefaultLayout from "@/layouts/default";
@@ -103,12 +104,12 @@ export default function IndexPage() {
         tacInstanceRef.current = null;
       }
 
-      // 获取API基础URL
-      const baseURL = import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1` : '/api/v1';
+      // 使用axios的baseURL，确保在WebView中使用正确的面板地址
+      const baseURL = axios.defaults.baseURL || (import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/');
       
       const config: CaptchaConfig = {
-        requestCaptchaDataUrl: `${baseURL}/captcha/generate`,
-        validCaptchaUrl: `${baseURL}/captcha/verify`, 
+        requestCaptchaDataUrl: `${baseURL}captcha/generate`,
+        validCaptchaUrl: `${baseURL}captcha/verify`, 
         bindEl: "#captcha-container",
         validSuccess: (res: any, _: any, tac: any) => {
           

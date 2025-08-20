@@ -7,7 +7,6 @@ import { Input } from "@heroui/input";
 import { toast } from 'react-hot-toast';
 
 import { Logo } from '@/components/icons';
-import { ThemeSwitch } from '@/components/theme-switch';
 import { updatePassword } from '@/api';
 import { safeLogout } from '@/utils/logout';
 import { siteConfig } from '@/config/site';
@@ -243,7 +242,7 @@ export default function AdminLayout({
   );
 
   return (
-    <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-gray-50 dark:bg-black`}>
+          <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-gray-100 dark:bg-black`}>
       {/* 移动端遮罩层 */}
       {isMobile && mobileMenuVisible && (
         <div 
@@ -345,9 +344,7 @@ export default function AdminLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <ThemeSwitch />
-            
-                         {/* 用户菜单 */}
+            {/* 用户菜单 */}
              <Dropdown placement="bottom-end">
                <DropdownTrigger>
                  <Button variant="light" className="text-sm font-medium text-foreground">

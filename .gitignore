@@ -254,3 +254,4 @@ gitee/
 # 证书文件
 *.crt
 *.cert
+android-app/app/release/

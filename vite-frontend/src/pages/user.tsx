@@ -48,9 +48,9 @@ import {
   getSpeedLimitList,
   resetUserFlow
 } from '@/api';
-import { SearchIcon, PlusIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
+import { SearchIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
 import { parseDate } from "@internationalized/date";
-import AdminLayout from "@/layouts/admin";
+
 
 // 工具函数
 const formatFlow = (value: number, unit: string = 'bytes'): string => {
@@ -527,13 +527,11 @@ export default function UserPage() {
   );
 
   return (
-    <AdminLayout>
+    
       <div className="px-3 lg:px-6 py-8">
       {/* 页面头部 */}
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <UserIcon className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold">用户管理</h1>
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
@@ -563,13 +561,13 @@ export default function UserPage() {
           </div>
           
           <Button
-            color="primary"
-            startContent={<PlusIcon className="w-4 h-4" />}
-            onClick={handleAdd}
-            className="min-h-8"
-          >
-            新增用户
-          </Button>
+              variant="flat"
+              color="primary"
+              onPress={handleAdd}
+             
+            >
+              新增
+            </Button>
         </div>
       </div>
 
@@ -1436,6 +1434,6 @@ export default function UserPage() {
         </ModalContent>
       </Modal>
       </div>
-    </AdminLayout>
+    
   );
 } 

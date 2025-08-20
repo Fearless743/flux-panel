@@ -31,7 +31,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-import AdminLayout from "@/layouts/admin";
+
 import { 
   createForward, 
   getForwardList, 
@@ -1338,26 +1338,25 @@ export default function ForwardPage() {
 
   if (loading) {
     return (
-      <AdminLayout>
+      
         <div className="flex items-center justify-center h-64">
           <div className="flex items-center gap-3">
             <Spinner size="sm" />
             <span className="text-default-600">正在加载...</span>
           </div>
         </div>
-      </AdminLayout>
+      
     );
   }
 
   const userGroups = groupForwardsByUserAndTunnel();
 
   return (
-    <AdminLayout>
+    
       <div className="px-3 lg:px-6 py-8">
         {/* 页面头部 */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-foreground">转发管理</h1>
           </div>
           <div className="flex items-center gap-3">
             {/* 显示模式切换按钮 */}
@@ -2144,6 +2143,6 @@ export default function ForwardPage() {
           </ModalContent>
         </Modal>
       </div>
-    </AdminLayout>
+    
   );
 } 

@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import toast from 'react-hot-toast';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-import AdminLayout from "@/layouts/admin";
+
 import { getUserPackageInfo } from "@/api";
 
 interface UserInfo {
@@ -574,21 +574,21 @@ export default function DashboardPage() {
 
       if (loading) {
       return (
-        <AdminLayout>
+        
           <div className="px-3 lg:px-6 flex-grow pt-2 lg:pt-4">
             <div className="flex items-center justify-center h-64">
               <div className="flex items-center gap-3">
-                <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full"></div>
+                <div className="animate-spin h-5 w-5 border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 rounded-full"></div>
                 <span className="text-default-600">正在加载数据...</span>
               </div>
             </div>
           </div>
-        </AdminLayout>
+        
       );
     }
 
       return (
-      <AdminLayout>
+      
         <div className="px-3 lg:px-6 py-2 lg:py-4">
 
                           {/* 响应式统计卡片 */}
@@ -950,6 +950,6 @@ export default function DashboardPage() {
           </ModalContent>
         </Modal>
       </div>
-          </AdminLayout>
+          
   );
 } 

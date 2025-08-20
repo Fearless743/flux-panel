@@ -9,6 +9,7 @@ on:
       - 'vite-frontend/**'
       - 'springboot-backend/**'
       - 'go-gost/**'
+      - 'android-app/**'
       - '.github/workflows/docker-build.yml'
 
 jobs:
