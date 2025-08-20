@@ -28,7 +28,7 @@ export function Provider({ children }: ProvidersProps) {
           <Toaster 
             position="top-center"
             toastOptions={{
-              duration: 3000,
+              duration: 2000,
               className: 'dark:bg-gray-800 dark:text-white',
               style: {
                 background: 'var(--toaster-bg, #ffffff)',
@@ -36,12 +36,14 @@ export function Provider({ children }: ProvidersProps) {
                 border: '1px solid var(--toaster-border, #e5e7eb)',
               },
               success: {
+                duration: 2000,
                 style: {
                   background: '#10b981',
                   color: '#ffffff',
                 },
               },
               error: {
+                duration: 2000,
                 style: {
                   background: '#ef4444',
                   color: '#ffffff',
