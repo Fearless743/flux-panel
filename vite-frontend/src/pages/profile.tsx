@@ -8,7 +8,6 @@ import { useNavigate } from 'react-router-dom';
 
 import { updatePassword } from '@/api';
 import { safeLogout } from '@/utils/logout';
-import { siteConfig } from '@/config/site';
 
 interface PasswordForm {
   newUsername: string;
@@ -240,23 +239,6 @@ export default function ProfilePage() {
 
       </div>
 
-      {/* 版权信息 */}
-      <div className="text-center py-4 mt-auto">
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          Powered by{' '}
-          <a 
-            href="https://github.com/bqlpfy/flux-panel" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          >
-            flux-panel
-          </a>
-        </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          v{siteConfig.version}
-        </p>
-      </div>
 
       {/* 修改密码弹窗 */}
       <Modal 

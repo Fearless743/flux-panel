@@ -5,100 +5,40 @@ import { Card, CardBody } from "@heroui/card";
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { reinitializeBaseURL } from '@/api/network';
+import { 
+  getPanelAddresses, 
+  savePanelAddress, 
+  setCurrentPanelAddress, 
+  deletePanelAddress, 
+  validatePanelAddress,
+} from '@/utils/panel';
 
 interface PanelAddress {
   name: string;
-  address: string;
+  address: string;   
+  inx: boolean;
 }
+
 
 export const SettingsPage = () => {
   const navigate = useNavigate();
   const [panelAddresses, setPanelAddresses] = useState<PanelAddress[]>([]);
-  const [currentAddress, setCurrentAddress] = useState<string>('');
   const [newName, setNewName] = useState('');
   const [newAddress, setNewAddress] = useState('');
 
-  // 验证面板地址格式
-  const validatePanelAddress = (address: string): boolean => {
-    try {
-      // 基本格式检查：必须以 http:// 或 https:// 开头
-      if (!address.startsWith('http://') && !address.startsWith('https://')) {
-        return false;
-      }
 
-      // 使用URL构造函数验证完整URL格式
-      const url = new URL(address);
-      
-      // 检查主机名不能为空
-      if (!url.hostname || url.hostname.trim() === '') {
-        return false;
-      }
-      
-      // 检查主机名
-      const hostname = url.hostname;
-      
-      // 支持 localhost
-      if (hostname === 'localhost') {
-        return true;
-      }
-      
-      // 支持 IPv4 地址
-      const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
-      if (ipv4Pattern.test(hostname)) {
-        const parts = hostname.split('.');
-        return parts.every(part => {
-          const num = parseInt(part);
-          return num >= 0 && num <= 255;
-        });
-      }
-      
-      // 支持 IPv6 地址
-      const ipv6Pattern = /^\[([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\]$|^\[([0-9a-fA-F]{1,4}:)*:([0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}\]$/;
-      if (ipv6Pattern.test(hostname)) {
-        return true;
-      }
-      
-      // 支持域名
-      const domainPattern = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
-      if (domainPattern.test(hostname)) {
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      // URL构造函数失败说明格式不正确
-      return false;
-    }
-  };
+  const setPanelAddressesFunc = (newAddress: PanelAddress[]) => {
+    setPanelAddresses(newAddress); 
+  }
 
   // 加载面板地址列表
-  const loadPanelAddresses = () => {
-    try {
-      if (typeof (window as any).AndroidInterface !== 'undefined') {
-        const addressesStr = (window as any).AndroidInterface.getPanelAddresses();
-        const currentAddr = (window as any).AndroidInterface.getCurrentPanelAddress();
-        
-        if (addressesStr && addressesStr.trim()) {
-          const addresses = addressesStr.split(',').filter((item: string) => item.trim()).map((item: string) => {
-            const [name, address] = item.split('|');
-            return { name: name || '未命名', address: address || '' };
-          });
-          setPanelAddresses(addresses);
-        } else {
-          // 如果没有数据或数据为空，清空列表
-          setPanelAddresses([]);
-        }
-        
-        setCurrentAddress(currentAddr || '');
-      }
-    } catch (error) {
-      console.error('加载面板地址失败:', error);
-      setPanelAddresses([]);
-    }
+  const loadPanelAddresses = async () => {
+    (window as any).setPanelAddresses = setPanelAddressesFunc
+    getPanelAddresses();
   };
 
   // 添加新面板地址
-  const addPanelAddress = () => {
+  const addPanelAddress = async () => {
     if (!newName.trim() || !newAddress.trim()) {
       toast.error('请输入名称和地址');
       return;
@@ -109,54 +49,26 @@ export const SettingsPage = () => {
       toast.error('地址格式不正确，请检查：\n• 必须是完整的URL格式\n• 必须以 http:// 或 https:// 开头\n• 支持域名、IPv4、IPv6 地址\n• 端口号范围：1-65535\n• 示例：http://192.168.1.100:3000');
       return;
     }
-
-    try {
-      if (typeof (window as any).AndroidInterface !== 'undefined') {
-        (window as any).AndroidInterface.savePanelAddress(newName.trim(), newAddress.trim());
-        toast.success('添加成功');
-        setNewName('');
-        setNewAddress('');
-        loadPanelAddresses();
-      }
-    } catch (error) {
-      toast.error('添加失败' + error);
-    }
+    (window as any).setPanelAddresses = setPanelAddressesFunc
+    savePanelAddress(newName.trim(), newAddress.trim());
+    setNewName('');
+    setNewAddress('');
+    toast.success('添加成功');
   };
 
   // 设置当前面板地址
-  const setCurrentPanel = (address: string) => {
-    try {
-      if (typeof (window as any).AndroidInterface !== 'undefined') {
-        (window as any).AndroidInterface.setCurrentPanelAddress(address);
-        setCurrentAddress(address);
-        reinitializeBaseURL();
-        toast.success('设置成功，API地址已更新');
-      }
-    } catch (error) {
-      toast.error('设置失败');
-    }
+  const setCurrentPanel = async (name: string) => {
+    (window as any).setPanelAddresses = setPanelAddressesFunc
+    setCurrentPanelAddress(name);
+    reinitializeBaseURL();
   };
 
   // 删除面板地址
-  const deletePanelAddress = (name: string, address: string) => {
-    try {
-      if (typeof (window as any).AndroidInterface !== 'undefined') {
-        (window as any).AndroidInterface.deletePanelAddress(name, address);
-        
-        // 如果删除的是当前选中的地址，重新初始化baseURL
-        if (currentAddress === address) {
-          setCurrentAddress('');
-          reinitializeBaseURL();
-          toast.success('删除成功，当前面板地址已清空');
-        } else {
-          toast.success('删除成功');
-        }
-        
-        loadPanelAddresses();
-      }
-    } catch (error) {
-      toast.error('删除失败');
-    }
+  const handleDeletePanelAddress = async (name: string) => {
+    (window as any).setPanelAddresses = setPanelAddressesFunc
+    deletePanelAddress(name);
+    reinitializeBaseURL();
+    toast.success('删除成功');
   };
 
   // 页面加载时获取数据
@@ -228,7 +140,7 @@ export const SettingsPage = () => {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900 dark:text-white">{panel.name}</span>
-                            {currentAddress === panel.address && (
+                            {panel.inx && (
                               <span className="px-2 py-1 bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300 text-xs rounded">
                                 当前
                               </span>
@@ -237,12 +149,12 @@ export const SettingsPage = () => {
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{panel.address}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {currentAddress !== panel.address && (
+                          {!panel.inx && (
                             <Button
                               size="sm"
                               color="primary"
                               variant="flat"
-                              onClick={() => setCurrentPanel(panel.address)}
+                              onClick={() => setCurrentPanel(panel.name)}
                             >
                               设为当前
                             </Button>
@@ -251,7 +163,7 @@ export const SettingsPage = () => {
                             size="sm"
                             color="danger"
                             variant="light"
-                            onClick={() => deletePanelAddress(panel.name, panel.address)}
+                            onClick={() => handleDeletePanelAddress(panel.name)}
                           >
                             删除
                           </Button>

@@ -1,75 +1,49 @@
 import axios, { AxiosResponse } from 'axios';
-
+import { getPanelAddresses} from '@/utils/panel';
 // 检测是否在WebView中运行
 const isWebView = (): boolean => {
-  try {
-    if (typeof (window as any).AndroidInterface !== 'undefined') {
-      const result = (window as any).AndroidInterface.isWebView();
-      return result === "true";
-    }
-    return false;
-  } catch (error) {
+  if((window as any).JsInterface !== undefined) {
+   return true;
+  }else if((window as any).webkit && (window as any).webkit.messageHandlers) {  
+    return true;
+  }else {
     return false;
   }
 };
 
-// 获取WebView中当前选中的面板地址
-const getWebViewPanelAddress = (): string | null => {
-  try {
-    if (typeof (window as any).AndroidInterface !== 'undefined') {
-      const currentAddress = (window as any).AndroidInterface.getCurrentPanelAddress();
-      // 确保返回的地址不为空且已选中
-      if (currentAddress && currentAddress.trim()) {
-        return currentAddress;
-      }
-      return null;
+interface PanelAddress {
+  name: string;
+  address: string;   
+  inx: boolean;
+}
+
+const setPanelAddressesFunc = (newAddress: PanelAddress[]) => {
+  newAddress.forEach(item => {
+    if (item.inx) {
+      baseURL = `${item.address}/api/v1/`;
+      axios.defaults.baseURL = baseURL;
     }
-    return null;
-  } catch (error) {
-    return null;
-  }
+  });
+}
+
+function getWebViewPanelAddress() {
+  (window as any).setAddresses = setPanelAddressesFunc
+  getPanelAddresses("setAddresses");
 };
 
-// 初始化时获取基础URL
 let baseURL: string = '';
 
-// 重新初始化baseURL的函数
 export const reinitializeBaseURL = () => {
   if (isWebView()) {
-    const panelAddress = getWebViewPanelAddress();
-    if (panelAddress && panelAddress.trim()) {
-      baseURL = `${panelAddress}/api/v1/`;
-      axios.defaults.baseURL = baseURL;
-      return true;
-    } else {
-      baseURL = '';
-      axios.defaults.baseURL = '';
-      return false;
-    }
+    getWebViewPanelAddress();
   } else {
-    // 非WebView环境使用默认配置
     baseURL = import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/';
     axios.defaults.baseURL = baseURL;
-    return true;
   }
 };
 
-// 初始调用
 reinitializeBaseURL();
 
-
-
-// 在开发环境下输出API配置信息
-if (import.meta.env.DEV) {
-  console.log('🌐 API Configuration:');
-  console.log('  - VITE_API_BASE:', import.meta.env.VITE_API_BASE || '(undefined)');
-  console.log('  - Base URL:', baseURL);
-  console.log('  - Environment:', import.meta.env.MODE);
-  console.log('  - Is WebView:', isWebView());
-  if (isWebView()) {
-    console.log('  - WebView Panel Address:', getWebViewPanelAddress() || '(not set)');
-  }
-}
 
 interface ApiResponse<T = any> {
   code: number;

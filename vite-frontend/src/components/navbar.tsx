@@ -18,21 +18,14 @@ export const Navbar = () => {
 
   // 检测是否在WebView中运行
   useEffect(() => {
-    const detectWebView = () => {
-      try {
-        // 尝试调用Android注册的JavaScript接口
-        if (typeof (window as any).AndroidInterface !== 'undefined') {
-          const result = (window as any).AndroidInterface.isWebView();
-          setIsWebView(result === "true");
-        } else {
-          setIsWebView(false);
-        }
-      } catch (error) {
-        setIsWebView(false);
-      }
-    };
-    
-    detectWebView();
+    if((window as any).JsInterface !== undefined) {
+      setIsWebView(true);
+    }else if((window as any).webkit && (window as any).webkit.messageHandlers) {
+      setIsWebView(true);
+    }else {
+      setIsWebView(false);
+    }
+
   }, []);
 
   useEffect(() => {

@@ -59,7 +59,7 @@ const useH5Mode = () => {
 };
 
 // 简化的路由保护组件 - 使用 React Router 导航避免循环
-const ProtectedRoute = ({ children, useSimpleLayout = false }: { children: React.ReactNode, useSimpleLayout?: boolean }) => {
+const ProtectedRoute = ({ children, useSimpleLayout = false, skipLayout = false }: { children: React.ReactNode, useSimpleLayout?: boolean, skipLayout?: boolean }) => {
   const authenticated = isLoggedIn();
   const isH5 = useH5Mode();
   const navigate = useNavigate();
@@ -77,6 +77,11 @@ const ProtectedRoute = ({ children, useSimpleLayout = false }: { children: React
         <div className="text-lg text-gray-700 dark:text-gray-200"></div>
       </div>
     );
+  }
+
+  // 如果跳过布局，直接返回子组件
+  if (skipLayout) {
+    return <>{children}</>;
   }
 
   // 根据模式和页面类型选择布局
@@ -147,7 +152,7 @@ function App() {
       <Route 
         path="/change-password" 
         element={
-          <ProtectedRoute>
+          <ProtectedRoute skipLayout={true}>
             <ChangePasswordPage />
           </ProtectedRoute>
         } 

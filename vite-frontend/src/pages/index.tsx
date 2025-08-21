@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
 import axios from 'axios';
 
+import { siteConfig } from '@/config/site';
 import { title } from "@/components/primitives";
 import DefaultLayout from "@/layouts/default";
 import { login, LoginData, checkCaptcha } from "@/api";
@@ -52,7 +53,7 @@ export default function IndexPage() {
   const navigate = useNavigate();
   const tacInstanceRef = useRef<any>(null);
   const captchaContainerRef = useRef<HTMLDivElement>(null);
-
+  const [isWebView, setIsWebView] = useState(false);
   // 清理验证码实例
   useEffect(() => {
     return () => {
@@ -62,7 +63,16 @@ export default function IndexPage() {
       }
     };
   }, []);
-
+  // 检测是否在WebView中运行
+  useEffect(() => {
+    if((window as any).JsInterface !== undefined) {
+      setIsWebView(true);
+    }else if((window as any).webkit && (window as any).webkit.messageHandlers) {
+      setIsWebView(true);
+    }else {
+      setIsWebView(false);
+    }
+  }, []);
   // 验证表单
   const validateForm = (): boolean => {
     const newErrors: Partial<LoginForm> = {};
@@ -249,7 +259,7 @@ export default function IndexPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 min-h-[calc(100vh-120px)] sm:min-h-[calc(100vh-200px)]">
+      <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 pb-20 min-h-[calc(100vh-120px)] sm:min-h-[calc(100vh-200px)]">
         <div className="w-full max-w-md px-4 sm:px-0">
           <Card className="w-full">
             <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
@@ -297,6 +307,30 @@ export default function IndexPage() {
             </CardBody>
           </Card>
         </div>
+
+
+      {/* 版权信息 - 固定在底部，不占据布局空间 */}
+      
+      {isWebView && (
+               <div className="fixed inset-x-0 bottom-4 text-center py-4">
+               <p className="text-xs text-gray-400 dark:text-gray-500">
+                 Powered by{' '}
+                 <a 
+                   href="https://github.com/bqlpfy/flux-panel" 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                 >
+                   flux-panel
+                 </a>
+               </p>
+               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                 v{siteConfig.app_version}
+               </p>
+             </div>
+          )}
+      
+   
 
         {/* 验证码弹层 */}
         {showCaptcha && (
