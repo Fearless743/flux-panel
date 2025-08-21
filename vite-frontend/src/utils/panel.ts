@@ -38,6 +38,16 @@ export async function deletePanelAddress(name: string){
     }
 }
 
+export function isWebViewFunc(){
+  if((window as any).JsInterface !== undefined && (window as any).JsInterface.getPanelAddresses !== undefined) {
+    return true;
+  }else if((window as any).webkit && (window as any).webkit.messageHandlers && (window as any).webkit.messageHandlers.getPanelAddresses !== undefined) {
+    return true;
+  }else {
+    return false;
+  }
+}
+
 // 验证面板地址格式
 export function validatePanelAddress(address: string): boolean {
   try {

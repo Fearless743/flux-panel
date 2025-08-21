@@ -5,6 +5,7 @@ import {
   NavbarBrand,
   NavbarContent,
 } from "@heroui/navbar";
+import { isWebViewFunc } from '@/utils/panel';
 import { useNavigate } from "react-router-dom";
 
 import { Logo } from "@/components/icons";
@@ -18,13 +19,7 @@ export const Navbar = () => {
 
   // 检测是否在WebView中运行
   useEffect(() => {
-    if((window as any).JsInterface !== undefined) {
-      setIsWebView(true);
-    }else if((window as any).webkit && (window as any).webkit.messageHandlers) {
-      setIsWebView(true);
-    }else {
-      setIsWebView(false);
-    }
+    setIsWebView(isWebViewFunc());
 
   }, []);
 

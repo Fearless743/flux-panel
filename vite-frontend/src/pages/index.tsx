@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
 import axios from 'axios';
-
+import { isWebViewFunc } from '@/utils/panel';
 import { siteConfig } from '@/config/site';
 import { title } from "@/components/primitives";
 import DefaultLayout from "@/layouts/default";
@@ -65,13 +65,7 @@ export default function IndexPage() {
   }, []);
   // 检测是否在WebView中运行
   useEffect(() => {
-    if((window as any).JsInterface !== undefined) {
-      setIsWebView(true);
-    }else if((window as any).webkit && (window as any).webkit.messageHandlers) {
-      setIsWebView(true);
-    }else {
-      setIsWebView(false);
-    }
+    setIsWebView(isWebViewFunc());
   }, []);
   // 验证表单
   const validateForm = (): boolean => {
@@ -259,7 +253,7 @@ export default function IndexPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 pb-20 min-h-[calc(100vh-120px)] sm:min-h-[calc(100vh-200px)]">
+      <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 pb-20 min-h-[calc(100dvh-120px)] sm:min-h-[calc(100dvh-200px)]">
         <div className="w-full max-w-md px-4 sm:px-0">
           <Card className="w-full">
             <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
@@ -311,7 +305,6 @@ export default function IndexPage() {
 
       {/* 版权信息 - 固定在底部，不占据布局空间 */}
       
-      {isWebView && (
                <div className="fixed inset-x-0 bottom-4 text-center py-4">
                <p className="text-xs text-gray-400 dark:text-gray-500">
                  Powered by{' '}
@@ -325,10 +318,9 @@ export default function IndexPage() {
                  </a>
                </p>
                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                 v{siteConfig.app_version}
+                 v{ isWebView ? siteConfig.app_version : siteConfig.version}
                </p>
              </div>
-          )}
       
    
 

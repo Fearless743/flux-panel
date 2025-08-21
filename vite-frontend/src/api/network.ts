@@ -1,15 +1,6 @@
 import axios, { AxiosResponse } from 'axios';
-import { getPanelAddresses} from '@/utils/panel';
-// 检测是否在WebView中运行
-const isWebView = (): boolean => {
-  if((window as any).JsInterface !== undefined) {
-   return true;
-  }else if((window as any).webkit && (window as any).webkit.messageHandlers) {  
-    return true;
-  }else {
-    return false;
-  }
-};
+import { getPanelAddresses, isWebViewFunc} from '@/utils/panel';
+
 
 interface PanelAddress {
   name: string;
@@ -34,7 +25,7 @@ function getWebViewPanelAddress() {
 let baseURL: string = '';
 
 export const reinitializeBaseURL = () => {
-  if (isWebView()) {
+  if (isWebViewFunc()) {
     getWebViewPanelAddress();
   } else {
     baseURL = import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/';

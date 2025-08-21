@@ -84,6 +84,16 @@
         /* 确保根元素也禁用弹性滚动 */
         overscroll-behavior: none;
       }
+
+      /* 使用动态视口单位，避免移动端地址栏导致的额外滚动 */
+      @supports (height: 100dvh) {
+        #root { min-height: 100dvh; }
+      }
+
+      /* iOS Safari 旧版本兼容 */
+      @supports (-webkit-touch-callout: none) {
+        #root { min-height: -webkit-fill-available; }
+      }
       
       /* 防止加载时的闪烁 */
       * {

@@ -105,7 +105,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
 const getInitialConfigs = (): Record<string, string> => {
   if (typeof window === 'undefined') return {};
   
-  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type'];
+  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type', 'ip'];
   const initialConfigs: Record<string, string> = {};
   
   try {
