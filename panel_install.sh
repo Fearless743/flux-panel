@@ -11,7 +11,7 @@ export LC_ALL=C
 DOCKER_COMPOSEV4_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/docker-compose-v4.yml"
 DOCKER_COMPOSEV6_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/docker-compose-v6.yml"
 GOST_SQL_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/gost.sql"
-PROXY_SH_URL="https://raw.githubusercontent.com/Lanlan13-14/flux-panel/refs/heads/main/proxy.sh"
+PROXY_SH_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/proxy.sh"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
