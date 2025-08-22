@@ -199,6 +199,16 @@ curl -L https://your-panel-server:6365/agent/install | bash -s -- --server=your-
 - **正常**: 用户可正常使用
 - **禁用**: 暂停用户使用
 
+**API查询**
+- 本项目为sub-store提供流量查询API以便查询流量日期信息
+- 格式如下
+  ```
+http(s)://面板连接地址/api/v1/open_api/sub_store?user=用户名&pwd=密码&tunnel=隧道id
+  ```
+**注意**
+- “&tunnel=隧道id”为可选项，若不填写则返回全部流量查询信息
+- 请妥善保存上述信息，避免因用户信息泄漏而造成的损失
+
 4. 点击 **"确定"** 创建用户
 
 ### 分配隧道权限
