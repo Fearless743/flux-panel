@@ -78,22 +78,24 @@ else
     echo "⚠️ 未检测到IPv6支持，将使用IPv4监听"
 fi
 
-# ===== 安装Caddy及DNS插件 =====
+# ===== 安装Caddy =====
 if ! command -v caddy &>/dev/null; then
-    echo "🔧 安装Caddy及DNS插件..."
-    apt update && apt install -y debian-keyring debian-archive-keyring apt-transport-https curl unzip
-
-    # 安装 xcaddy
-    curl -sSfL https://raw.githubusercontent.com/caddyserver/xcaddy/master/install.sh | bash
-
-    # 根据选择编译 Caddy
-    dns_plugins=""
-    [[ "$dns_provider" == "cloudflare" ]] && dns_plugins+=",github.com/caddy-dns/cloudflare"
-    [[ "$dns_provider" == "dnspod" ]] && dns_plugins+=",github.com/caddy-dns/dnspod"
-    [[ "$dns_provider" == "alidns" ]] && dns_plugins+=",github.com/caddy-dns/alidns"
-
-    xcaddy build latest --with github.com/caddyserver/caddy/v2$dns_plugins
-    mv caddy /usr/local/bin/caddy
+    echo "🔧 安装Caddy..."
+    apt update && apt install -y curl unzip
+    
+    # 使用官方安装脚本
+    curl -sSfL https://caddyserver.com/static/install.sh | bash -s
+    
+    # 或者使用包管理器安装（取消注释以下行）
+    # curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    # curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+    # apt update
+    # apt install caddy
+    
+    # 确保caddy在正确位置
+    if [[ -f "/usr/bin/caddy" ]]; then
+        mv /usr/bin/caddy /usr/local/bin/caddy
+    fi
 fi
 
 mkdir -p /etc/caddy
@@ -180,7 +182,7 @@ EOF
 fi
 
 # ===== 重启Caddy =====
-systemctl daemon-reexec
+systemctl daemon-reload
 systemctl enable caddy
 systemctl restart caddy
 
