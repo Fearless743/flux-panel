@@ -11,6 +11,7 @@ export LC_ALL=C
 DOCKER_COMPOSEV4_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/docker-compose-v4.yml"
 DOCKER_COMPOSEV6_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/docker-compose-v6.yml"
 GOST_SQL_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/gost.sql"
+PROXY_SH_URL="https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/proxy.sh"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
@@ -18,6 +19,8 @@ if [ "$COUNTRY" = "CN" ]; then
     DOCKER_COMPOSEV4_URL="https://ghfast.top/${DOCKER_COMPOSEV4_URL}"
     DOCKER_COMPOSEV6_URL="https://ghfast.top/${DOCKER_COMPOSEV6_URL}"
     GOST_SQL_URL="https://ghfast.top/${GOST_SQL_URL}"
+
+PROXY_SH_URL="https://ghfast.top/${PROXY_SH_URL}"
 fi
 
 
@@ -52,7 +55,7 @@ check_docker() {
 # 检测系统是否支持 IPv6
 check_ipv6_support() {
   echo "🔍 检测 IPv6 支持..."
-  
+
   # 检查是否有 IPv6 地址（排除 link-local 地址）
   if ip -6 addr show | grep -v "scope link" | grep -q "inet6"; then
     echo "✅ 检测到系统支持 IPv6"
@@ -71,26 +74,26 @@ check_ipv6_support() {
 # 配置 Docker 启用 IPv6
 configure_docker_ipv6() {
   echo "🔧 配置 Docker IPv6 支持..."
-  
+
   # 检查操作系统类型
   OS_TYPE=$(uname -s)
-  
+
   if [[ "$OS_TYPE" == "Darwin" ]]; then
     # macOS 上 Docker Desktop 已默认支持 IPv6
     echo "✅ macOS Docker Desktop 默认支持 IPv6"
     return 0
   fi
-  
+
   # Docker daemon 配置文件路径
   DOCKER_CONFIG="/etc/docker/daemon.json"
-  
+
   # 检查是否需要 sudo
   if [[ $EUID -ne 0 ]]; then
     SUDO_CMD="sudo"
   else
     SUDO_CMD=""
   fi
-  
+
   # 检查 Docker 配置文件
   if [ -f "$DOCKER_CONFIG" ]; then
     # 检查是否已经配置了 IPv6
@@ -100,7 +103,7 @@ configure_docker_ipv6() {
       echo "📝 更新 Docker 配置以启用 IPv6..."
       # 备份原配置
       $SUDO_CMD cp "$DOCKER_CONFIG" "${DOCKER_CONFIG}.backup"
-      
+
       # 使用 jq 或 sed 添加 IPv6 配置
       if command -v jq &> /dev/null; then
         $SUDO_CMD jq '. + {"ipv6": true, "fixed-cidr-v6": "fd00::/80"}' "$DOCKER_CONFIG" > /tmp/daemon.json && $SUDO_CMD mv /tmp/daemon.json "$DOCKER_CONFIG"
@@ -108,7 +111,7 @@ configure_docker_ipv6() {
         # 如果没有 jq，使用 sed
         $SUDO_CMD sed -i 's/^{$/{\n  "ipv6": true,\n  "fixed-cidr-v6": "fd00::\/80",/' "$DOCKER_CONFIG"
       fi
-      
+
       echo "🔄 重启 Docker 服务..."
       if command -v systemctl &> /dev/null; then
         $SUDO_CMD systemctl restart docker
@@ -127,7 +130,7 @@ configure_docker_ipv6() {
   "ipv6": true,
   "fixed-cidr-v6": "fd00::/80"
 }' | $SUDO_CMD tee "$DOCKER_CONFIG" > /dev/null
-    
+
     echo "🔄 重启 Docker 服务..."
     if command -v systemctl &> /dev/null; then
       $SUDO_CMD systemctl restart docker
@@ -150,7 +153,8 @@ show_menu() {
   echo "2. 更新面板"
   echo "3. 卸载面板"
   echo "4. 导出备份"
-  echo "5. 退出"
+  echo "5. 安装并配置反向代理（Caddy）"
+  echo "6. 退出"
   echo "==============================================="
 }
 
@@ -192,12 +196,12 @@ install_panel() {
   echo "🚀 开始安装面板..."
   check_docker
   get_config_params
-  
+
   echo "🔽 下载必要文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)
   echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
   curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
-  
+
   # 检查 gost.sql 是否已存在
   if [[ -f "gost.sql" ]]; then
     echo "⏭️ 跳过下载: gost.sql (使用当前位置的文件)"
@@ -231,7 +235,7 @@ EOF
   echo "📚 文档地址: https://tes.cc/guide.html"
   echo "💡 默认管理员账号: admin_user / admin_user"
   echo "⚠️  登录后请立即修改默认密码！"
-  
+
 
 }
 
@@ -239,7 +243,7 @@ EOF
 update_panel() {
   echo "🔄 开始更新面板..."
   check_docker
-  
+
   echo "🔽 下载最新配置文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)
   echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
@@ -254,16 +258,16 @@ update_panel() {
 
   echo "🛑 停止当前服务..."
   $DOCKER_CMD down
-  
+
   echo "⬇️ 拉取最新镜像..."
   $DOCKER_CMD pull
-  
+
   echo "🚀 启动更新后的服务..."
   $DOCKER_CMD up -d
-  
+
   # 等待服务启动
   echo "⏳ 等待服务启动..."
-  
+
   # 检查后端容器健康状态
   echo "🔍 检查后端服务状态..."
   for i in {1..90}; do
@@ -294,7 +298,7 @@ update_panel() {
     fi
     sleep 1
   done
-  
+
   # 检查数据库容器健康状态
   echo "🔍 检查数据库服务状态..."
   for i in {1..60}; do
@@ -325,14 +329,14 @@ update_panel() {
     fi
     sleep 1
   done
-  
+
   # 从容器环境变量获取数据库信息
   echo "🔍 获取数据库配置信息..."
-  
+
   # 等待一下让服务完全就绪
   echo "⏳ 等待服务完全就绪..."
   sleep 5
-  
+
   # 先检查后端容器是否在运行
   if ! docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
     echo "❌ 后端容器未运行，无法获取数据库配置"
@@ -341,15 +345,15 @@ update_panel() {
     echo "🛑 更新终止"
     return 1
   fi
-  
+
   DB_INFO=$(docker exec springboot-backend env | grep "^DB_" 2>/dev/null || echo "")
-  
+
   if [[ -n "$DB_INFO" ]]; then
     DB_NAME=$(echo "$DB_INFO" | grep "^DB_NAME=" | cut -d'=' -f2)
     DB_PASSWORD=$(echo "$DB_INFO" | grep "^DB_PASSWORD=" | cut -d'=' -f2)
     DB_USER=$(echo "$DB_INFO" | grep "^DB_USER=" | cut -d'=' -f2)
     DB_HOST=$(echo "$DB_INFO" | grep "^DB_HOST=" | cut -d'=' -f2)
-    
+
     echo "📋 数据库配置："
     echo "   数据库名: $DB_NAME"
     echo "   用户名: $DB_USER"
@@ -359,14 +363,14 @@ update_panel() {
     echo "🔍 尝试诊断问题："
     echo "   容器状态: $(docker inspect -f '{{.State.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
     echo "   健康状态: $(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '无健康检查')"
-    
+
     # 尝试从 .env 文件读取配置
     if [[ -f ".env" ]]; then
       echo "🔄 尝试从 .env 文件读取配置..."
       DB_NAME=$(grep "^DB_NAME=" .env | cut -d'=' -f2 2>/dev/null)
       DB_PASSWORD=$(grep "^DB_PASSWORD=" .env | cut -d'=' -f2 2>/dev/null)
       DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
-      
+
       if [[ -n "$DB_NAME" && -n "$DB_PASSWORD" && -n "$DB_USER" ]]; then
         echo "✅ 从 .env 文件成功读取数据库配置"
         echo "📋 数据库配置："
@@ -383,17 +387,17 @@ update_panel() {
       return 1
     fi
   fi
-  
+
   # 检查必要的数据库配置
   if [[ -z "$DB_PASSWORD" || -z "$DB_USER" || -z "$DB_NAME" ]]; then
     echo "❌ 数据库配置不完整（缺少必要参数）"
     echo "🛑 更新终止"
     return 1
   fi
-  
+
   # 执行数据库字段变更
   echo "🔄 执行数据库结构更新..."
-  
+
   # 创建临时迁移文件（现在有了数据库信息）
   cat > temp_migration.sql <<EOF
 -- 数据库结构更新
@@ -847,7 +851,7 @@ SET \`created_time\` = UNIX_TIMESTAMP() * 1000
 WHERE \`created_time\` = 0 OR \`created_time\` IS NULL;
 
 EOF
-  
+
   # 检查数据库容器
   if ! docker ps --format "{{.Names}}" | grep -q "^gost-mysql$"; then
     echo "❌ 数据库容器 gost-mysql 未运行"
@@ -857,7 +861,7 @@ EOF
     echo "📁 迁移文件已保存为 temp_migration.sql"
     return 1
   fi
-  
+
   # 执行数据库迁移
   if docker exec -i gost-mysql mysql -u "$DB_USER" -p"$DB_PASSWORD" < temp_migration.sql 2>/dev/null; then
     echo "✅ 数据库结构更新完成"
@@ -873,30 +877,30 @@ EOF
       return 1
     fi
   fi
-  
+
   # 清理临时文件
   rm -f temp_migration.sql
-  
+
   echo "✅ 更新完成"
 }
 
 # 导出数据库备份
 export_migration_sql() {
   echo "📄 开始导出数据库备份..."
-  
+
   # 获取数据库配置信息
   echo "🔍 获取数据库配置信息..."
-  
+
   # 先检查后端容器是否在运行
   if ! docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
     echo "❌ 后端容器未运行，尝试从 .env 文件读取配置..."
-    
+
     # 从 .env 文件读取配置
     if [[ -f ".env" ]]; then
       DB_NAME=$(grep "^DB_NAME=" .env | cut -d'=' -f2 2>/dev/null)
       DB_PASSWORD=$(grep "^DB_PASSWORD=" .env | cut -d'=' -f2 2>/dev/null)
       DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
-      
+
       if [[ -n "$DB_NAME" && -n "$DB_PASSWORD" && -n "$DB_USER" ]]; then
         echo "✅ 从 .env 文件读取数据库配置成功"
       else
@@ -910,21 +914,21 @@ export_migration_sql() {
   else
     # 从容器环境变量获取数据库信息
     DB_INFO=$(docker exec springboot-backend env | grep "^DB_" 2>/dev/null || echo "")
-    
+
     if [[ -n "$DB_INFO" ]]; then
       DB_NAME=$(echo "$DB_INFO" | grep "^DB_NAME=" | cut -d'=' -f2)
       DB_PASSWORD=$(echo "$DB_INFO" | grep "^DB_PASSWORD=" | cut -d'=' -f2)
       DB_USER=$(echo "$DB_INFO" | grep "^DB_USER=" | cut -d'=' -f2)
-      
+
       echo "✅ 从容器环境变量读取数据库配置成功"
     else
       echo "❌ 无法从容器获取数据库配置，尝试从 .env 文件读取..."
-      
+
       if [[ -f ".env" ]]; then
         DB_NAME=$(grep "^DB_NAME=" .env | cut -d'=' -f2 2>/dev/null)
         DB_PASSWORD=$(grep "^DB_PASSWORD=" .env | cut -d'=' -f2 2>/dev/null)
         DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
-        
+
         if [[ -n "$DB_NAME" && -n "$DB_PASSWORD" && -n "$DB_USER" ]]; then
           echo "✅ 从 .env 文件读取数据库配置成功"
         else
@@ -937,17 +941,17 @@ export_migration_sql() {
       fi
     fi
   fi
-  
+
   # 检查必要的数据库配置
   if [[ -z "$DB_PASSWORD" || -z "$DB_USER" || -z "$DB_NAME" ]]; then
     echo "❌ 数据库配置不完整（缺少必要参数）"
     return 1
   fi
-  
+
   echo "📋 数据库配置："
   echo "   数据库名: $DB_NAME"
   echo "   用户名: $DB_USER"
-  
+
   # 检查数据库容器是否运行
   if ! docker ps --format "{{.Names}}" | grep -q "^gost-mysql$"; then
     echo "❌ 数据库容器未运行，无法导出数据"
@@ -955,11 +959,11 @@ export_migration_sql() {
     docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
     return 1
   fi
-  
+
   # 生成数据库备份文件
   SQL_FILE="database_backup_$(date +%Y%m%d_%H%M%S).sql"
   echo "📝 导出数据库备份: $SQL_FILE"
-  
+
   # 使用 mysqldump 导出数据库
   echo "⏳ 正在导出数据库..."
   if docker exec gost-mysql mysqldump -u "$DB_USER" -p"$DB_PASSWORD" --single-transaction --routines --triggers "$DB_NAME" > "$SQL_FILE" 2>/dev/null; then
@@ -974,7 +978,7 @@ export_migration_sql() {
       return 1
     fi
   fi
-  
+
   # 检查文件大小
   if [[ -f "$SQL_FILE" ]] && [[ -s "$SQL_FILE" ]]; then
     FILE_SIZE=$(du -h "$SQL_FILE" | cut -f1)
@@ -987,11 +991,44 @@ export_migration_sql() {
   fi
 }
 
+# ===================== 新增：安装并配置反向代理（Caddy） =====================
+install_reverse_proxy() {
+  echo "🚀 开始安装并配置 Caddy 反向代理..."
+  # 尽量读取前端端口作为反代后端端口的建议值
+  FRONTEND_HINT=""
+  if [[ -f ".env" ]]; then
+    ENV_FRONTEND_PORT=$(grep "^FRONTEND_PORT=" .env | cut -d'=' -f2 2>/dev/null || echo "")
+    if [[ -n "$ENV_FRONTEND_PORT" ]]; then
+      FRONTEND_HINT="$ENV_FRONTEND_PORT"
+    fi
+  fi
+
+  echo "📥 下载 proxy.sh ..."
+  if ! curl -fsSL "$PROXY_SH_URL" -o proxy.sh; then
+    echo "❌ 下载 proxy.sh 失败：$PROXY_SH_URL"
+    exit 1
+  fi
+  chmod +x proxy.sh
+
+  echo "ℹ️ 即将启动反代安装脚本。填写建议："
+  echo "   - 反向代理目标地址：建议填 127.0.0.1"
+  if [[ -n "$FRONTEND_HINT" ]]; then
+    echo "   - 反向代理目标端口：建议填 $FRONTEND_HINT（从 .env 读取的前端端口）"
+  else
+    echo "   - 反向代理目标端口：建议填 6366（默认前端端口）"
+  fi
+  echo "   - 其余选项按需选择（是否使用 DNS 验证、邮箱等）"
+
+  ./proxy.sh
+
+  echo "✅ 反向代理配置完成"
+}
+
 # 卸载功能
 uninstall_panel() {
   echo "🗑️ 开始卸载面板..."
   check_docker
-  
+
   if [[ ! -f "docker-compose.yml" ]]; then
     echo "⚠️ 未找到 docker-compose.yml 文件，正在下载以完成卸载..."
     DOCKER_COMPOSE_URL=$(get_docker_compose_url)
@@ -999,7 +1036,7 @@ uninstall_panel() {
     curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
     echo "✅ docker-compose.yml 下载完成"
   fi
-  
+
   read -p "确认卸载面板吗？此操作将停止并删除所有容器和数据 (y/N): " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "❌ 取消卸载"
@@ -1020,7 +1057,7 @@ main() {
   while true; do
     show_menu
     read -p "请输入选项 (1-5): " choice
-    
+
     case $choice in
       1)
         install_panel
@@ -1043,6 +1080,11 @@ main() {
         exit 0
         ;;
       5)
+        install_reverse_proxy
+        delete_self
+        exit 0
+        ;;
+      6)
         echo "👋 退出脚本"
         delete_self
         exit 0
