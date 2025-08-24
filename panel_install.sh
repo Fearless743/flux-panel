@@ -19,8 +19,7 @@ if [ "$COUNTRY" = "CN" ]; then
     DOCKER_COMPOSEV4_URL="https://ghfast.top/${DOCKER_COMPOSEV4_URL}"
     DOCKER_COMPOSEV6_URL="https://ghfast.top/${DOCKER_COMPOSEV6_URL}"
     GOST_SQL_URL="https://ghfast.top/${GOST_SQL_URL}"
-
-PROXY_SH_URL="https://ghfast.top/${PROXY_SH_URL}"
+    PROXY_SH_URL="https://ghfast.top/${PROXY_SH_URL}"
 fi
 
 
