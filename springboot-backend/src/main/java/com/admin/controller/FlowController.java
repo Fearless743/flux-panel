@@ -140,6 +140,7 @@ public class FlowController extends BaseController {
     public String uploadFlowData(@RequestBody String rawData, String secret) {
         // 1. 验证节点权限
         if (!isValidNode(secret)) {
+            log.info("节点密钥验证失败==>" + secret);
             return SUCCESS_RESPONSE;
         }
 
@@ -149,6 +150,7 @@ public class FlowController extends BaseController {
         // 3. 解析为FlowDto列表
         FlowDto flowDataList = JSONObject.parseObject(decryptedData, FlowDto.class);
         if (Objects.equals(flowDataList.getN(), "web_api")) {
+            System.out.println("不处理web_api==>" + flowDataList.getN());
             return SUCCESS_RESPONSE;
         }
 
@@ -178,27 +180,17 @@ public class FlowController extends BaseController {
             throw new IllegalArgumentException("数据不能为空");
         }
 
-        try {
-            // 尝试解析为加密消息格式
-            EncryptedMessage encryptedMessage = JSON.parseObject(rawData, EncryptedMessage.class);
-
-            if (encryptedMessage.isEncrypted() && encryptedMessage.getData() != null) {
-                // 获取或创建加密器
-                AESCrypto crypto = getOrCreateCrypto(secret);
-                if (crypto == null) {
-                    log.info("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
-                    return rawData;
-                }
-
-                // 解密数据
-                String decryptedData = crypto.decryptString(encryptedMessage.getData());
-                return decryptedData;
+        EncryptedMessage encryptedMessage = JSON.parseObject(rawData, EncryptedMessage.class);
+        if (encryptedMessage.isEncrypted() && encryptedMessage.getData() != null) {
+            // 获取或创建加密器
+            AESCrypto crypto = getOrCreateCrypto(secret);
+            if (crypto == null) {
+                log.info("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
+                return rawData;
             }
-        } catch (Exception e) {
-            // 解析失败，可能是非加密格式，直接返回原始数据
-            log.info("数据未加密或解密失败，使用原始数据: {}", e.getMessage());
+            // 解密数据
+            return  crypto.decryptString(encryptedMessage.getData());
         }
-
         return rawData;
     }
 
@@ -237,7 +229,7 @@ public class FlowController extends BaseController {
             checkUserRelatedLimits(userId, name);
             checkUserTunnelRelatedLimits(userTunnelId, name, userId);
         }
-
+        log.info("流量处理完成");
         return SUCCESS_RESPONSE;
     }
 
@@ -348,7 +340,8 @@ public class FlowController extends BaseController {
             updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
             updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
 
-            forwardService.update(null, updateWrapper);
+            boolean update = forwardService.update(null, updateWrapper);
+            System.out.println(update);
         }
     }
 
@@ -361,7 +354,8 @@ public class FlowController extends BaseController {
             updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
             updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
 
-            userService.update(null, updateWrapper);
+            boolean update = userService.update(null, updateWrapper);
+            System.out.println(update);
         }
     }
 
@@ -376,7 +370,8 @@ public class FlowController extends BaseController {
             updateWrapper.eq("id", userTunnelId);
             updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
             updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
-            userTunnelService.update(null, updateWrapper);
+            boolean update = userTunnelService.update(null, updateWrapper);
+            System.out.println(update);
         }
     }
 
