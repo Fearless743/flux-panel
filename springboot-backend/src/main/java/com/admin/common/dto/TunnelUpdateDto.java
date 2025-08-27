@@ -24,7 +24,7 @@ public class TunnelUpdateDto {
     private Integer flow;
     
     // 流量倍率
-    @DecimalMin(value = "0.0", message = "流量倍率不能小于0.0")
+    @DecimalMin(value = "0.0", inclusive = false, message = "流量倍率必须大于0.0")
     @DecimalMax(value = "100.0", message = "流量倍率不能大于100.0")
     private BigDecimal trafficRatio;
 
