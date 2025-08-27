@@ -49,8 +49,6 @@ public class CheckGostConfigAsync {
             cleanOrphanedServices(gostConfig, node);
             cleanOrphanedChains(gostConfig, node);
             cleanOrphanedLimiters(gostConfig, node);
-            syncLimiters(gostConfig, node);
-           // syncServices(gostConfig, node);
         }
     }
 
