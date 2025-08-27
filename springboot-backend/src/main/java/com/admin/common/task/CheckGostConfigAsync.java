@@ -32,11 +32,6 @@ public class CheckGostConfigAsync {
     @Lazy
     private SpeedLimitService speedLimitService;
 
-    @Resource
-    @Lazy
-    private TunnelService tunnelService;
-
-
 
     /**
      * 清理孤立的Gost配置项
@@ -49,8 +44,6 @@ public class CheckGostConfigAsync {
             cleanOrphanedServices(gostConfig, node);
             cleanOrphanedChains(gostConfig, node);
             cleanOrphanedLimiters(gostConfig, node);
-            syncLimiters(gostConfig, node);
-            syncServices(gostConfig, node);
         }
     }
 
@@ -149,95 +142,6 @@ public class CheckGostConfigAsync {
         }
     }
 
-    /**
-     * 同步限流器
-     */
-    private void syncLimiters(GostConfigDto gostConfig, Node node) {
-        List<Tunnel> tunnelList = tunnelService.list(new QueryWrapper<Tunnel>().eq("in_node_id", node.getId()));
-        if (tunnelList == null || tunnelList.isEmpty()) return;
-        safeExecute(() -> {
-            StringBuilder tunnelIds = new StringBuilder();
-            for (Tunnel tunnel : tunnelList) {
-                tunnelIds.append(tunnel.getId()).append(",");
-            }
-            String ids = tunnelIds.deleteCharAt(tunnelIds.length() - 1).toString();
-            List<SpeedLimit> speedLimits = speedLimitService.list(new QueryWrapper<SpeedLimit>().in("tunnel_id", ids));
-            if (speedLimits != null && !speedLimits.isEmpty()) {
-                List<ConfigItem> limiters = gostConfig.getLimiters();
-                List<Long> limiters_ids = new ArrayList<>();
-                List<Long>  speedLimits_ids = new ArrayList<>();
-                if (limiters != null){
-                    for (ConfigItem limiter : limiters) {
-                        limiters_ids.add(Long.valueOf(limiter.getName()));
-                    }
-                }
-                for (SpeedLimit speedLimit : speedLimits) {
-                    speedLimits_ids.add(speedLimit.getId());
-                }
-                List<Long> diff = new ArrayList<>(speedLimits_ids);
-                diff.removeAll(limiters_ids);
-                System.out.println(diff);
-                if (!diff.isEmpty()) {
-
-                    for (Long speed_id : diff) {
-                        SpeedLimit speedLimit = speedLimitService.getById(speed_id);
-                        if (speedLimit != null) {
-                            SpeedLimitUpdateDto speedLimitUpdateDto = new SpeedLimitUpdateDto();
-                            speedLimitUpdateDto.setId(speed_id);
-                            speedLimitUpdateDto.setName(speedLimit.getName());
-                            speedLimitUpdateDto.setSpeed(speedLimit.getSpeed());
-                            speedLimitUpdateDto.setTunnelId(speedLimit.getTunnelId());
-                            speedLimitUpdateDto.setTunnelName(speedLimit.getTunnelName());
-                            speedLimitService.updateSpeedLimit(speedLimitUpdateDto);
-                        }
-                    }
-                }
-            }
-        }, "同步限流器 ");
-    }
-
-    /**
-     * 同步服务
-     */
-    private void syncServices(GostConfigDto gostConfig, Node node) {
-        List<Tunnel> tunnelList = tunnelService.list(new QueryWrapper<Tunnel>().eq("in_node_id", node.getId()));
-        if (tunnelList == null || tunnelList.isEmpty()) return;
-        safeExecute(() -> {
-            StringBuilder tunnelIds = new StringBuilder();
-            for (Tunnel tunnel : tunnelList) {
-                tunnelIds.append(tunnel.getId()).append(",");
-            }
-            String ids = tunnelIds.deleteCharAt(tunnelIds.length() - 1).toString();
-            List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().in("tunnel_id", ids));
-            if (forwardList != null && !forwardList.isEmpty()) {
-                List<ConfigItem> services = gostConfig.getServices();
-                List<Long> services_ids = new ArrayList<>();
-                List<Long>  forward_ids = new ArrayList<>();
-                if (services != null){
-                    for (ConfigItem limiter : services) {
-                        String[] strings = parseServiceName(limiter.getName());
-                        services_ids.add(Long.valueOf(strings[0]));
-                    }
-                }
-                for (Forward forward : forwardList) {
-                    forward_ids.add(forward.getId());
-                }
-                List<Long> diff = new ArrayList<>(forward_ids);
-                diff.removeAll(services_ids);
-                System.out.println(diff);
-                if (!diff.isEmpty()) {
-                    for (Long forward_id : diff) {
-                        Forward forward = forwardService.getById(forward_id);
-                        if (forward != null) {
-                            forwardService.updateForwardA(forward);
-                        }
-
-                    }
-                }
-
-            }
-        }, "同步限流器 ");
-    }
 
     /**
      * 安全执行操作，捕获异常
