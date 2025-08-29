@@ -268,8 +268,10 @@ export default function ProfilePage() {
           onOpenChange();
           resetPasswordForm();
         }}
-        size="full"
-        scrollBehavior="inside"
+        size="2xl"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
       >
         <ModalContent>
           {(onClose: () => void) => (

@@ -397,8 +397,10 @@ export default function AdminLayout({
           onOpenChange();
           resetPasswordForm();
         }}
-        size={isMobile ? 'full' : 'md'}
-        scrollBehavior="inside"
+        size="2xl"
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center"
       >
                  <ModalContent>
            {(onClose: () => void) => (

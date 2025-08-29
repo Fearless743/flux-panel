@@ -801,6 +801,8 @@ export default function NodePage() {
           onClose={() => setDialogVisible(false)}
           size="2xl"
           scrollBehavior="outside"
+          backdrop="blur"
+          placement="center"
         >
           <ModalContent>
             <ModalHeader>{dialogTitle}</ModalHeader>
@@ -900,8 +902,10 @@ export default function NodePage() {
         <Modal 
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
-          size="sm"
-          scrollBehavior="outside"
+          size="2xl"
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center"
         >
           <ModalContent>
             {(onClose) => (
@@ -935,7 +939,9 @@ export default function NodePage() {
           isOpen={installCommandModal} 
           onClose={() => setInstallCommandModal(false)}
           size="2xl"
-          scrollBehavior="outside"
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center"
         >
           <ModalContent>
             <ModalHeader>安装命令 - {currentNodeName}</ModalHeader>

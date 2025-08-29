@@ -336,8 +336,10 @@ export default function LimitPage() {
         <Modal 
           isOpen={modalOpen}
           onOpenChange={setModalOpen}
-          size="lg"
-          scrollBehavior="outside"
+          size="2xl"
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center"
         >
           <ModalContent>
             {(onClose) => (
@@ -432,8 +434,10 @@ export default function LimitPage() {
         <Modal 
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
-          size="sm"
-          scrollBehavior="outside"
+          size="2xl"
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center"
         >
           <ModalContent>
             {(onClose) => (

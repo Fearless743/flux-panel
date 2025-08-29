@@ -921,7 +921,10 @@ export default function DashboardPage() {
         </Card>
 
         {/* 地址列表弹窗 */}
-        <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="lg">
+        <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="2xl" 
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center">
           <ModalContent>
             <ModalHeader className="text-base">{addressModalTitle}</ModalHeader>
             <ModalBody className="pb-6">

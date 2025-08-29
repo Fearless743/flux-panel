@@ -746,7 +746,9 @@ export default function UserPage() {
         isOpen={isUserModalOpen}
         onClose={onUserModalClose}
         size="2xl"
-        scrollBehavior="outside"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
       >
         <ModalContent>
           <ModalHeader>
@@ -857,8 +859,10 @@ export default function UserPage() {
       <Modal
         isOpen={isTunnelModalOpen}
         onClose={onTunnelModalClose}
-        size="4xl"
-        scrollBehavior="outside"
+        size="2xl"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
         isDismissable={false}
         classNames={{
           base: "max-w-[95vw] sm:max-w-4xl"
@@ -1097,7 +1101,9 @@ export default function UserPage() {
         isOpen={isEditTunnelModalOpen}
         onClose={onEditTunnelModalClose}
         size="2xl"
-        scrollBehavior="outside"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
         isDismissable={false}
       >
         <ModalContent>
@@ -1218,8 +1224,10 @@ export default function UserPage() {
       <Modal
         isOpen={isDeleteModalOpen}
         onClose={onDeleteModalClose}
-        size="md"
-        scrollBehavior="outside"
+        size="2xl"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
       >
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
@@ -1261,8 +1269,10 @@ export default function UserPage() {
       <Modal
         isOpen={isDeleteTunnelModalOpen}
         onClose={onDeleteTunnelModalClose}
-        size="md"
-        scrollBehavior="outside"
+        size="2xl"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
       >
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
@@ -1304,8 +1314,10 @@ export default function UserPage() {
       <Modal
         isOpen={isResetFlowModalOpen}
         onClose={onResetFlowModalClose}
-        size="md"
-        scrollBehavior="outside"
+        size="2xl"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
       >
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
@@ -1371,8 +1383,10 @@ export default function UserPage() {
       <Modal
         isOpen={isResetTunnelFlowModalOpen}
         onClose={onResetTunnelFlowModalClose}
-        size="md"
-        scrollBehavior="outside"
+        size="2xl"
+      scrollBehavior="outside"
+      backdrop="blur"
+      placement="center"
       >
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
