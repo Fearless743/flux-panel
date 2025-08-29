@@ -878,7 +878,8 @@ export default function TunnelPage() {
         <Modal 
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
-          size="md"
+          size="sm"
+          scrollBehavior="outside"
         >
           <ModalContent>
             {(onClose) => (

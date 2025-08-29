@@ -138,13 +138,13 @@ export default function ForwardPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
   
-  // 显示模式状态 - 从localStorage读取，默认为分类显示
+  // 显示模式状态 - 从localStorage读取，默认为平铺显示
   const [viewMode, setViewMode] = useState<'grouped' | 'direct'>(() => {
     try {
       const savedMode = localStorage.getItem('forward-view-mode');
-      return (savedMode as 'grouped' | 'direct') || 'grouped';
+      return (savedMode as 'grouped' | 'direct') || 'direct';
     } catch {
-      return 'grouped';
+      return 'direct';
     }
   });
   
