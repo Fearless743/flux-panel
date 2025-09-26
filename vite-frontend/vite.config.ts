@@ -6,9 +6,7 @@ import legacy from '@vitejs/plugin-legacy'
 export default defineConfig({
   plugins: [
     react(),
-    legacy({
-      targets: ['defaults', 'not IE 11']
-    })
+    legacy()
   ],
   base: './',    
   resolve: {
