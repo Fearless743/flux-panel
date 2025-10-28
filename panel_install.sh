@@ -152,8 +152,7 @@ show_menu() {
   echo "2. 更新面板"
   echo "3. 卸载面板"
   echo "4. 导出备份"
-  echo "5. 安装并配置反向代理（Caddy）"
-  echo "6. 退出"
+  echo "5. 退出"
   echo "==============================================="
 }
 
@@ -990,38 +989,6 @@ export_migration_sql() {
   fi
 }
 
-# ===================== 新增：安装并配置反向代理（Caddy） =====================
-install_reverse_proxy() {
-  echo "🚀 开始安装并配置 Caddy 反向代理..."
-  # 尽量读取前端端口作为反代后端端口的建议值
-  FRONTEND_HINT=""
-  if [[ -f ".env" ]]; then
-    ENV_FRONTEND_PORT=$(grep "^FRONTEND_PORT=" .env | cut -d'=' -f2 2>/dev/null || echo "")
-    if [[ -n "$ENV_FRONTEND_PORT" ]]; then
-      FRONTEND_HINT="$ENV_FRONTEND_PORT"
-    fi
-  fi
-
-  echo "📥 下载 proxy.sh ..."
-  if ! curl -fsSL "$PROXY_SH_URL" -o proxy.sh; then
-    echo "❌ 下载 proxy.sh 失败：$PROXY_SH_URL"
-    exit 1
-  fi
-  chmod +x proxy.sh
-
-  echo "ℹ️ 即将启动反代安装脚本。填写建议："
-  echo "   - 反向代理目标地址：建议填 127.0.0.1"
-  if [[ -n "$FRONTEND_HINT" ]]; then
-    echo "   - 反向代理目标端口：建议填 $FRONTEND_HINT（从 .env 读取的前端端口）"
-  else
-    echo "   - 反向代理目标端口：建议填 6366（默认前端端口）"
-  fi
-  echo "   - 其余选项按需选择（是否使用 DNS 验证、邮箱等）"
-
-  ./proxy.sh
-
-  echo "✅ 反向代理配置完成"
-}
 
 # 卸载功能
 uninstall_panel() {
@@ -1079,11 +1046,6 @@ main() {
         exit 0
         ;;
       5)
-        install_reverse_proxy
-        delete_self
-        exit 0
-        ;;
-      6)
         echo "👋 退出脚本"
         delete_self
         exit 0
