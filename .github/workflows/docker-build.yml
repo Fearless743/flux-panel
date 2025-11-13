@@ -2,7 +2,7 @@ name: Build and Push Images Based on Version
 
 # 在这里定义统一版本号
 env:
-  VERSION: "v3.1.0"
+  VERSION: "v3.1.1"
 
 on:
   push:
@@ -77,7 +77,7 @@ jobs:
           upx --best --lzma gost
 
       - name: Upload GOST artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: gost-binary
           path: ./go-gost/gost
@@ -169,7 +169,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Download GOST binary
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: gost-binary
           path: ./artifacts
