@@ -2,7 +2,7 @@ name: Build and Push Images Based on Version
 
 # 在这里定义统一版本号
 env:
-  VERSION: "v3.1.1"
+  VERSION: "v3.1.2"
 
 on:
   push:
@@ -190,14 +190,33 @@ jobs:
             --notes "Version ${VERSION}
           
           ## Components
-          - GOST Binary (Linux AMD64, compressed with UPX)
-          - Vite Frontend Docker Image: \`bqlpfy/vite-frontend:${VERSION}\`
-          - Spring Boot Backend Docker Image: \`bqlpfy/springboot-backend:${VERSION}\`
+          - **GOST Binary** (Linux AMD64, compressed with UPX)
+          - **Vite Frontend** Docker Image: \`bqlpfy/vite-frontend:${VERSION}\` / \`bqlpfy/vite-frontend:latest\`
+          - **Spring Boot Backend** Docker Image: \`bqlpfy/springboot-backend:${VERSION}\` / \`bqlpfy/springboot-backend:latest\`
+          
+          ## Installation Files
+          - \`install.sh\` - GOST 客户端安装脚本
+          - \`panel_install.sh\` - 面板安装脚本
+          - \`gost.sql\` - 数据库初始化文件
+          - \`docker-compose-v4.yml\` - Docker Compose 配置 (IPv4)
+          - \`docker-compose-v6.yml\` - Docker Compose 配置 (IPv6)
           
           ## Details
           - Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
           - Commit: ${{ github.sha }}" \
             --repo ${{ github.repository }}
           
-          # 上传 GOST binary
+          # 上传所有文件到 release
+          echo "📤 上传 GOST 二进制..."
           gh release upload "${VERSION}" ./artifacts/gost --clobber
+          
+          echo "📤 上传安装脚本..."
+          gh release upload "${VERSION}" ./install.sh --clobber
+          gh release upload "${VERSION}" ./panel_install.sh --clobber
+          
+          echo "📤 上传配置文件..."
+          gh release upload "${VERSION}" ./gost.sql --clobber
+          gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
+          gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
+          
+          echo "✅ 所有文件已上传到 Release ${VERSION}"
