@@ -1,99 +1,203 @@
-name: Build and Push Images + GOST
+name: Build and Push Images Based on Version
+
+# 在这里定义统一版本号
+env:
+  VERSION: "v3.1.0"
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # 可以手动触发
 
 jobs:
-  build:
+  check-version:
+    name: Check Version and Decide Build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ env.VERSION }}
+      should_build: ${{ steps.check-tag.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 获取所有历史和 tags
+
+      - name: Display version
+        run: |
+          echo "Current version: ${{ env.VERSION }}"
+
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          if git rev-parse "${{ env.VERSION }}" >/dev/null 2>&1; then
+            echo "Tag ${{ env.VERSION }} already exists, skip build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag ${{ env.VERSION }} does not exist, will build all components"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build-gost:
+    name: Build & Compress GOST Binary
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set release version
-        # 直接写这次更新的版本号，或者用 workflow_dispatch 输入
-        run: |
-          RELEASE_VERSION="2.0.0"
-          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
-          echo "Release version: $RELEASE_VERSION"
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
 
-      - name: Get latest Git tag
-        id: get_tag
-        run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 || echo "")
-          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
-          echo "Latest tag: $LATEST_TAG"
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - name: Compare version with latest tag
-        id: compare
+      - name: Install UPX
         run: |
-          if [ "v${RELEASE_VERSION}" = "$LATEST_TAG" ]; then
-            echo "Version matches latest tag, skipping build"
-            echo "SKIP_BUILD=true" >> $GITHUB_ENV
-          else
-            echo "New version detected, building"
-            echo "SKIP_BUILD=false" >> $GITHUB_ENV
-          fi
-      - name: Create Git tag for new version
-        if: env.SKIP_BUILD == 'false'
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
-          git push origin "v${RELEASE_VERSION}"
+          wget https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
+          tar -xf upx-4.2.1-amd64_linux.tar.xz
+          sudo mv upx-4.2.1-amd64_linux/upx /usr/local/bin/
+          rm -rf upx-4.2.1-amd64_linux*
 
-      - name: Build & Release GOST
-        if: env.SKIP_BUILD == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Build GOST binary
+        working-directory: ./go-gost
         run: |
-          cd go-gost
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
+
+      - name: Compress with UPX
+        working-directory: ./go-gost
+        run: |
           upx --best --lzma gost
-          cd ..
-          
-          if gh release view "v${RELEASE_VERSION}" 2>/dev/null; then
-            echo "Release exists, updating GOST binary"
-          else
-            gh release create "v${RELEASE_VERSION}" go-gost/gost \
-              --title "GOST Binary v${RELEASE_VERSION}" \
-              --notes "GOST compiled from commit ${{ github.sha }}"
-          fi
-          gh release upload "v${RELEASE_VERSION}" ./go-gost/gost --clobber
+
+      - name: Upload GOST artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: gost-binary
+          path: ./go-gost/gost
+
+  build-vite:
+    name: Build & Push Vite Frontend
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Set up Docker Buildx
-        if: env.SKIP_BUILD == 'false'
         uses: docker/setup-buildx-action@v2
 
-      - name: Docker login
-        if: env.SKIP_BUILD == 'false'
+      - name: Log in to DockerHub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Build and push Vite Docker
-        if: env.SKIP_BUILD == 'false'
+      - name: Build and push Vite Docker images
         run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
           docker buildx build \
             --platform linux/amd64 \
             --push \
-            -t bqlpfy/vite-frontend:${RELEASE_VERSION} \
             -t bqlpfy/vite-frontend:latest \
+            -t bqlpfy/vite-frontend:${VERSION} \
             ./vite-frontend
 
-      - name: Build and push Java Docker
-        if: env.SKIP_BUILD == 'false'
+  build-java:
+    name: Build & Push Spring Boot Backend
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up JDK and Maven
+        uses: actions/setup-java@v3
+        with:
+          java-version: 21
+          distribution: 'temurin'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Build Java JAR
+        working-directory: ./springboot-backend
+        run: mvn clean package -DskipTests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and push Java Docker images
         run: |
-          cd springboot-backend
-          mvn clean package -DskipTests
-          cd ..
+          VERSION="${{ needs.check-version.outputs.version }}"
           docker buildx build \
             --platform linux/amd64 \
             --push \
-            -t bqlpfy/springboot-backend:${RELEASE_VERSION} \
             -t bqlpfy/springboot-backend:latest \
+            -t bqlpfy/springboot-backend:${VERSION} \
             ./springboot-backend
+
+  create-release:
+    name: Create Release and Tag
+    needs: [check-version, build-gost, build-vite, build-java]
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download GOST binary
+        uses: actions/download-artifact@v3
+        with:
+          name: gost-binary
+          path: ./artifacts
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          
+          # 创建并推送 tag
+          git tag "${VERSION}" ${{ github.sha }}
+          git push origin "${VERSION}"
+          
+          # 创建 release
+          gh release create "${VERSION}" \
+            --title "Release ${VERSION}" \
+            --notes "Version ${VERSION}
+          
+          ## Components
+          - GOST Binary (Linux AMD64, compressed with UPX)
+          - Vite Frontend Docker Image: \`bqlpfy/vite-frontend:${VERSION}\`
+          - Spring Boot Backend Docker Image: \`bqlpfy/springboot-backend:${VERSION}\`
+          
+          ## Details
+          - Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          - Commit: ${{ github.sha }}" \
+            --repo ${{ github.repository }}
+          
+          # 上传 GOST binary
+          gh release upload "${VERSION}" ./artifacts/gost --clobber
