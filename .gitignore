@@ -254,9 +254,6 @@ gitee/
 # 证书文件
 *.crt
 *.cert
-android-app/
-ios-app/
 doraemon.jks
-flux.ipa
 device.id
 commit.sh
