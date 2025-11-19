@@ -17,6 +17,7 @@ jobs:
     outputs:
       version: ${{ env.VERSION }}
       should_build: ${{ steps.check-tag.outputs.should_build }}
+      tag_exists: ${{ steps.check-tag.outputs.tag_exists }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -30,11 +31,13 @@ jobs:
         id: check-tag
         run: |
           if git rev-parse "${{ env.VERSION }}" >/dev/null 2>&1; then
-            echo "Tag ${{ env.VERSION }} already exists, skip build"
+            echo "Tag ${{ env.VERSION }} already exists, will only update files"
             echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
           else
             echo "Tag ${{ env.VERSION }} does not exist, will build all components"
             echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
           fi
 
   build-gost:
@@ -70,7 +73,7 @@ jobs:
       - name: Build GOST binary (AMD64)
         working-directory: ./go-gost
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost-amd64
 
       - name: Build GOST binary (ARM64)
         working-directory: ./go-gost
@@ -80,7 +83,7 @@ jobs:
       - name: Compress with UPX (AMD64)
         working-directory: ./go-gost
         run: |
-          upx --best --lzma gost
+          upx --best --lzma gost-amd64
 
       - name: Compress with UPX (ARM64)
         working-directory: ./go-gost
@@ -91,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gost-binary-amd64
-          path: ./go-gost/gost
+          path: ./go-gost/gost-amd64
 
       - name: Upload GOST ARM64 artifact
         uses: actions/upload-artifact@v4
@@ -199,7 +202,7 @@ jobs:
 
       - name: Rename binaries
         run: |
-          mv ./artifacts/amd64/gost ./artifacts/gost
+          mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
           mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
 
       - name: Create Release
@@ -229,8 +232,8 @@ jobs:
           - **Commit**: [\`${GITHUB_SHA:0:7}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
           
           ## 📦 Components
-          - **GOST Binary AMD64** - \`gost\` (Linux AMD64, compressed with UPX)
-          - **GOST Binary ARM64** - \`gost-arm64\` (Linux ARM64, compressed with UPX)
+          - **GOST Binary AMD64** - \`gost-amd64\` (Linux x86_64, compressed with UPX)
+          - **GOST Binary ARM64** - \`gost-arm64\` (Linux ARM64/aarch64, compressed with UPX)
           - **Vite Frontend** Docker Image: \`bqlpfy/vite-frontend:${VERSION}\` / \`bqlpfy/vite-frontend:latest\` (支持 AMD64/ARM64)
           - **Spring Boot Backend** Docker Image: \`bqlpfy/springboot-backend:${VERSION}\` / \`bqlpfy/springboot-backend:latest\` (支持 AMD64/ARM64)
           
@@ -247,7 +250,7 @@ jobs:
           
           # 上传所有文件到 release
           echo "📤 上传 GOST 二进制文件..."
-          gh release upload "${VERSION}" ./artifacts/gost --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
           
           echo "📤 上传安装脚本..."
@@ -259,3 +262,34 @@ jobs:
           gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
           
           echo "✅ 所有文件已上传到 Release ${VERSION}"
+
+  update-release-files:
+    name: Update Release Files Only
+    needs: check-version
+    if: needs.check-version.outputs.tag_exists == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Update Release Files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          
+          echo "📤 更新 Release ${VERSION} 中的脚本和配置文件..."
+          
+          # 上传安装脚本（覆盖）
+          echo "📤 更新安装脚本..."
+          gh release upload "${VERSION}" ./install.sh --clobber
+          gh release upload "${VERSION}" ./panel_install.sh --clobber
+          
+          # 上传 Docker Compose 配置文件（覆盖）
+          echo "📤 更新 Docker Compose 配置文件..."
+          gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
+          gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
+          
+          echo "✅ 文件更新完成！Release ${VERSION} 中的脚本和配置已更新"
+          echo "ℹ️ Docker 镜像和 GOST 二进制未重新构建"

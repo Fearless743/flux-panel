@@ -1,6 +1,29 @@
 #!/bin/bash
+
+# 获取系统架构
+get_architecture() {
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64)
+            echo "amd64"
+            ;;
+        aarch64|arm64)
+            echo "arm64"
+            ;;
+        *)
+            echo "amd64"  # 默认使用 amd64
+            ;;
+    esac
+}
+
+# 构建下载地址
+build_download_url() {
+    local ARCH=$(get_architecture)
+    echo "https://github.com/bqlpfy/flux-panel/releases/download/2.0.2-beta/gost-${ARCH}"
+}
+
 # 下载地址
-DOWNLOAD_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.2-beta/gost"
+DOWNLOAD_URL=$(build_download_url)
 INSTALL_DIR="/etc/flux_agent"
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
