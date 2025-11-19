@@ -185,26 +185,36 @@ jobs:
           git tag "${VERSION}" ${{ github.sha }}
           git push origin "${VERSION}"
           
+          # 获取 commit 信息
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
+          COMMIT_DATE=$(git log -1 --pretty=format:"%ai")
+          
           # 创建 release
           gh release create "${VERSION}" \
             --title "Release ${VERSION}" \
             --notes "Version ${VERSION}
           
-          ## Components
+          ## 📝 Commit Information
+          - **Message**: ${COMMIT_MSG}
+          - **Author**: ${COMMIT_AUTHOR}
+          - **Date**: ${COMMIT_DATE}
+          - **Commit**: [\`${GITHUB_SHA:0:7}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+          
+          ## 📦 Components
           - **GOST Binary** (Linux AMD64, compressed with UPX)
           - **Vite Frontend** Docker Image: \`bqlpfy/vite-frontend:${VERSION}\` / \`bqlpfy/vite-frontend:latest\`
           - **Spring Boot Backend** Docker Image: \`bqlpfy/springboot-backend:${VERSION}\` / \`bqlpfy/springboot-backend:latest\`
           
-          ## Installation Files
+          ## 📥 Installation Files
           - \`install.sh\` - GOST 客户端安装脚本
           - \`panel_install.sh\` - 面板安装脚本
-          - \`gost.sql\` - 数据库初始化文件
           - \`docker-compose-v4.yml\` - Docker Compose 配置 (IPv4)
           - \`docker-compose-v6.yml\` - Docker Compose 配置 (IPv6)
           
-          ## Details
+          ## ℹ️ Build Details
           - Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          - Commit: ${{ github.sha }}" \
+          - Branch: ${{ github.ref_name }}" \
             --repo ${{ github.repository }}
           
           # 上传所有文件到 release
@@ -215,7 +225,7 @@ jobs:
           gh release upload "${VERSION}" ./install.sh --clobber
           gh release upload "${VERSION}" ./panel_install.sh --clobber
           
-          echo "📤 上传配置文件..."
+          echo "📤 上传 Docker Compose 配置文件..."
           gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
           gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
           
