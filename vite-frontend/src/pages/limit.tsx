@@ -404,6 +404,8 @@ export default function LimitPage() {
                       isInvalid={!!errors.tunnelId}
                       errorMessage={errors.tunnelId}
                       variant="bordered"
+                      isDisabled={isEdit}
+                      description={isEdit ? "编辑时无法修改绑定隧道" : undefined}
                     >
                       {tunnels.map((tunnel) => (
                         <SelectItem key={tunnel.id}>

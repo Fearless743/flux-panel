@@ -6,6 +6,7 @@ import com.admin.common.lang.R;
 import com.admin.entity.Forward;
 import com.baomidou.mybatisplus.extension.service.IService;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * <p>
@@ -79,7 +80,4 @@ public interface ForwardService extends IService<Forward> {
      * @return 更新结果
      */
     R updateForwardOrder(Map<String, Object> params);
-
-
-    void updateForwardA(Forward forward);
 }

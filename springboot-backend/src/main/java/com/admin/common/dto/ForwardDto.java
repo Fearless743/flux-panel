@@ -21,14 +21,4 @@ public class ForwardDto {
     private String remoteAddr;
 
     private String strategy;
-    
-    /**
-     * 入口端口（可选，为空时自动分配）
-     */
-    @Min(value = 1, message = "端口号不能小于1")
-    @Max(value = 65535, message = "端口号不能大于65535")
-    private Integer inPort;
-
-    private String interfaceName;
-
 } 

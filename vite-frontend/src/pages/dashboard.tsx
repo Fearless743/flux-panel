@@ -425,14 +425,28 @@ export default function DashboardPage() {
   };
 
   const formatInAddress = (ipString: string, port: number): string => {
-    if (!ipString || !port) return '';
+    if (!ipString) return '';
     
-    const ips = ipString.split(',').map(ip => ip.trim()).filter(ip => ip);
+    const items = ipString.split(',').map(item => item.trim()).filter(item => item);
+    if (items.length === 0) return '';
     
-    if (ips.length === 0) return '';
+    // 检查第一项是否已经包含端口（格式：IP:端口）
+    const firstItem = items[0];
+    const hasPort = /:\d+$/.test(firstItem);
     
-    if (ips.length === 1) {
-      const ip = ips[0];
+    if (hasPort) {
+      // inIp 已经包含完整的 IP:Port 组合
+      if (items.length === 1) {
+        return items[0];
+      }
+      return `${items[0]} (+${items.length - 1}个)`;
+    }
+    
+    // inIp 只包含IP，需要添加端口（兼容旧数据）
+    if (!port) return '';
+    
+    if (items.length === 1) {
+      const ip = items[0];
       if (ip.includes(':') && !ip.startsWith('[')) {
         return `[${ip}]:${port}`;
       } else {
@@ -440,16 +454,15 @@ export default function DashboardPage() {
       }
     }
     
-    const firstIp = ips[0];
+    const firstIp = items[0];
     let formattedFirstIp;
-    
     if (firstIp.includes(':') && !firstIp.startsWith('[')) {
       formattedFirstIp = `[${firstIp}]`;
     } else {
       formattedFirstIp = firstIp;
     }
     
-    return `${formattedFirstIp}:${port} (+${ips.length - 1})`;
+    return `${formattedFirstIp}:${port} (+${items.length - 1}个)`;
   };
 
   const formatRemoteAddress = (remoteAddr: string): string => {
@@ -479,32 +492,47 @@ export default function DashboardPage() {
   };
 
   const showAddressModal = (ipString: string, port: number, title: string) => {
-    if (!ipString || !port) return;
+    if (!ipString) return;
     
-    const ips = ipString.split(',').map(ip => ip.trim()).filter(ip => ip);
+    const items = ipString.split(',').map(item => item.trim()).filter(item => item);
     
-    if (ips.length <= 1) {
-              copyToClipboard(formatInAddress(ipString, port));
+    if (items.length <= 1) {
+      copyToClipboard(formatInAddress(ipString, port));
       return;
     }
     
-    const formattedList = ips.map((ip, index) => {
-      let formattedAddress;
-      if (ip.includes(':') && !ip.startsWith('[')) {
-        formattedAddress = `[${ip}]:${port}`;
-      } else {
-        formattedAddress = `${ip}:${port}`;
-      }
-      return {
+    // 检查是否已经包含端口
+    const hasPort = /:\d+$/.test(items[0]);
+    
+    let formattedList;
+    if (hasPort) {
+      // 已经包含完整的 IP:Port 组合，直接使用
+      formattedList = items.map((item, index) => ({
         id: index,
-        ip: ip,
-        address: formattedAddress,
+        ip: item,
+        address: item,
         copying: false
-      };
-    });
+      }));
+    } else {
+      // 只包含IP，需要添加端口
+      formattedList = items.map((ip, index) => {
+        let formattedAddress;
+        if (ip.includes(':') && !ip.startsWith('[')) {
+          formattedAddress = `[${ip}]:${port}`;
+        } else {
+          formattedAddress = `${ip}:${port}`;
+        }
+        return {
+          id: index,
+          ip: ip,
+          address: formattedAddress,
+          copying: false
+        };
+      });
+    }
     
     setAddressList(formattedList);
-    setAddressModalTitle(`${title} (${ips.length}个)`);
+    setAddressModalTitle(`${title} (${items.length}个)`);
     setAddressModalOpen(true);
   };
 

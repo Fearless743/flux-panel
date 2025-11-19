@@ -26,6 +26,11 @@ public class ForwardWithTunnelDto {
     
 
     /**
+     * 入口IP
+     */
+    private String inIp;
+
+    /**
      * 入口端口
      */
     private Integer inPort;
@@ -56,14 +61,9 @@ public class ForwardWithTunnelDto {
      * 隧道名称
      */
     private String tunnelName;
-    
-    /**
-     * 入口IP
-     */
-    private String inIp;
+
 
     private String userName;
-
 
     /**
      * 用户ID
@@ -87,6 +87,4 @@ public class ForwardWithTunnelDto {
     private String strategy;
 
     private Integer inx;
-
-    private String interfaceName;
 }

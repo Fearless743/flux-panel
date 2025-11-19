@@ -403,19 +403,15 @@ func (s *defaultService) observeStats(ctx context.Context) {
 						TotalErrs:    st.Get(stats.KindTotalErrs),
 					},
 				}
+				
+				// 将流量累积到全局管理器，而不是立即上报
 				if outputBytes > 0 || inputBytes > 0 {
-					reportItems := TrafficReportItem{
-						N: s.name,
-						U: int64(outputBytes),
-						D: int64(inputBytes),
-					}
-					success, err := sendTrafficReport(ctx, reportItems)
-					if err != nil {
-						fmt.Printf("发送流量报告失败: %v", err)
-					} else if success {
-						if xstats, ok := st.(*xstats.Stats); ok {
-							xstats.ResetTraffic(st.Get(stats.KindInputBytes)-inputBytes, st.Get(stats.KindOutputBytes)-outputBytes)
-						}
+					globalManager := GetGlobalTrafficManager()
+					globalManager.AddTraffic(s.name, int64(outputBytes), int64(inputBytes))
+					
+					// 立即重置流量计数（因为已经记录到全局管理器中）
+					if xstats, ok := st.(*xstats.Stats); ok {
+						xstats.ResetTraffic(st.Get(stats.KindInputBytes)-inputBytes, st.Get(stats.KindOutputBytes)-outputBytes)
 					}
 				}
 

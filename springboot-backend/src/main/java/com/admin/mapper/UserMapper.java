@@ -30,10 +30,5 @@ public interface UserMapper extends BaseMapper<User> {
      * @return 转发列表
      */
     List<UserPackageDto.UserForwardDetailDto> getUserForwardDetails(@Param("userId") Integer userId);
-    
-    /**
-     * 管理员查询所有隧道（流量和转发设置为99999）
-     * @return 隧道列表
-     */
-    List<UserPackageDto.UserTunnelDetailDto> getAllTunnelsForAdmin();
+
 }

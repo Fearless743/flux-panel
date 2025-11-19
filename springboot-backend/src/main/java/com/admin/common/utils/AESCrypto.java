@@ -42,7 +42,6 @@ public class AESCrypto {
             this.secretKey = new SecretKeySpec(keyBytes, ALGORITHM);
             this.secureRandom = new SecureRandom();
             
-            log.info("AES加密器初始化成功");
         } catch (Exception e) {
             log.info("AES加密器初始化失败", e);
             throw new RuntimeException("AES加密器初始化失败: " + e.getMessage(), e);

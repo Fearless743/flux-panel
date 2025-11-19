@@ -1,9 +1,7 @@
 spring:
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${DB_HOST}:3306/${DB_NAME}?useUnicode=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
-    username: ${DB_USER}
-    password: ${DB_PASSWORD}
+    driver-class-name: org.sqlite.JDBC
+    url: jdbc:sqlite:${DB_PATH:/app/data/gost.db}
     hikari:
       max-lifetime: 500000
       connection-timeout: 30000
@@ -12,7 +10,11 @@ spring:
       minimum-idle: 5
       pool-name: HikariCP
       auto-commit: true
-      connection-test-query: SELECT 1
+  sql:
+    init:
+      mode: always
+      platform: sqlite
+      continue-on-error: false
   servlet:
     multipart:
       max-file-size: 50MB

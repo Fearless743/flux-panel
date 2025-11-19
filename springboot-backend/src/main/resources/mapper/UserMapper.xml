@@ -34,7 +34,6 @@
             f.tunnel_id as tunnelId,
             t.name as tunnelName,
             t.in_ip as inIp,
-            f.in_port as inPort,
             f.remote_addr as remoteAddr,
             f.in_flow as inFlow,
             f.out_flow as outFlow,

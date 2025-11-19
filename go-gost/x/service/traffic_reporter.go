@@ -41,8 +41,8 @@ func SetHTTPReportURL(addr string, secret string) {
 	}
 }
 
-// sendTrafficReport 发送流量报告到HTTP接口
-func sendTrafficReport(ctx context.Context, reportItems TrafficReportItem) (bool, error) {
+// sendBatchTrafficReport 批量发送多个服务的流量报告到HTTP接口
+func sendBatchTrafficReport(ctx context.Context, reportItems []TrafficReportItem) (bool, error) {
 	jsonData, err := json.Marshal(reportItems)
 	if err != nil {
 		return false, fmt.Errorf("序列化报告数据失败: %v", err)
@@ -111,6 +111,7 @@ func sendTrafficReport(ctx context.Context, reportItems TrafficReportItem) (bool
 		return false, fmt.Errorf("服务器响应: %s (期望: ok)", responseText)
 	}
 }
+
 
 // sendConfigReport 发送配置报告到HTTP接口
 func sendConfigReport(ctx context.Context) (bool, error) {

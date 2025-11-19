@@ -1,14 +1,8 @@
 package com.admin.common.task;
 
 import com.admin.common.utils.GostUtil;
-import com.admin.entity.Forward;
-import com.admin.entity.Tunnel;
-import com.admin.entity.User;
-import com.admin.entity.UserTunnel;
-import com.admin.service.ForwardService;
-import com.admin.service.TunnelService;
-import com.admin.service.UserService;
-import com.admin.service.UserTunnelService;
+import com.admin.entity.*;
+import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +31,9 @@ public class ResetFlowAsync {
 
     @Resource
     TunnelService tunnelService;
+
+    @Resource
+    ChainTunnelService chainTunnelService;
 
     /**
      * 每天0点执行流量重置任务
@@ -197,12 +194,18 @@ public class ResetFlowAsync {
             // 查询对应转发
             List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("user_id", user.getId()).eq("status", 1));
             for (Forward forward : forwardList) {
-                UserTunnel userTunnel = userTunnelService.getOne(new QueryWrapper<UserTunnel>().eq("user_id", forward.getUserId()).eq("tunnel_id", forward.getTunnelId()));
-                if (userTunnel != null) {
-                    pauseForwardService(forward, userTunnel.getId());
-                    forward.setStatus(0);
-                    forwardService.updateById(forward);
+
+                List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", forward.getTunnelId()).eq("chain_type", 1));
+                for (ChainTunnel chainTunnel : chainTunnels) {
+                    UserTunnel userTunnel = userTunnelService.getOne(new QueryWrapper<UserTunnel>().eq("user_id", forward.getUserId()).eq("tunnel_id", forward.getTunnelId()));
+                    if (userTunnel != null) {
+                        String name = buildServiceName(forward.getId(), forward.getUserId(), userTunnel.getId());
+                        GostUtil.PauseAndResumeService(chainTunnel.getNodeId(), name, "PauseService");
+                    }
                 }
+
+                forward.setStatus(0);
+                forwardService.updateById(forward);
             }
             user.setStatus(0);
             userService.updateById(user);
@@ -217,25 +220,23 @@ public class ResetFlowAsync {
         for (UserTunnel userTunnel : user_tunnel_list) {
             List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", userTunnel.getTunnelId()).eq("user_id", userTunnel.getUserId()).eq("status", 1));
             for (Forward forward : forwardList) {
-                pauseForwardService(forward, userTunnel.getId());
+
+                List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", forward.getTunnelId()).eq("chain_type", 1));
+                for (ChainTunnel chainTunnel : chainTunnels) {
+                    String name = buildServiceName(forward.getId(), forward.getUserId(), userTunnel.getId());
+                    GostUtil.PauseAndResumeService(chainTunnel.getNodeId(), name, "PauseService");
+                }
                 forward.setStatus(0);
                 forwardService.updateById(forward);
             }
+
+
             userTunnel.setStatus(0);
             userTunnelService.updateById(userTunnel);
         }
     }
 
 
-    private void pauseForwardService(Forward forward, Integer userTunnelId) {
-        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-        if (tunnel == null) return;
-
-        GostUtil.PauseService(tunnel.getInNodeId(), buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));
-        if (tunnel.getType() == 2){
-            GostUtil.PauseRemoteService(tunnel.getOutNodeId(), buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));
-        }
-    }
 
 
     private String buildServiceName(Long forwardId, Integer userId, Integer userTunnelId) {

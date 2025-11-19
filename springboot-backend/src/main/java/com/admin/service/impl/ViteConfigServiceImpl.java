@@ -24,24 +24,7 @@ import java.util.Map;
 @Service
 public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteConfig> implements ViteConfigService {
 
-    // ========== 常量定义 ==========
-    
-    /** 成功响应消息 */
-    private static final String SUCCESS_UPDATE_MSG = "配置更新成功";
-    
-    /** 错误响应消息 */
-    private static final String ERROR_UPDATE_MSG = "配置更新失败";
-    private static final String ERROR_CONFIG_NOT_FOUND = "配置不存在";
-    private static final String ERROR_CONFIG_NAME_REQUIRED = "配置名称不能为空";
-    private static final String ERROR_CONFIG_VALUE_REQUIRED = "配置值不能为空";
 
-    // ========== 公共接口实现 ==========
-
-    /**
-     * 获取所有网站配置
-     * 
-     * @return 包含所有配置的Map
-     */
     @Override
     public R getConfigs() {
         List<ViteConfig> configList = this.list();
@@ -54,89 +37,48 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
         return R.ok(configMap);
     }
 
-    /**
-     * 根据配置名称获取配置值
-     * 
-     * @param name 配置名称
-     * @return 配置响应对象
-     */
+
     @Override
     public R getConfigByName(String name) {
-        if (!StringUtils.hasText(name)) {
-            return R.err(ERROR_CONFIG_NAME_REQUIRED);
-        }
+        if (!StringUtils.hasText(name)) return R.err("配置名称不能为空");
 
         QueryWrapper<ViteConfig> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("name", name);
         ViteConfig config = this.getOne(queryWrapper);
 
-        if (config == null) {
-            return R.err(ERROR_CONFIG_NOT_FOUND);
-        }
+        if (config == null) return R.err("配置不存在");
 
         return R.ok(config);
     }
 
-    /**
-     * 批量更新网站配置
-     * 
-     * @param configMap 配置Map
-     * @return 更新结果响应
-     */
+
     @Override
     public R updateConfigs(Map<String, String> configMap) {
-        if (configMap == null || configMap.isEmpty()) {
-            return R.err("配置数据不能为空");
-        }
+        if (configMap == null || configMap.isEmpty()) return R.err("配置数据不能为空");
 
-        try {
-            for (Map.Entry<String, String> entry : configMap.entrySet()) {
-                String name = entry.getKey();
-                String value = entry.getValue();
-                
-                if (!StringUtils.hasText(name)) {
-                    continue; // 跳过无效的配置名
-                }
-                
-                updateOrCreateConfig(name, value);
+        for (Map.Entry<String, String> entry : configMap.entrySet()) {
+            String name = entry.getKey();
+            String value = entry.getValue();
+
+            if (!StringUtils.hasText(name)) {
+                continue;
             }
-            return R.ok(SUCCESS_UPDATE_MSG);
-        } catch (Exception e) {
-            return R.err(ERROR_UPDATE_MSG + ": " + e.getMessage());
+
+            updateOrCreateConfig(name, value);
         }
+        return R.ok();
     }
 
-    /**
-     * 更新单个配置项
-     * 
-     * @param name 配置名
-     * @param value 配置值
-     * @return 更新结果响应
-     */
+
     @Override
     public R updateConfig(String name, String value) {
-        // 1. 验证必填字段
-        if (!StringUtils.hasText(name)) {
-            return R.err(ERROR_CONFIG_NAME_REQUIRED);
-        }
-        if (!StringUtils.hasText(value)) {
-            return R.err(ERROR_CONFIG_VALUE_REQUIRED);
-        }
-
-        try {
-            updateOrCreateConfig(name, value);
-            return R.ok(SUCCESS_UPDATE_MSG);
-        } catch (Exception e) {
-            return R.err(ERROR_UPDATE_MSG + ": " + e.getMessage());
-        }
+        if (!StringUtils.hasText(name)) return R.err("配置名称不能为空");
+        if (!StringUtils.hasText(value)) return R.err("配置值不能为空");
+        updateOrCreateConfig(name, value);
+        return R.ok();
     }
 
-    // ========== 私有辅助方法 ==========
 
-    /**
-     * 更新或创建配置项
-     * 如果配置存在则更新，不存在则创建
-     */
     private void updateOrCreateConfig(String name, String value) {
         QueryWrapper<ViteConfig> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("name", name);

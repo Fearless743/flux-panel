@@ -19,22 +19,10 @@ public class ForwardUpdateDto {
     
     @NotBlank(message = "转发名称不能为空")
     private String name;
-    
-    @NotNull(message = "隧道ID不能为空")
-    private Integer tunnelId;
-    
+
     @NotBlank(message = "远程地址不能为空")
     private String remoteAddr;
 
     private String strategy;
-    
-    /**
-     * 入口端口（可选，为空时自动分配）
-     */
-    @Min(value = 1, message = "端口号不能小于1")
-    @Max(value = 65535, message = "端口号不能大于65535")
-    private Integer inPort;
 
-    @TableField(updateStrategy = FieldStrategy.IGNORED)
-    private String interfaceName;
 } 

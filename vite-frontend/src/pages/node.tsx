@@ -26,8 +26,9 @@ interface Node {
   name: string;
   ip: string;
   serverIp: string;
-  portSta: number;
-  portEnd: number;
+  port: string;
+  tcpListenAddr?: string;
+  udpListenAddr?: string;
   version?: string;
   http?: number; // 0 关 1 开
   tls?: number;  // 0 关 1 开
@@ -49,10 +50,11 @@ interface Node {
 interface NodeForm {
   id: number | null;
   name: string;
-  ipString: string;
   serverIp: string;
-  portSta: number;
-  portEnd: number;
+  port: string;
+  tcpListenAddr: string;
+  udpListenAddr: string;
+  interfaceName: string;
   http: number; // 0 关 1 开
   tls: number;  // 0 关 1 开
   socks: number; // 0 关 1 开
@@ -73,10 +75,11 @@ export default function NodePage() {
   const [form, setForm] = useState<NodeForm>({
     id: null,
     name: '',
-    ipString: '',
     serverIp: '',
-    portSta: 1000,
-    portEnd: 65535,
+    port: '1000-65535',
+    tcpListenAddr: '[::]',
+    udpListenAddr: '[::]',
+    interfaceName: '',
     http: 0,
     tls: 0,
     socks: 0
@@ -362,6 +365,57 @@ export default function NodePage() {
     return domainRegex.test(trimmedIp) || singleLabelDomain.test(trimmedIp);
   };
 
+  // 验证端口格式：支持 80,443,100-600
+  const validatePort = (portStr: string): { valid: boolean; error?: string } => {
+    if (!portStr || !portStr.trim()) {
+      return { valid: false, error: '请输入端口' };
+    }
+
+    const trimmed = portStr.trim();
+    const parts = trimmed.split(',').map(p => p.trim()).filter(p => p);
+    
+    if (parts.length === 0) {
+      return { valid: false, error: '请输入有效的端口' };
+    }
+
+    for (const part of parts) {
+      // 检查是否是端口范围 (如 100-600)
+      if (part.includes('-')) {
+        const range = part.split('-').map(p => p.trim());
+        if (range.length !== 2) {
+          return { valid: false, error: `端口范围格式错误: ${part}` };
+        }
+        
+        const start = parseInt(range[0]);
+        const end = parseInt(range[1]);
+        
+        if (isNaN(start) || isNaN(end)) {
+          return { valid: false, error: `端口必须是数字: ${part}` };
+        }
+        
+        if (start < 1 || start > 65535 || end < 1 || end > 65535) {
+          return { valid: false, error: `端口范围必须在 1-65535 之间: ${part}` };
+        }
+        
+        if (start >= end) {
+          return { valid: false, error: `起始端口必须小于结束端口: ${part}` };
+        }
+      } else {
+        // 单个端口
+        const port = parseInt(part);
+        if (isNaN(port)) {
+          return { valid: false, error: `端口必须是数字: ${part}` };
+        }
+        
+        if (port < 1 || port > 65535) {
+          return { valid: false, error: `端口必须在 1-65535 之间: ${part}` };
+        }
+      }
+    }
+
+    return { valid: true };
+  };
+
   // 表单验证
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -374,36 +428,15 @@ export default function NodePage() {
       newErrors.name = '节点名称长度不能超过50位';
     }
     
-    if (!form.ipString.trim()) {
-      newErrors.ipString = '请输入入口IP地址';
-    } else {
-      const ips = form.ipString.split('\n').map(ip => ip.trim()).filter(ip => ip);
-      if (ips.length === 0) {
-        newErrors.ipString = '请输入至少一个有效IP地址';
-      } else {
-        for (let i = 0; i < ips.length; i++) {
-          if (!validateIp(ips[i])) {
-            newErrors.ipString = `第${i + 1}行IP地址格式错误: ${ips[i]}`;
-            break;
-          }
-        }
-      }
-    }
-    
     if (!form.serverIp.trim()) {
       newErrors.serverIp = '请输入服务器IP地址';
     } else if (!validateIp(form.serverIp.trim())) {
       newErrors.serverIp = '请输入有效的IPv4、IPv6地址或域名';
     }
     
-    if (!form.portSta || form.portSta < 1 || form.portSta > 65535) {
-      newErrors.portSta = '端口范围必须在1-65535之间';
-    }
-    
-    if (!form.portEnd || form.portEnd < 1 || form.portEnd > 65535) {
-      newErrors.portEnd = '端口范围必须在1-65535之间';
-    } else if (form.portEnd < form.portSta) {
-      newErrors.portEnd = '结束端口不能小于起始端口';
+    const portValidation = validatePort(form.port);
+    if (!portValidation.valid) {
+      newErrors.port = portValidation.error || '端口格式错误';
     }
     
     setErrors(newErrors);
@@ -427,10 +460,11 @@ export default function NodePage() {
     setForm({
       id: node.id,
       name: node.name,
-      ipString: node.ip ? node.ip.split(',').map(ip => ip.trim()).join('\n') : '',
       serverIp: node.serverIp || '',
-      portSta: node.portSta,
-      portEnd: node.portEnd,
+      port: node.port || '1000-65535',
+      tcpListenAddr: node.tcpListenAddr || '[::]',
+      udpListenAddr: node.udpListenAddr || '[::]',
+      interfaceName: (node as any).interfaceName || '',
       http: typeof node.http === 'number' ? node.http : 1,
       tls: typeof node.tls === 'number' ? node.tls : 1,
       socks: typeof node.socks === 'number' ? node.socks : 1
@@ -516,28 +550,9 @@ export default function NodePage() {
     setSubmitLoading(true);
     
     try {
-      const ipString = form.ipString
-        .split('\n')
-        .map(ip => ip.trim())
-        .filter(ip => ip)
-        .join(',');
-        
-      const submitData = {
-        ...form,
-        ip: ipString
-      };
-      delete (submitData as any).ipString;
-      
       const apiCall = isEdit ? updateNode : createNode;
-      const data = isEdit ? submitData : { 
-        name: form.name, 
-        ip: ipString,
-        serverIp: form.serverIp,
-        portSta: form.portSta,
-        portEnd: form.portEnd,
-        http: form.http,
-        tls: form.tls,
-        socks: form.socks
+      const data = { 
+        ...form
       };
       
       const res = await apiCall(data);
@@ -550,10 +565,11 @@ export default function NodePage() {
             n.id === form.id ? {
               ...n,
               name: form.name,
-              ip: ipString,
               serverIp: form.serverIp,
-              portSta: form.portSta,
-              portEnd: form.portEnd,
+              port: form.port,
+              tcpListenAddr: form.tcpListenAddr,
+              udpListenAddr: form.udpListenAddr,
+              interfaceName: form.interfaceName,
               http: form.http,
               tls: form.tls,
               socks: form.socks
@@ -577,10 +593,11 @@ export default function NodePage() {
     setForm({
       id: null,
       name: '',
-      ipString: '',
       serverIp: '',
-      portSta: 1000,
-      portEnd: 65535,
+      port: '1000-65535',
+      tcpListenAddr: '[::]',
+      udpListenAddr: '[::]',
+      interfaceName: '',
       http: 0,
       tls: 0,
       socks: 0
@@ -643,7 +660,6 @@ export default function NodePage() {
                   <div className="flex justify-between items-start w-full">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-foreground truncate text-sm">{node.name}</h3>
-                      <p className="text-xs text-default-500 truncate">{node.serverIp}</p>
                     </div>
                     <div className="flex items-center gap-1.5 ml-2">
                       <Chip 
@@ -662,24 +678,12 @@ export default function NodePage() {
                   {/* 基础信息 */}
                   <div className="space-y-2 mb-4">
                     <div className="flex justify-between items-center text-sm min-w-0">
-                      <span className="text-default-600 flex-shrink-0">入口IP</span>
+                      <span className="text-default-600 flex-shrink-0">IP</span>
                       <div className="text-right text-xs min-w-0 flex-1 ml-2">
-                        {node.ip ? (
-                          node.ip.split(',').length > 1 ? (
-                            <span className="font-mono truncate block" title={node.ip.split(',')[0].trim()}>
-                              {node.ip.split(',')[0].trim()} +{node.ip.split(',').length - 1}个
-                            </span>
-                          ) : (
-                            <span className="font-mono truncate block" title={node.ip.trim()}>
-                              {node.ip.trim()}
-                            </span>
-                          )
-                        ) : '-'}
+                      <span className="font-mono truncate block" title={node.serverIp.trim()}>
+                              {node.serverIp.trim()}
+                      </span>
                       </div>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-default-600">端口</span>
-                      <span className="text-xs">{node.portSta}-{node.portEnd}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-default-600">版本</span>
@@ -857,44 +861,60 @@ export default function NodePage() {
                   variant="bordered"
                 />
 
-                <Textarea
-                  label="入口IP"
-                  placeholder="一行一个IP地址或域名，例如:&#10;192.168.1.100&#10;example.com"
-                  value={form.ipString}
-                  onChange={(e) => setForm(prev => ({ ...prev, ipString: e.target.value }))}
-                  isInvalid={!!errors.ipString}
-                  errorMessage={errors.ipString}
+                <Input
+                  label="可用端口"
+                  placeholder="例如: 80,443,1000-65535"
+                  value={form.port}
+                  onChange={(e) => setForm(prev => ({ ...prev, port: e.target.value }))}
+                  isInvalid={!!errors.port}
+                  errorMessage={errors.port}
                   variant="bordered"
-                  minRows={3}
-                  maxRows={5}
-                  description="支持多个IP，每行一个地址"
+                  description="支持单个端口(80)、多个端口(80,443)或端口范围(1000-65535)，多个可用逗号分隔"
+                  classNames={{
+                    input: "font-mono"
+                  }}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="出口网卡名或IP"
+                  placeholder="请输入出口网卡名或IP"
+                  value={form.interfaceName}
+                  onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
+                  isInvalid={!!errors.interfaceName}
+                  errorMessage={errors.interfaceName}
+                  variant="bordered"
+                  description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
-                    label="起始端口"
-                    type="number"
-                    placeholder="1000"
-                    value={form.portSta.toString()}
-                    onChange={(e) => setForm(prev => ({ ...prev, portSta: parseInt(e.target.value) || 1000 }))}
-                    isInvalid={!!errors.portSta}
-                    errorMessage={errors.portSta}
+                    label="TCP监听地址"
+                    placeholder="请输入TCP监听地址"
+                    value={form.tcpListenAddr}
+                    onChange={(e) => setForm(prev => ({ ...prev, tcpListenAddr: e.target.value }))}
+                    isInvalid={!!errors.tcpListenAddr}
+                    errorMessage={errors.tcpListenAddr}
                     variant="bordered"
-                    min={1}
-                    max={65535}
+                    startContent={
+                      <div className="pointer-events-none flex items-center">
+                        <span className="text-default-400 text-small">TCP</span>
+                      </div>
+                    }
                   />
 
                   <Input
-                    label="结束端口"
-                    type="number"
-                    placeholder="65535"
-                    value={form.portEnd.toString()}
-                    onChange={(e) => setForm(prev => ({ ...prev, portEnd: parseInt(e.target.value) || 65535 }))}
-                    isInvalid={!!errors.portEnd}
-                    errorMessage={errors.portEnd}
+                    label="UDP监听地址"
+                    placeholder="请输入UDP监听地址"
+                    value={form.udpListenAddr}
+                    onChange={(e) => setForm(prev => ({ ...prev, udpListenAddr: e.target.value }))}
+                    isInvalid={!!errors.udpListenAddr}
+                    errorMessage={errors.udpListenAddr}
                     variant="bordered"
-                    min={1}
-                    max={65535}
+                    startContent={
+                      <div className="pointer-events-none flex items-center">
+                        <span className="text-default-400 text-small">UDP</span>
+                      </div>
+                    }
                   />
                 </div>
 
@@ -979,7 +999,15 @@ export default function NodePage() {
                 <Alert
                         color="primary"
                         variant="flat"
-                        description="服务器ip是你要添加的服务器的ip地址，不是面板的ip地址。入口ip是用于展示在转发页面，面向用户的访问地址。实在理解不到说明你没这个需求，都填节点的服务器ip就行！"
+                        description="服务器ip是你要添加的服务器的ip地址，不是面板的ip地址。"
+                        className="mt-4"
+                      />
+                
+                <Alert
+                        color="primary"
+                        variant="flat"
+                        title="TCP,UDP监听地址"
+                        description="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明"
                         className="mt-4"
                       />
               </div>

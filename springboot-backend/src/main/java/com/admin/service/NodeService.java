@@ -24,8 +24,6 @@ public interface NodeService extends IService<Node> {
 
     R deleteNode(Long id);
 
-    Node getNodeById(Long id);
-
     R getInstallCommand(Long id);
 
 }
