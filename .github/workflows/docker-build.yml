@@ -216,7 +216,6 @@ jobs:
           gh release upload "${VERSION}" ./panel_install.sh --clobber
           
           echo "📤 上传配置文件..."
-          gh release upload "${VERSION}" ./gost.sql --clobber
           gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
           gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
           
