@@ -2,7 +2,7 @@ name: Build and Push Images Based on Version
 
 # 在这里定义统一版本号
 env:
-  VERSION: "2.0.1-beta"
+  VERSION: "2.0.2-beta"
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # 获取所有历史和 tags
+          fetch-depth: 0
 
       - name: Display version
         run: |
@@ -67,21 +67,37 @@ jobs:
           sudo mv upx-4.2.1-amd64_linux/upx /usr/local/bin/
           rm -rf upx-4.2.1-amd64_linux*
 
-      - name: Build GOST binary
+      - name: Build GOST binary (AMD64)
         working-directory: ./go-gost
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
 
-      - name: Compress with UPX
+      - name: Build GOST binary (ARM64)
+        working-directory: ./go-gost
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o gost-arm64
+
+      - name: Compress with UPX (AMD64)
         working-directory: ./go-gost
         run: |
           upx --best --lzma gost
 
-      - name: Upload GOST artifact
+      - name: Compress with UPX (ARM64)
+        working-directory: ./go-gost
+        run: |
+          upx --best --lzma gost-arm64
+
+      - name: Upload GOST AMD64 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gost-binary
+          name: gost-binary-amd64
           path: ./go-gost/gost
+
+      - name: Upload GOST ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gost-binary-arm64
+          path: ./go-gost/gost-arm64
 
   build-vite:
     name: Build & Push Vite Frontend
@@ -109,7 +125,7 @@ jobs:
         run: |
           VERSION="${{ needs.check-version.outputs.version }}"
           docker buildx build \
-            --platform linux/amd64 \
+            --platform linux/amd64,linux/arm64 \
             --push \
             -t bqlpfy/vite-frontend:latest \
             -t bqlpfy/vite-frontend:${VERSION} \
@@ -153,7 +169,7 @@ jobs:
         run: |
           VERSION="${{ needs.check-version.outputs.version }}"
           docker buildx build \
-            --platform linux/amd64 \
+            --platform linux/amd64,linux/arm64 \
             --push \
             -t bqlpfy/springboot-backend:latest \
             -t bqlpfy/springboot-backend:${VERSION} \
@@ -169,11 +185,22 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Download GOST binary
+      - name: Download GOST AMD64 binary
         uses: actions/download-artifact@v4
         with:
-          name: gost-binary
-          path: ./artifacts
+          name: gost-binary-amd64
+          path: ./artifacts/amd64
+
+      - name: Download GOST ARM64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: gost-binary-arm64
+          path: ./artifacts/arm64
+
+      - name: Rename binaries
+        run: |
+          mv ./artifacts/amd64/gost ./artifacts/gost
+          mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
 
       - name: Create Release
         env:
@@ -202,9 +229,10 @@ jobs:
           - **Commit**: [\`${GITHUB_SHA:0:7}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
           
           ## 📦 Components
-          - **GOST Binary** (Linux AMD64, compressed with UPX)
-          - **Vite Frontend** Docker Image: \`bqlpfy/vite-frontend:${VERSION}\` / \`bqlpfy/vite-frontend:latest\`
-          - **Spring Boot Backend** Docker Image: \`bqlpfy/springboot-backend:${VERSION}\` / \`bqlpfy/springboot-backend:latest\`
+          - **GOST Binary AMD64** - \`gost\` (Linux AMD64, compressed with UPX)
+          - **GOST Binary ARM64** - \`gost-arm64\` (Linux ARM64, compressed with UPX)
+          - **Vite Frontend** Docker Image: \`bqlpfy/vite-frontend:${VERSION}\` / \`bqlpfy/vite-frontend:latest\` (支持 AMD64/ARM64)
+          - **Spring Boot Backend** Docker Image: \`bqlpfy/springboot-backend:${VERSION}\` / \`bqlpfy/springboot-backend:latest\` (支持 AMD64/ARM64)
           
           ## 📥 Installation Files
           - \`install.sh\` - GOST 客户端安装脚本
@@ -218,8 +246,9 @@ jobs:
             --repo ${{ github.repository }}
           
           # 上传所有文件到 release
-          echo "📤 上传 GOST 二进制..."
+          echo "📤 上传 GOST 二进制文件..."
           gh release upload "${VERSION}" ./artifacts/gost --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
           
           echo "📤 上传安装脚本..."
           gh release upload "${VERSION}" ./install.sh --clobber

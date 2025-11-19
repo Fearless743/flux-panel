@@ -406,6 +406,14 @@ export default function ForwardPage() {
       newErrors.tunnelId = '请选择关联隧道';
     }
     
+    // 验证入口端口（可选，如果填写则验证）
+    if (form.inPort !== null && form.inPort !== undefined) {
+      const port = Number(form.inPort);
+      if (isNaN(port) || port < 1 || port > 65535) {
+        newErrors.inPort = '端口必须在 1-65535 之间';
+      }
+    }
+    
     if (!form.remoteAddr.trim()) {
       newErrors.remoteAddr = '请输入远程地址';
     } else {
@@ -526,6 +534,7 @@ export default function ForwardPage() {
           userId: form.userId,
           name: form.name,
           tunnelId: form.tunnelId,
+          inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : 'fifo'
         };
@@ -535,6 +544,7 @@ export default function ForwardPage() {
         const createData = {
           name: form.name,
           tunnelId: form.tunnelId,
+          inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : 'fifo'
         };
@@ -1605,6 +1615,24 @@ export default function ForwardPage() {
                         </SelectItem>
                       ))}
                     </Select>
+
+                    <Input
+                      label="入口端口"
+                      placeholder="留空则自动分配可用端口"
+                      type="number"
+                      value={form.inPort !== null ? form.inPort.toString() : ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setForm(prev => ({ 
+                          ...prev, 
+                          inPort: value ? parseInt(value) : null
+                        }));
+                      }}
+                      isInvalid={!!errors.inPort}
+                      errorMessage={errors.inPort}
+                      variant="bordered"
+                      description="指定入口端口，留空则从节点可用端口中自动分配"
+                    />
                     
                     <Textarea
                       label="远程地址"

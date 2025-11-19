@@ -81,7 +81,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                     Node node = nodeService.getById(chain_node.getNodeId());
                     if (node == null) return R.err("节点不存在");
                     nodes.put(node.getId(), node);
-                    Integer nodePort = getNodePort(chain_node.getNodeId(), 1);
+                    Integer nodePort = getNodePort(chain_node.getNodeId(), 1, null);
                     chain_node.setPort(nodePort);
                     chain_node.setInx(inx); // 设置转发链序号
                     chainTunnels.add(chain_node);
@@ -93,7 +93,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                 Node node = nodeService.getById(out_node.getNodeId());
                 if (node == null) return R.err("节点不存在");
                 nodes.put(node.getId(), node);
-                Integer nodePort = getNodePort(out_node.getNodeId(), 1);
+                Integer nodePort = getNodePort(out_node.getNodeId(), 1, null);
                 out_node.setPort(nodePort);
                 chainTunnels.add(out_node);
             }
@@ -472,7 +472,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
     }
 
     @Override
-    public Integer getNodePort(Long nodeId,Integer type) {
+    public Integer getNodePort(Long nodeId,Integer type, Integer port) {
 
         Node node = nodeService.getById(nodeId);
         if (node == null){
@@ -508,6 +508,9 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         if (type == 1) {
             return availablePorts.getLast();
         }else {
+            if (port != null && availablePorts.contains(port)) {
+                return port;
+            }
             return availablePorts.getFirst();
         }
     }

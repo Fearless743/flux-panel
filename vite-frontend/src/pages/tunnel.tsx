@@ -357,6 +357,9 @@ export default function TunnelPage() {
         .map(group => group.filter(node => node.nodeId !== -1))
         .filter(group => group.length > 0); // 移除空组
       
+      // 过滤掉出口节点中的占位节点
+      const cleanedOutNodeId = (form.outNodeId || []).filter(node => node.nodeId !== -1);
+      
       // 将换行符分隔的IP转换为逗号分隔
       const inIpString = form.inIp
         .split('\n')
@@ -367,6 +370,7 @@ export default function TunnelPage() {
       const data = { 
         ...form,
         inIp: inIpString,
+        outNodeId: cleanedOutNodeId,
         chainNodes: cleanedChainNodes
       };
       
@@ -1052,7 +1056,7 @@ export default function TunnelPage() {
                               label="节点"
                               placeholder="请选择出口节点（可多选）"
                               selectionMode="multiple"
-                              selectedKeys={form.outNodeId ? form.outNodeId.map(ct => ct.nodeId.toString()) : []}
+                              selectedKeys={form.outNodeId ? form.outNodeId.filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId.toString()) : []}
                               disabledKeys={[
                                 ...nodes.filter(node => node.status !== 1).map(node => node.id.toString()),
                                 ...form.inNodeId.map(ct => ct.nodeId.toString()),
@@ -1061,12 +1065,17 @@ export default function TunnelPage() {
                               onSelectionChange={(keys) => {
                                 const selectedIds = Array.from(keys).map(key => parseInt(key as string));
                                 const currentOutNodes = form.outNodeId || [];
-                                const protocol = currentOutNodes.length > 0 ? currentOutNodes[0].protocol || 'tls' : 'tls';
-                                const strategy = currentOutNodes.length > 0 ? currentOutNodes[0].strategy || 'round' : 'round';
                                 
+                                let protocol = 'tls';
+                                let strategy = 'round';
+                                if (currentOutNodes.length > 0) {
+                                  protocol = currentOutNodes[0].protocol || 'tls';
+                                  strategy = currentOutNodes[0].strategy || 'round';
+                                }
+                                
+                                const realNodes = currentOutNodes.filter(ct => ct.nodeId !== -1);
                                 const newOutNodeId: ChainTunnel[] = selectedIds.map(nodeId => {
-                                  // 保留已有的配置或使用默认值
-                                  const existing = currentOutNodes.find(ct => ct.nodeId === nodeId);
+                                  const existing = realNodes.find(ct => ct.nodeId === nodeId);
                                   return existing || { nodeId, chainType: 3, protocol, strategy };
                                 });
                                 setForm(prev => ({ ...prev, outNodeId: newOutNodeId }));
@@ -1116,14 +1125,30 @@ export default function TunnelPage() {
                           <Select
                             label="协议"
                             placeholder="选择协议"
-                            selectedKeys={[form.outNodeId && form.outNodeId.length > 0 ? form.outNodeId[0].protocol || 'tls' : 'tls']}
+                            selectedKeys={[(() => {
+                              if (!form.outNodeId || form.outNodeId.length === 0) return 'tls';
+                              return form.outNodeId[0].protocol || 'tls';
+                            })()]}
                             onSelectionChange={(keys) => {
                               const selectedKey = Array.from(keys)[0] as string;
-                              if (selectedKey && form.outNodeId) {
-                                setForm(prev => ({
-                                  ...prev,
-                                  outNodeId: (prev.outNodeId || []).map(ct => ({ ...ct, protocol: selectedKey }))
-                                }));
+                              if (selectedKey) {
+                                setForm(prev => {
+                                  const currentOutNodes = prev.outNodeId || [];
+                                  const currentStrategy = currentOutNodes.length > 0 ? currentOutNodes[0].strategy || 'round' : 'round';
+                                  
+                                  if (currentOutNodes.length === 0) {
+                                    // 如果还没有出口节点，创建一个占位节点保存设置
+                                    return {
+                                      ...prev,
+                                      outNodeId: [{ nodeId: -1, chainType: 3, protocol: selectedKey, strategy: currentStrategy }]
+                                    };
+                                  }
+                                  // 更新所有出口节点的协议
+                                  return {
+                                    ...prev,
+                                    outNodeId: currentOutNodes.map(ct => ({ ...ct, protocol: selectedKey }))
+                                  };
+                                });
                               }
                             }}
                             isInvalid={!!errors.protocol}
@@ -1147,14 +1172,28 @@ export default function TunnelPage() {
                           <Select
                             label="负载策略"
                             placeholder="选择策略"
-                            selectedKeys={[form.outNodeId && form.outNodeId.length > 0 ? form.outNodeId[0].strategy || 'round' : 'round']}
+                            selectedKeys={[(() => {
+                              if (!form.outNodeId || form.outNodeId.length === 0) return 'round';
+                              return form.outNodeId[0].strategy || 'round';
+                            })()]}
                             onSelectionChange={(keys) => {
                               const selectedKey = Array.from(keys)[0] as string;
-                              if (selectedKey && form.outNodeId) {
-                                setForm(prev => ({
-                                  ...prev,
-                                  outNodeId: (prev.outNodeId || []).map(ct => ({ ...ct, strategy: selectedKey }))
-                                }));
+                              if (selectedKey) {
+                                setForm(prev => {
+                                  const currentOutNodes = prev.outNodeId || [];
+                                  const currentProtocol = currentOutNodes.length > 0 ? currentOutNodes[0].protocol || 'tls' : 'tls';
+                                  
+                                  if (currentOutNodes.length === 0) {
+                                    return {
+                                      ...prev,
+                                      outNodeId: [{ nodeId: -1, chainType: 3, protocol: currentProtocol, strategy: selectedKey }]
+                                    };
+                                  }
+                                  return {
+                                    ...prev,
+                                    outNodeId: currentOutNodes.map(ct => ({ ...ct, strategy: selectedKey }))
+                                  };
+                                });
                               }
                             }}
                             variant="bordered"

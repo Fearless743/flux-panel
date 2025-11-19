@@ -163,7 +163,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()).eq("chain_type", 1));
         for (ChainTunnel chainTunnel : chainTunnels) {
-            Integer nodePort = tunnelService.getNodePort(chainTunnel.getNodeId(), 2);
+            Integer nodePort = tunnelService.getNodePort(chainTunnel.getNodeId(), 2, forwardDto.getInPort());
 
             ForwardPort forwardPort = new ForwardPort();
             forwardPort.setForwardId(forward.getId());
@@ -205,7 +205,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err(permissionResult.getErrorMessage());
         }
 
-        UserTunnel userTunnel = null;
+        UserTunnel userTunnel;
         if (currentUser.getRoleId() != 0) {
             userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
             if (userTunnel == null) {
@@ -235,6 +235,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             ForwardPort forwardPort = forwardPortService.getOne(new QueryWrapper<ForwardPort>().eq("forward_id", existForward.getId()).eq("node_id", node.getId()));
             if (forwardPort == null){
                 return R.err("部分节点不存在1");
+            }
+            if (forwardUpdateDto.getInPort() != null && !forwardUpdateDto.getInPort().equals(forwardPort.getPort())) {
+                Integer nodePort = tunnelService.getNodePort(forwardPort.getNodeId(), 2, forwardUpdateDto.getInPort());
+                if (Objects.equals(nodePort, forwardUpdateDto.getInPort())) {
+                    forwardPort.setPort(nodePort);
+                    forwardPortService.updateById(forwardPort);
+                }
             }
             GostUtil.AddAndUpdateService(serviceName, limiter, node, existForward, forwardPort, tunnel, "UpdateService");
         }

@@ -1,6 +1,6 @@
 services:
   backend:
-    image: bqlpfy/springboot-backend:2.0.1-beta
+    image: bqlpfy/springboot-backend:2.0.2-beta
     container_name: springboot-backend
     restart: unless-stopped
     environment:
@@ -23,7 +23,7 @@ services:
       start_period: 60s
 
   frontend:
-    image: bqlpfy/vite-frontend:2.0.1-beta
+    image: bqlpfy/vite-frontend:2.0.2-beta
     container_name: vite-frontend
     restart: unless-stopped
     ports:

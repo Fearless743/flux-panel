@@ -25,4 +25,6 @@ public class ForwardUpdateDto {
 
     private String strategy;
 
+    private Integer inPort;
+
 } 

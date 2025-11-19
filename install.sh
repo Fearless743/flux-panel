@@ -1,6 +1,6 @@
 #!/bin/bash
 # 下载地址
-DOWNLOAD_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.1-beta/gost"
+DOWNLOAD_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.2-beta/gost"
 INSTALL_DIR="/etc/flux_agent"
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then

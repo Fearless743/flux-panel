@@ -21,4 +21,6 @@ public class ForwardDto {
     private String remoteAddr;
 
     private String strategy;
+
+    private Integer inPort;
 } 
