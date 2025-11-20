@@ -1,6 +1,6 @@
 services:
   backend:
-    image: bqlpfy/springboot-backend:2.0.3-beta
+    image: bqlpfy/springboot-backend:2.0.4-beta
     container_name: springboot-backend
     restart: unless-stopped
     environment:
@@ -15,6 +15,8 @@ services:
       - sqlite_data:/app/data
     networks:
       - gost-network
+    stop_grace_period: 30s
+    stop_signal: SIGTERM
     healthcheck:
       test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:6365/flow/test || exit 1"]
       interval: 30s
@@ -23,7 +25,7 @@ services:
       start_period: 60s
 
   frontend:
-    image: bqlpfy/vite-frontend:2.0.3-beta
+    image: bqlpfy/vite-frontend:2.0.4-beta
     container_name: vite-frontend
     restart: unless-stopped
     ports:

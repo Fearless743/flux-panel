@@ -229,6 +229,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 String socks = (String) session.getAttributes().get("socks");
                 
                 log.info("节点 {} 尝试连接，开始处理连接逻辑", nodeId);
+                log.info("屏蔽协议数据:http->{}, tls->{}, socks->{}", http, tls, socks);
                 
                 // 检查是否已有该节点的连接，如果有则记录日志但直接覆盖
                 WebSocketSession existingSession = nodeSessions.get(nodeId);

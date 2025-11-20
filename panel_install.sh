@@ -8,8 +8,8 @@ export LC_ALL=C
 
 
 # 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.3-beta/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.3-beta/docker-compose-v6.yml"
+DOCKER_COMPOSEV4_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.4-beta/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.4-beta/docker-compose-v6.yml"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
@@ -234,7 +234,15 @@ update_panel() {
     configure_docker_ipv6
   fi
 
-  echo "🛑 停止当前服务..."
+  # 先发送 SIGTERM 信号，让应用优雅关闭
+  docker stop -t 30 springboot-backend 2>/dev/null || true
+  docker stop -t 10 vite-frontend 2>/dev/null || true
+  
+  # 等待 WAL 文件同步
+  echo "⏳ 等待数据同步..."
+  sleep 5
+  
+  # 然后再完全停止
   $DOCKER_CMD down
 
   echo "⬇️ 拉取最新镜像..."
