@@ -19,7 +19,7 @@ get_architecture() {
 # 构建下载地址
 build_download_url() {
     local ARCH=$(get_architecture)
-    echo "https://github.com/bqlpfy/flux-panel/releases/download/2.0.4-beta/gost-${ARCH}"
+    echo "https://github.com/bqlpfy/flux-panel/releases/download/2.0.5-beta/gost-${ARCH}"
 }
 
 # 下载地址

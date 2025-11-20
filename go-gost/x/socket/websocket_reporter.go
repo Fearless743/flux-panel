@@ -87,6 +87,9 @@ type TcpPingResponse struct {
 
 type WebSocketReporter struct {
 	url            string
+	addr           string            // 保存服务器地址
+	secret         string            // 保存密钥
+	version        string            // 保存版本号
 	conn           *websocket.Conn
 	reconnectTime  time.Duration
 	pingInterval   time.Duration
@@ -195,7 +198,25 @@ func (w *WebSocketReporter) connect() error {
 		w.connecting = false
 	}()
 
-	u, err := url.Parse(w.url)
+	// 重新读取 config.json 获取最新的协议配置
+	type LocalConfig struct {
+		Addr   string `json:"addr"`
+		Secret string `json:"secret"`
+		Http   int    `json:"http"`
+		Tls    int    `json:"tls"`
+		Socks  int    `json:"socks"`
+	}
+	
+	var cfg LocalConfig
+	if b, err := os.ReadFile("config.json"); err == nil {
+		json.Unmarshal(b, &cfg)
+	}
+	
+	// 使用最新的配置重新构建 URL
+	currentURL := "ws://" + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version + 
+		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
+
+	u, err := url.Parse(currentURL)
 	if err != nil {
 		return fmt.Errorf("解析URL失败: %v", err)
 	}
@@ -225,7 +246,7 @@ func (w *WebSocketReporter) connect() error {
 		return nil
 	})
 
-	fmt.Printf("✅ WebSocket连接建立成功\n")
+	fmt.Printf("✅ WebSocket连接建立成功 (http=%d, tls=%d, socks=%d)\n", cfg.Http, cfg.Tls, cfg.Socks)
 	return nil
 }
 
@@ -1021,12 +1042,16 @@ func getMemoryInfo() MemoryInfo {
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
 func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, version string) *WebSocketReporter {
 
-	// 构建包含本机IP的WebSocket URL
+	// 构建初始 WebSocket URL
 	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
 
 	fmt.Printf("🔗 WebSocket连接URL: %s\n", fullURL)
 
 	reporter := NewWebSocketReporter(fullURL, secret)
+	// 保存 addr, secret, version 供重连时使用
+	reporter.addr = addr
+	reporter.secret = secret
+	reporter.version = version
 	reporter.Start()
 	return reporter
 }

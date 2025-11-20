@@ -169,7 +169,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         forward.setUpdatedTime(System.currentTimeMillis());
         List<JSONObject> success = new ArrayList<>();
         List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()).eq("chain_type", 1));
-        chainTunnels = get_port(chainTunnels, forwardDto.getInPort());
+        chainTunnels = get_port(chainTunnels, forwardDto.getInPort(), 0L);
         this.save(forward);
 
         for (ChainTunnel chainTunnel : chainTunnels) {
@@ -251,7 +251,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
 
         List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()).eq("chain_type", 1));
-        chainTunnels = get_port(chainTunnels, forwardUpdateDto.getInPort());
+
+        // 自己占用的应该不算
+        chainTunnels = get_port(chainTunnels, forwardUpdateDto.getInPort(), existForward.getId());
+
+
+
         for (ChainTunnel chainTunnel : chainTunnels) {
             String serviceName = buildServiceName(existForward.getId(), existForward.getUserId(), userTunnel);
             Integer limiter = permissionResult.getLimiter();
@@ -940,12 +945,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
 
-    public List<ChainTunnel> get_port(List<ChainTunnel> chainTunnelList, Integer in_port) {
+    public List<ChainTunnel> get_port(List<ChainTunnel> chainTunnelList, Integer in_port, Long forward_id) {
         List<List<Integer>> list = new ArrayList<>();
 
         // 获取每个节点的端口列表
         for (ChainTunnel tunnel : chainTunnelList) {
-            List<Integer> nodePort = getNodePort(tunnel.getNodeId());
+            List<Integer> nodePort = getNodePort(tunnel.getNodeId(), forward_id);
             if (nodePort.isEmpty()) {
                 throw new RuntimeException("暂无可用端口");
             }
@@ -968,7 +973,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // ========== 未指定 in_port 查找最小的共同端口 ==========
-        Set<Integer> intersection = new HashSet<>(list.get(0));
+        Set<Integer> intersection = new HashSet<>(list.getFirst());
         for (int i = 1; i < list.size(); i++) {
             intersection.retainAll(list.get(i));
         }
@@ -995,7 +1000,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         return chainTunnelList;
     }
 
-    public List<Integer> getNodePort(Long nodeId) {
+    public List<Integer> getNodePort(Long nodeId, Long forward_id) {
 
         Node node = nodeService.getById(nodeId);
         if (node == null) {
@@ -1012,7 +1017,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 .collect(Collectors.toSet());
 
 
-        List<ForwardPort> list = forwardPortService.list(new QueryWrapper<ForwardPort>().eq("node_id", nodeId));
+        List<ForwardPort> list = forwardPortService.list(new QueryWrapper<ForwardPort>().eq("node_id", nodeId).ne("forward_id", forward_id));
         Set<Integer> forwardUsedPorts = new HashSet<>();
         for (ForwardPort forwardPort : list) {
             forwardUsedPorts.add(forwardPort.getPort());
