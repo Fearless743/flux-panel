@@ -1,30 +1,18 @@
 
 # flux-panel转发面板 哆啦A梦转发面板
 
-
-# 1.x无法无损升级到2.x请备份好数据
-# 1.x无法无损升级到2.x请备份好数据
-# 1.x无法无损升级到2.x请备份好数据
-# 1.x无法无损升级到2.x请备份好数据
-# 1.x无法无损升级到2.x请备份好数据
-
 # 赞助商
-
 <p align="center">
-  <a href="https://vps.town/" style="margin: 0 20px;">
-    <img src="https://vps.town/static/images/sponsor.png" width="150"><br>
-    <sub>vps.town</sub>
+  <a href="https://vps.town" style="margin: 0 20px; text-align:center;">
+    <img src="./doc/vpstown.png" width="300">
   </a>
 
-  <a href="https://whmcs.as211392.com/" style="margin: 0 20px;">
-    <img src="https://whmcs.as211392.com/templates/lagom2/assets/img/logo/logo_big_inverse.1194265346.png" width="150"><br>
-    <sub>DreamCloud</sub>
+  <a href="https://whmcs.as211392.com" style="margin: 0 20px; text-align:center;">
+    <img src="./doc/as211392.png" width="300">
   </a>
 </p>
 
-
-
-
+# 1.x无法无损升级到2.x请备份好数据
 1.x迁移2.x流程如下
 1.进入1.x的后台在转发页面导出所有转发保存
 2.使用1.x节点脚本卸载所有节点
