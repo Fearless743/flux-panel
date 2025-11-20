@@ -2,7 +2,7 @@ name: Build and Push Images Based on Version
 
 # 在这里定义统一版本号
 env:
-  VERSION: "2.0.2-beta"
+  VERSION: "2.0.3-beta"
 
 on:
   push:
@@ -223,29 +223,11 @@ jobs:
           # 创建 release
           gh release create "${VERSION}" \
             --title "Release ${VERSION}" \
-            --notes "Version ${VERSION}
-          
-          ## 📝 Commit Information
+            --notes "## 📝 Commit Information
           - **Message**: ${COMMIT_MSG}
           - **Author**: ${COMMIT_AUTHOR}
           - **Date**: ${COMMIT_DATE}
-          - **Commit**: [\`${GITHUB_SHA:0:7}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
-          
-          ## 📦 Components
-          - **GOST Binary AMD64** - \`gost-amd64\` (Linux x86_64, compressed with UPX)
-          - **GOST Binary ARM64** - \`gost-arm64\` (Linux ARM64/aarch64, compressed with UPX)
-          - **Vite Frontend** Docker Image: \`bqlpfy/vite-frontend:${VERSION}\` / \`bqlpfy/vite-frontend:latest\` (支持 AMD64/ARM64)
-          - **Spring Boot Backend** Docker Image: \`bqlpfy/springboot-backend:${VERSION}\` / \`bqlpfy/springboot-backend:latest\` (支持 AMD64/ARM64)
-          
-          ## 📥 Installation Files
-          - \`install.sh\` - GOST 客户端安装脚本
-          - \`panel_install.sh\` - 面板安装脚本
-          - \`docker-compose-v4.yml\` - Docker Compose 配置 (IPv4)
-          - \`docker-compose-v6.yml\` - Docker Compose 配置 (IPv6)
-          
-          ## ℹ️ Build Details
-          - Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          - Branch: ${{ github.ref_name }}" \
+          - **Commit**: [\`${GITHUB_SHA:0:7}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" \
             --repo ${{ github.repository }}
           
           # 上传所有文件到 release

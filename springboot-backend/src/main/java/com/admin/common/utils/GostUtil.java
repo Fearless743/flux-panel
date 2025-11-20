@@ -1,5 +1,7 @@
 package com.admin.common.utils;
 
+import cn.hutool.core.util.StrUtil;
+import com.admin.common.dto.GostDto;
 import com.admin.entity.*;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -12,26 +14,34 @@ import java.util.Objects;
 public class GostUtil {
 
 
-    public static void AddLimiters(Long node_id, Long name, String speed) {
+    public static GostDto AddLimiters(Long node_id, Long name, String speed) {
         JSONObject data = createLimiterData(name, speed);
-        WebSocketServer.send_msg(node_id, data, "AddLimiters");
+        GostDto gostDto = WebSocketServer.send_msg(node_id, data, "AddLimiters");
+        if (gostDto.getMsg().contains("exists")){
+            gostDto.setMsg("OK");
+        }
+        return gostDto;
     }
 
-    public static void UpdateLimiters(Long node_id, Long name, String speed) {
+    public static GostDto UpdateLimiters(Long node_id, Long name, String speed) {
         JSONObject data = createLimiterData(name, speed);
         JSONObject req = new JSONObject();
         req.put("limiter", name + "");
         req.put("data", data);
-        WebSocketServer.send_msg(node_id, req, "UpdateLimiters");
+        return WebSocketServer.send_msg(node_id, req, "UpdateLimiters");
     }
 
-    public static void DeleteLimiters(Long node_id, Long name) {
+    public static GostDto DeleteLimiters(Long node_id, Long name) {
         JSONObject req = new JSONObject();
         req.put("limiter", name + "");
-        WebSocketServer.send_msg(node_id, req, "DeleteLimiters");
+        GostDto gostDto = WebSocketServer.send_msg(node_id, req, "DeleteLimiters");
+        if (gostDto.getMsg().contains("not found")){
+            gostDto.setMsg("OK");
+        }
+        return gostDto;
     }
 
-    public static void AddChains(Long node_id, List<ChainTunnel> chainTunnels, Map<Long, Node> node_s) {
+    public static GostDto AddChains(Long node_id, List<ChainTunnel> chainTunnels, Map<Long, Node> node_s) {
         JSONArray nodes = new JSONArray();
         for (ChainTunnel chainTunnel : chainTunnels) {
             JSONObject dialer = new JSONObject();
@@ -43,18 +53,22 @@ public class GostUtil {
             Node node_info = node_s.get(chainTunnel.getNodeId());
             JSONObject node = new JSONObject();
             node.put("name", "node_" + chainTunnel.getInx());
-            node.put("addr", node_info.getServerIp() + ":" + chainTunnel.getPort());
+            node.put("addr", processServerAddress(node_info.getServerIp()) + ":" + chainTunnel.getPort());
             node.put("connector", connector);
             node.put("dialer", dialer);
 
-            if (StringUtils.isNotBlank(node_info.getInterfaceName())) {
-                node.put("interface", node_info.getInterfaceName());
-            }
+
 
             nodes.add(node);
         }
         JSONObject hop = new JSONObject();
         hop.put("name", "hop_" + chainTunnels.getFirst().getTunnelId());
+
+        // interface设置在转发链
+        if (StringUtils.isNotBlank(node_s.get(node_id).getInterfaceName())) {
+            hop.put("interface", node_s.get(node_id).getInterfaceName());
+        }
+
 
         JSONObject selector = new JSONObject();
         selector.put("strategy", chainTunnels.getFirst().getStrategy());
@@ -72,24 +86,34 @@ public class GostUtil {
         data.put("name", "chains_" + chainTunnels.getFirst().getTunnelId());
         data.put("hops", hops);
 
-        WebSocketServer.send_msg(node_id, data, "AddChains");
+        GostDto gostDto = WebSocketServer.send_msg(node_id, data, "AddChains");
+        if (gostDto.getMsg().contains("exists")){
+            gostDto.setMsg("OK");
+        }
+        return gostDto;
     }
 
-    public static void DeleteChains(Long node_id, String name) {
+    public static GostDto DeleteChains(Long node_id, String name) {
         JSONObject data = new JSONObject();
         data.put("chain", name);
-        WebSocketServer.send_msg(node_id, data, "DeleteChains");
+        GostDto gostDto = WebSocketServer.send_msg(node_id, data, "DeleteChains");
+        if (gostDto.getMsg().contains("not found")){
+            gostDto.setMsg("OK");
+        }
+        return gostDto;
     }
 
-    public static void AddChainService(Long node_id, ChainTunnel chainTunnel, Map<Long, Node> node_s) {
+    public static GostDto AddChainService(Long node_id, ChainTunnel chainTunnel, Map<Long, Node> node_s) {
         JSONArray services = new JSONArray();
         Node node_info = node_s.get(chainTunnel.getNodeId());
         JSONObject service_item = new JSONObject();
         service_item.put("name", chainTunnel.getTunnelId() + "_tls");
         service_item.put("addr", node_info.getTcpListenAddr() + ":" + chainTunnel.getPort());
-        if (StringUtils.isNotBlank(node_info.getInterfaceName())) {
+        
+        // 只为出口节点(chainType=3)设置 interface
+        if (chainTunnel.getChainType() == 3 && StringUtils.isNotBlank(node_s.get(node_id).getInterfaceName())) {
             JSONObject metadata = new JSONObject();
-            metadata.put("interface", node_info.getInterfaceName());
+            metadata.put("interface", node_s.get(node_id).getInterfaceName());
             service_item.put("metadata", metadata);
         }
 
@@ -106,16 +130,14 @@ public class GostUtil {
 
         services.add(service_item);
 
-        WebSocketServer.send_msg(node_id, services, "AddService");
+        GostDto gostDto = WebSocketServer.send_msg(node_id, services, "AddService");
+        if (gostDto.getMsg().contains("exists")){
+            gostDto.setMsg("OK");
+        }
+        return gostDto;
     }
 
-    public static void DeleteChainService(Long node_id, JSONArray services) {
-        JSONObject data = new JSONObject();
-        data.put("services", services);
-        WebSocketServer.send_msg(node_id, data, "DeleteService");
-    }
-
-    public static void AddAndUpdateService(String name, Integer limiter, Node node, Forward forward, ForwardPort forwardPort, Tunnel tunnel, String meth) {
+    public static GostDto AddAndUpdateService(String name, Integer limiter, Node node, Forward forward, ForwardPort forwardPort, Tunnel tunnel, String meth) {
         JSONArray services = new JSONArray();
         String[] protocols = {"tcp", "udp"};
         for (String protocol : protocols) {
@@ -127,7 +149,8 @@ public class GostUtil {
                 service.put("addr", node.getUdpListenAddr() + ":" + forwardPort.getPort());
             }
 
-            if (StringUtils.isNotBlank(node.getInterfaceName())) {
+            // 只在端口转发时设置 interface（隧道转发时 interface 在转发链的节点上设置）
+            if (tunnel.getType() == 1 && StringUtils.isNotBlank(node.getInterfaceName())) {
                 JSONObject metadata = new JSONObject();
                 metadata.put("interface", node.getInterfaceName());
                 service.put("metadata", metadata);
@@ -155,22 +178,30 @@ public class GostUtil {
 
             services.add(service);
         }
-        WebSocketServer.send_msg(node.getId(), services, meth);
+        GostDto gostDto = WebSocketServer.send_msg(node.getId(), services, meth);
+        if (gostDto.getMsg().contains("exists")){
+            gostDto.setMsg("OK");
+        }
+        return gostDto;
     }
 
-    public static void DeleteService(Long node_id, JSONArray services) {
+    public static GostDto DeleteService(Long node_id, JSONArray services) {
         JSONObject data = new JSONObject();
         data.put("services", services);
-        WebSocketServer.send_msg(node_id, data, "DeleteService");
+        GostDto gostDto = WebSocketServer.send_msg(node_id, data, "DeleteService");
+        if (gostDto.getMsg().contains("not found")){
+            gostDto.setMsg("OK");
+        }
+        return gostDto;
     }
 
-    public static void PauseAndResumeService(Long node_id, String name, String meth) {
+    public static GostDto PauseAndResumeService(Long node_id, String name, String meth) {
         JSONObject data = new JSONObject();
         JSONArray services = new JSONArray();
         services.add(name + "_tcp");
         services.add(name + "_udp");
         data.put("services", services);
-        WebSocketServer.send_msg(node_id, data, meth);
+        return WebSocketServer.send_msg(node_id, data, meth);
     }
 
 
@@ -208,7 +239,7 @@ public class GostUtil {
             num++;
         }
 
-        if (strategy == null || strategy.equals("")) {
+        if (strategy == null || strategy.isEmpty()) {
             strategy = "fifo";
         }
 
@@ -222,5 +253,42 @@ public class GostUtil {
         return forwarder;
     }
 
+    public static String processServerAddress(String serverAddr) {
+        if (StrUtil.isBlank(serverAddr)) {
+            return serverAddr;
+        }
 
+        // 如果已经被方括号包裹，直接返回
+        if (serverAddr.startsWith("[")) {
+            return serverAddr;
+        }
+
+        // 查找最后一个冒号，分离主机和端口
+        int lastColonIndex = serverAddr.lastIndexOf(':');
+        if (lastColonIndex == -1) {
+            // 没有端口号，直接检查是否需要包裹
+            return isIPv6Address(serverAddr) ? "[" + serverAddr + "]" : serverAddr;
+        }
+
+        String host = serverAddr.substring(0, lastColonIndex);
+        String port = serverAddr.substring(lastColonIndex);
+
+        // 检查主机部分是否为IPv6地址
+        if (isIPv6Address(host)) {
+            return "[" + host + "]" + port;
+        }
+
+        return serverAddr;
+    }
+
+    private static boolean isIPv6Address(String address) {
+        // IPv6地址包含多个冒号，至少2个
+        if (!address.contains(":")) {
+            return false;
+        }
+
+        // 计算冒号数量，IPv6地址至少有2个冒号
+        long colonCount = address.chars().filter(ch -> ch == ':').count();
+        return colonCount >= 2;
+    }
 }

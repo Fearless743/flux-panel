@@ -18,6 +18,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.*;
@@ -82,53 +83,60 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             // 判断是否使用隧道的inIp
             boolean useTunnelInIp = tunnel.getInIp() != null && !tunnel.getInIp().trim().isEmpty();
 
-            // 收集所有的IP列表
-            List<String> ipList = new ArrayList<>();
-            // 收集所有的端口列表
-            List<Integer> portList = new ArrayList<>();
+            Set<String> ipPortSet = new LinkedHashSet<>();
 
             if (useTunnelInIp) {
-                // 使用隧道的inIp
+                // 使用隧道的inIp（求笛卡尔积）
+                List<String> ipList = new ArrayList<>();
+                List<Integer> portList = new ArrayList<>();
+                
                 String[] tunnelInIps = tunnel.getInIp().split(",");
                 for (String ip : tunnelInIps) {
                     if (ip != null && !ip.trim().isEmpty()) {
                         ipList.add(ip.trim());
                     }
                 }
-            } else {
-                // 使用节点的serverIp
+                
+                // 收集所有端口
                 for (ForwardPort forwardPort : forwardPorts) {
-                    Node node = nodeService.getById(forwardPort.getNodeId());
-                    if (node != null && node.getServerIp() != null) {
-                        ipList.add(node.getServerIp());
+                    if (forwardPort.getPort() != null) {
+                        portList.add(forwardPort.getPort());
                     }
                 }
-            }
-
-            // 收集所有端口
-            for (ForwardPort forwardPort : forwardPorts) {
-                if (forwardPort.getPort() != null) {
-                    portList.add(forwardPort.getPort());
+                
+                // 去重
+                List<String> uniqueIps = ipList.stream().distinct().toList();
+                List<Integer> uniquePorts = portList.stream().distinct().toList();
+                
+                // 组合 IP:Port（笛卡尔积）
+                for (String ip : uniqueIps) {
+                    for (Integer port : uniquePorts) {
+                        ipPortSet.add(ip + ":" + port);
+                    }
+                }
+                
+                // inPort设置为第一个端口（用于向后兼容）
+                if (!uniquePorts.isEmpty()) {
+                    forward.setInPort(uniquePorts.getFirst());
+                }
+            } else {
+                // 使用节点的serverIp（一对一，不求笛卡尔积）
+                for (ForwardPort forwardPort : forwardPorts) {
+                    Node node = nodeService.getById(forwardPort.getNodeId());
+                    if (node != null && node.getServerIp() != null && forwardPort.getPort() != null) {
+                        ipPortSet.add(node.getServerIp() + ":" + forwardPort.getPort());
+                    }
+                }
+                
+                // inPort设置为第一个端口（用于向后兼容）
+                if (!forwardPorts.isEmpty() && forwardPorts.getFirst().getPort() != null) {
+                    forward.setInPort(forwardPorts.getFirst().getPort());
                 }
             }
 
-            // 去重
-            List<String> uniqueIps = ipList.stream().distinct().toList();
-            List<Integer> uniquePorts = portList.stream().distinct().toList();
-
-            // 组合 IP:Port（笛卡尔积）
-            Set<String> ipPortSet = new LinkedHashSet<>();
-            for (String ip : uniqueIps) {
-                for (Integer port : uniquePorts) {
-                    ipPortSet.add(ip + ":" + port);
-                }
-            }
-
-            // 设置入口IP和端口
+            // 设置入口IP
             if (!ipPortSet.isEmpty()) {
                 forward.setInIp(String.join(",", ipPortSet));
-                // inPort设置为第一个端口（用于向后兼容）
-                forward.setInPort(uniquePorts.getFirst());
             }
         }
 
@@ -159,25 +167,43 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         forward.setUserName(currentUser.getUserName());
         forward.setCreatedTime(System.currentTimeMillis());
         forward.setUpdatedTime(System.currentTimeMillis());
+        List<JSONObject> success = new ArrayList<>();
+        List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()).eq("chain_type", 1));
+        chainTunnels = get_port(chainTunnels, forwardDto.getInPort());
         this.save(forward);
 
-        List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()).eq("chain_type", 1));
         for (ChainTunnel chainTunnel : chainTunnels) {
-            Integer nodePort = tunnelService.getNodePort(chainTunnel.getNodeId(), 2, forwardDto.getInPort());
 
             ForwardPort forwardPort = new ForwardPort();
             forwardPort.setForwardId(forward.getId());
             forwardPort.setNodeId(chainTunnel.getNodeId());
-            forwardPort.setPort(nodePort);
+            forwardPort.setPort(chainTunnel.getPort());
             forwardPortService.save(forwardPort);
             String serviceName = buildServiceName(forward.getId(), forward.getUserId(), permissionResult.getUserTunnel());
             Integer limiter = permissionResult.getLimiter();
 
             Node node = nodeService.getById(chainTunnel.getNodeId());
-            if (node == null){
+            if (node == null) {
                 return R.err("部分节点不存在");
             }
-            GostUtil.AddAndUpdateService(serviceName, limiter, node, forward, forwardPort, tunnel, "AddService");
+            GostDto gostDto = GostUtil.AddAndUpdateService(serviceName, limiter, node, forward, forwardPort, tunnel, "AddService");
+            if (Objects.equals(gostDto.getMsg(), "OK")) {
+                JSONObject data = new JSONObject();
+                data.put("node_id", node.getId());
+                data.put("name", serviceName);
+                success.add(data);
+            } else {
+                this.removeById(forward.getId());
+                forwardPortService.remove(new QueryWrapper<ForwardPort>().eq("forward_id", forward.getId()));
+                for (JSONObject jsonObject : success) {
+                    JSONArray se = new JSONArray();
+                    se.add(jsonObject.getString("name") + "_tcp");
+                    se.add(jsonObject.getString("name") + "_udp");
+                    GostUtil.DeleteService(jsonObject.getLong("node_id"), se);
+                    return R.err(gostDto.getMsg());
+                }
+            }
+
         }
         return R.ok();
     }
@@ -225,25 +251,22 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
 
         List<ChainTunnel> chainTunnels = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()).eq("chain_type", 1));
+        chainTunnels = get_port(chainTunnels, forwardUpdateDto.getInPort());
         for (ChainTunnel chainTunnel : chainTunnels) {
             String serviceName = buildServiceName(existForward.getId(), existForward.getUserId(), userTunnel);
             Integer limiter = permissionResult.getLimiter();
             Node node = nodeService.getById(chainTunnel.getNodeId());
-            if (node == null){
+            if (node == null) {
                 return R.err("部分节点不存在");
             }
             ForwardPort forwardPort = forwardPortService.getOne(new QueryWrapper<ForwardPort>().eq("forward_id", existForward.getId()).eq("node_id", node.getId()));
-            if (forwardPort == null){
+            if (forwardPort == null) {
                 return R.err("部分节点不存在1");
             }
-            if (forwardUpdateDto.getInPort() != null && !forwardUpdateDto.getInPort().equals(forwardPort.getPort())) {
-                Integer nodePort = tunnelService.getNodePort(forwardPort.getNodeId(), 2, forwardUpdateDto.getInPort());
-                if (Objects.equals(nodePort, forwardUpdateDto.getInPort())) {
-                    forwardPort.setPort(nodePort);
-                    forwardPortService.updateById(forwardPort);
-                }
-            }
-            GostUtil.AddAndUpdateService(serviceName, limiter, node, existForward, forwardPort, tunnel, "UpdateService");
+            forwardPort.setPort(chainTunnel.getPort());
+            forwardPortService.updateById(forwardPort);
+            GostDto gostDto = GostUtil.AddAndUpdateService(serviceName, limiter, node, existForward, forwardPort, tunnel, "UpdateService");
+            if (!Objects.equals(gostDto.getMsg(), "OK")) return R.err(gostDto.getMsg());
         }
 
         return R.ok();
@@ -289,7 +312,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
             String serviceName = buildServiceName(forward.getId(), forward.getUserId(), userTunnel);
             Node node = nodeService.getById(chainTunnel.getNodeId());
-            if (node == null){
+            if (node == null) {
                 return R.err("部分节点不存在");
             }
 
@@ -305,7 +328,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Override
     public R pauseForward(Long id) {
-        return changeForwardStatus(id, 0,  "PauseService");
+        return changeForwardStatus(id, 0, "PauseService");
     }
 
     @Override
@@ -400,7 +423,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             // 1. 入口->第一跳（或出口）
             for (ChainTunnel inNode : inNodes) {
                 Node fromNode = nodeService.getById(inNode.getNodeId());
-                
+
                 if (fromNode != null) {
                     if (!chainNodesList.isEmpty()) {
                         for (ChainTunnel firstChainNode : chainNodesList.getFirst()) {
@@ -436,10 +459,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             // 2. 链路测试
             for (int i = 0; i < chainNodesList.size(); i++) {
                 List<ChainTunnel> currentHop = chainNodesList.get(i);
-                
+
                 for (ChainTunnel currentNode : currentHop) {
                     Node fromNode = nodeService.getById(currentNode.getNodeId());
-                    
+
                     if (fromNode != null) {
                         if (i + 1 < chainNodesList.size()) {
                             for (ChainTunnel nextNode : chainNodesList.get(i + 1)) {
@@ -507,65 +530,57 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     @Override
+    @Transactional
     public R updateForwardOrder(Map<String, Object> params) {
-        try {
-            // 1. 获取当前用户信息
-            UserInfo currentUser = getCurrentUserInfo();
+        // 1. 获取当前用户信息
+        UserInfo currentUser = getCurrentUserInfo();
 
-            // 2. 验证参数
-            if (!params.containsKey("forwards")) {
-                return R.err("缺少forwards参数");
-            }
-
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> forwardsList = (List<Map<String, Object>>) params.get("forwards");
-            if (forwardsList == null || forwardsList.isEmpty()) {
-                return R.err("forwards参数不能为空");
-            }
-
-            // 3. 验证用户权限（只能更新自己的转发）
-            if (currentUser.getRoleId() != 0) {
-                // 普通用户只能更新自己的转发
-                List<Long> forwardIds = forwardsList.stream()
-                        .map(item -> Long.valueOf(item.get("id").toString()))
-                        .collect(Collectors.toList());
-
-                // 检查所有转发是否属于当前用户
-                QueryWrapper<Forward> queryWrapper = new QueryWrapper<>();
-                queryWrapper.in("id", forwardIds);
-                queryWrapper.eq("user_id", currentUser.getUserId());
-
-                long count = this.count(queryWrapper);
-                if (count != forwardIds.size()) {
-                    return R.err("只能更新自己的转发排序");
-                }
-            }
-
-            // 4. 批量更新排序
-            List<Forward> forwardsToUpdate = new ArrayList<>();
-            for (Map<String, Object> forwardData : forwardsList) {
-                Long id = Long.valueOf(forwardData.get("id").toString());
-                Integer inx = Integer.valueOf(forwardData.get("inx").toString());
-
-                Forward forward = new Forward();
-                forward.setId(id);
-                forward.setInx(inx);
-                forwardsToUpdate.add(forward);
-            }
-
-            // 5. 执行批量更新
-            boolean success = this.updateBatchById(forwardsToUpdate);
-            if (success) {
-                log.info("用户 {} 更新了 {} 个转发的排序", currentUser.getUserName(), forwardsToUpdate.size());
-                return R.ok("排序更新成功");
-            } else {
-                return R.err("排序更新失败");
-            }
-
-        } catch (Exception e) {
-            log.error("更新转发排序失败", e);
-            return R.err("更新排序时发生错误: " + e.getMessage());
+        // 2. 验证参数
+        if (!params.containsKey("forwards")) {
+            return R.err("缺少forwards参数");
         }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> forwardsList = (List<Map<String, Object>>) params.get("forwards");
+        if (forwardsList == null || forwardsList.isEmpty()) {
+            return R.err("forwards参数不能为空");
+        }
+
+        // 3. 验证用户权限（只能更新自己的转发）
+        if (currentUser.getRoleId() != 0) {
+            // 普通用户只能更新自己的转发
+            List<Long> forwardIds = forwardsList.stream()
+                    .map(item -> Long.valueOf(item.get("id").toString()))
+                    .collect(Collectors.toList());
+
+            // 检查所有转发是否属于当前用户
+            QueryWrapper<Forward> queryWrapper = new QueryWrapper<>();
+            queryWrapper.in("id", forwardIds);
+            queryWrapper.eq("user_id", currentUser.getUserId());
+
+            long count = this.count(queryWrapper);
+            if (count != forwardIds.size()) {
+                return R.err("只能更新自己的转发排序");
+            }
+        }
+
+        // 4. 批量更新排序
+        List<Forward> forwardsToUpdate = new ArrayList<>();
+        for (Map<String, Object> forwardData : forwardsList) {
+            Long id = Long.valueOf(forwardData.get("id").toString());
+            Integer inx = Integer.valueOf(forwardData.get("inx").toString());
+
+            Forward forward = new Forward();
+            forward.setId(id);
+            forward.setInx(inx);
+            forwardsToUpdate.add(forward);
+        }
+
+        // 5. 执行批量更新
+        this.updateBatchById(forwardsToUpdate);
+        return R.ok();
+
+
     }
 
 
@@ -621,10 +636,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         for (ChainTunnel chainTunnel : chainTunnels) {
             String serviceName = buildServiceName(forward.getId(), forward.getUserId(), userTunnel);
             Node node = nodeService.getById(chainTunnel.getNodeId());
-            if (node == null){
+            if (node == null) {
                 return R.err("部分节点不存在");
             }
-            GostUtil.PauseAndResumeService(node.getId(), serviceName, gostMethod);
+            GostDto gostDto = GostUtil.PauseAndResumeService(node.getId(), serviceName, gostMethod);
+            if (!Objects.equals(gostDto.getMsg(), "OK")) return R.err(gostDto.getMsg());
         }
         forward.setStatus(targetStatus);
         forward.setUpdatedTime(System.currentTimeMillis());
@@ -923,6 +939,94 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         return forwardId + "_" + userId + "_" + userTunnelId;
     }
 
+
+    public List<ChainTunnel> get_port(List<ChainTunnel> chainTunnelList, Integer in_port) {
+        List<List<Integer>> list = new ArrayList<>();
+
+        // 获取每个节点的端口列表
+        for (ChainTunnel tunnel : chainTunnelList) {
+            List<Integer> nodePort = getNodePort(tunnel.getNodeId());
+            if (nodePort.isEmpty()) {
+                throw new RuntimeException("暂无可用端口");
+            }
+            list.add(nodePort);
+        }
+
+        // ========== 如果指定了 in_port，优先检查公有 ==========
+        if (in_port != null) {
+            for (List<Integer> ports : list) {
+                if (!ports.contains(in_port)) {
+                    throw new RuntimeException("指定端口 " + in_port + " 不可用（并非所有节点都有此端口）");
+                }
+            }
+
+            // 所有节点都有该端口 设置回 ChainTunnel
+            for (ChainTunnel tunnel : chainTunnelList) {
+                tunnel.setPort(in_port);
+            }
+            return chainTunnelList;
+        }
+
+        // ========== 未指定 in_port 查找最小的共同端口 ==========
+        Set<Integer> intersection = new HashSet<>(list.get(0));
+        for (int i = 1; i < list.size(); i++) {
+            intersection.retainAll(list.get(i));
+        }
+
+        if (!intersection.isEmpty()) {
+            // 找最小端口
+            Integer commonMin = intersection.stream().min(Integer::compareTo).orElseThrow();
+
+            // 设置到所有节点
+            for (ChainTunnel tunnel : chainTunnelList) {
+                tunnel.setPort(commonMin);
+            }
+
+            return chainTunnelList;
+        }
+
+        // ========== 没有共同端口取各自第一个可用端口 ==========
+        for (int i = 0; i < chainTunnelList.size(); i++) {
+            List<Integer> ports = list.get(i);
+            Integer first = ports.getFirst();
+            chainTunnelList.get(i).setPort(first);
+        }
+
+        return chainTunnelList;
+    }
+
+    public List<Integer> getNodePort(Long nodeId) {
+
+        Node node = nodeService.getById(nodeId);
+        if (node == null) {
+            throw new RuntimeException("节点不存在");
+        }
+
+        // 1. 查询隧道转发链占用的端口
+        List<ChainTunnel> chainTunnels = chainTunnelService.list(
+                new QueryWrapper<ChainTunnel>().eq("node_id", nodeId)
+        );
+        Set<Integer> usedPorts = chainTunnels.stream()
+                .map(ChainTunnel::getPort)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+
+        List<ForwardPort> list = forwardPortService.list(new QueryWrapper<ForwardPort>().eq("node_id", nodeId));
+        Set<Integer> forwardUsedPorts = new HashSet<>();
+        for (ForwardPort forwardPort : list) {
+            forwardUsedPorts.add(forwardPort.getPort());
+        }
+        usedPorts.addAll(forwardUsedPorts);
+
+        List<Integer> parsedPorts = TunnelServiceImpl.parsePorts(node.getPort());
+        return parsedPorts.stream()
+                .filter(p -> !usedPorts.contains(p))
+                .toList();
+    }
+
+
+
     // ========== 内部数据类 ==========
 
     @Data
@@ -973,7 +1077,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         private double averageTime;
         private double packetLoss;
         private long timestamp;
-        
+
         // 链路类型相关字段
         private Integer fromChainType; // 1: 入口, 2: 链, 3: 出口
         private Integer fromInx;

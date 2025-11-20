@@ -8,6 +8,7 @@ import com.admin.common.utils.GostUtil;
 import com.admin.entity.*;
 import com.admin.mapper.SpeedLimitMapper;
 import com.admin.service.*;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.Data;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -65,11 +67,23 @@ public class SpeedLimitServiceImpl extends ServiceImpl<SpeedLimitMapper, SpeedLi
 
         String speedInMBps = convertBitsToMBps(speedLimit.getSpeed());
 
+        List<Long> limit_success = new ArrayList<>();
+
         List<ChainTunnel> tunnelList = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", speedLimit.getTunnelId()));
         for (ChainTunnel chainTunnel : tunnelList) {
             Node node = nodeService.getById(chainTunnel.getNodeId());
             if (node != null) {
-                GostUtil.AddLimiters(node.getId(),speedLimit.getId(),speedInMBps);
+                GostDto gostDto = GostUtil.AddLimiters(node.getId(), speedLimit.getId(), speedInMBps);
+                if (Objects.equals(gostDto.getMsg(), "OK")){
+                    limit_success.add(node.getId());
+                }else {
+                    this.removeById(speedLimit.getId());
+                    for (Long node_id : limit_success) {
+                        GostDto deleteLimiters = GostUtil.DeleteLimiters(node_id, speedLimit.getId());
+                        System.out.println(deleteLimiters);
+                    }
+                    return R.err(gostDto.getMsg());
+                }
             }
         }
         return R.ok();
@@ -94,7 +108,8 @@ public class SpeedLimitServiceImpl extends ServiceImpl<SpeedLimitMapper, SpeedLi
         for (ChainTunnel chainTunnel : tunnelList) {
             Node node = nodeService.getById(chainTunnel.getNodeId());
             if (node != null) {
-                GostUtil.UpdateLimiters(node.getId(),speedLimit.getId(),speedInMBps);
+                GostDto gostDto = GostUtil.UpdateLimiters(node.getId(), speedLimit.getId(), speedInMBps);
+                if (!Objects.equals(gostDto.getMsg(), "OK")) return R.err(gostDto.getMsg());
             }
         }
         this.updateById(speedLimit);
@@ -116,7 +131,8 @@ public class SpeedLimitServiceImpl extends ServiceImpl<SpeedLimitMapper, SpeedLi
         for (ChainTunnel chainTunnel : tunnelList) {
             Node node = nodeService.getById(chainTunnel.getNodeId());
             if (node != null) {
-                GostUtil.DeleteLimiters(node.getId(),speedLimit.getId());
+                GostDto gostDto = GostUtil.DeleteLimiters(node.getId(), speedLimit.getId());
+                if (!Objects.equals(gostDto.getMsg(), "OK"))return R.err(gostDto.getMsg());
             }
         }
         this.removeById(id);

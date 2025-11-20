@@ -81,7 +81,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                     Node node = nodeService.getById(chain_node.getNodeId());
                     if (node == null) return R.err("节点不存在");
                     nodes.put(node.getId(), node);
-                    Integer nodePort = getNodePort(chain_node.getNodeId(), 1, null);
+                    Integer nodePort = getNodePort(chain_node.getNodeId());
                     chain_node.setPort(nodePort);
                     chain_node.setInx(inx); // 设置转发链序号
                     chainTunnels.add(chain_node);
@@ -93,7 +93,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                 Node node = nodeService.getById(out_node.getNodeId());
                 if (node == null) return R.err("节点不存在");
                 nodes.put(node.getId(), node);
-                Integer nodePort = getNodePort(out_node.getNodeId(), 1, null);
+                Integer nodePort = getNodePort(out_node.getNodeId());
                 out_node.setPort(nodePort);
                 chainTunnels.add(out_node);
             }
@@ -132,14 +132,35 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         }
         chainTunnelService.saveBatch(chainTunnels);
 
+        List<JSONObject> chain_success = new ArrayList<>();
+        List<JSONObject> service_success = new ArrayList<>();
+
+
+
         if (tunnel.getType() == 2) {
 
             for (ChainTunnel in_node : tunnelDto.getInNodeId()) {
                 // 创建Chain， 指向chainNode的第一跳。如果chainNode为空就是指向出口
                 if (tunnelDto.getChainNodes().isEmpty()) { // 指向出口
-                    GostUtil.AddChains(in_node.getNodeId(), tunnelDto.getOutNodeId(), nodes);
+                    GostDto gostDto = GostUtil.AddChains(in_node.getNodeId(), tunnelDto.getOutNodeId(), nodes);
+                    isError(gostDto);
+
                 } else {
-                    GostUtil.AddChains(in_node.getNodeId(), tunnelDto.getChainNodes().getFirst(), nodes);// 指向第一跳
+                    GostDto gostDto = GostUtil.AddChains(in_node.getNodeId(), tunnelDto.getChainNodes().getFirst(), nodes);// 指向第一跳
+                    if (Objects.equals(gostDto.getMsg(), "OK")){
+                        JSONObject data = new JSONObject();
+                        data.put("node_id", in_node.getNodeId());
+                        data.put("name", "chains_" + tunnel.getId());
+                        chain_success.add(data);
+                    }else {
+                        this.removeById(tunnel.getId());
+                        chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()));
+                        for (JSONObject chainSuccess : chain_success) {
+                            GostDto deleteChains = GostUtil.DeleteChains(chainSuccess.getLong("node_id"), chainSuccess.getString("name"));
+                            System.out.println(deleteChains);
+                        }
+                        return R.err(gostDto.getMsg());
+                    }
                 }
             }
 
@@ -149,19 +170,79 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                 for (ChainTunnel chainTunnel : chainTunnels1) {
                     int inx = i+1;
                     if (inx >= tunnelDto.getChainNodes().size()) { // 指向出口
-                        GostUtil.AddChains(chainTunnel.getNodeId(), tunnelDto.getOutNodeId(), nodes);
+                        GostDto gostDto = GostUtil.AddChains(chainTunnel.getNodeId(), tunnelDto.getOutNodeId(), nodes);
+                        if (Objects.equals(gostDto.getMsg(), "OK")){
+                            JSONObject data = new JSONObject();
+                            data.put("node_id", chainTunnel.getNodeId());
+                            data.put("name", "chains_" + tunnel.getId());
+                            chain_success.add(data);
+                        }else {
+                            this.removeById(tunnel.getId());
+                            chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()));
+                            for (JSONObject chainSuccess : chain_success) {
+                                GostDto deleteChains = GostUtil.DeleteChains(chainSuccess.getLong("node_id"), chainSuccess.getString("name"));
+                                System.out.println(deleteChains);
+                            }
+                            return R.err(gostDto.getMsg());
+                        }
                     } else {
-                        GostUtil.AddChains(chainTunnel.getNodeId(), tunnelDto.getChainNodes().get(inx), nodes);
+                        GostDto gostDto = GostUtil.AddChains(chainTunnel.getNodeId(), tunnelDto.getChainNodes().get(inx), nodes);
+                        if (Objects.equals(gostDto.getMsg(), "OK")){
+                            JSONObject data = new JSONObject();
+                            data.put("node_id", chainTunnel.getNodeId());
+                            data.put("name", "chains_" + tunnel.getId());
+                            chain_success.add(data);
+                        }else {
+                            this.removeById(tunnel.getId());
+                            chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()));
+                            for (JSONObject chainSuccess : chain_success) {
+                                GostDto deleteChains = GostUtil.DeleteChains(chainSuccess.getLong("node_id"), chainSuccess.getString("name"));
+                                System.out.println(deleteChains);
+                            }
+                            return R.err(gostDto.getMsg());
+                        }
                     }
 
-                    GostUtil.AddChainService(chainTunnel.getNodeId(), chainTunnel, nodes);
+                    GostDto gostDto = GostUtil.AddChainService(chainTunnel.getNodeId(), chainTunnel, nodes);
+                    if (Objects.equals(gostDto.getMsg(), "OK")){
+                        JSONObject data = new JSONObject();
+                        data.put("node_id", chainTunnel.getNodeId());
+                        data.put("name", tunnel.getId() + "_tls");
+                        service_success.add(data);
+                    }else {
+                        this.removeById(tunnel.getId());
+                        chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()));
+                        for (JSONObject serviceSuccess : service_success) {
+                            JSONArray jsonArray = new JSONArray();
+                            jsonArray.add(serviceSuccess.getString("name"));
+                            GostDto deleteService = GostUtil.DeleteService(serviceSuccess.getLong("node_id"), jsonArray);
+                            System.out.println(deleteService);
+                        }
+                        return R.err(gostDto.getMsg());
+                    }
                 }
 
             }
 
 
             for (ChainTunnel out_node : tunnelDto.getOutNodeId()) {
-                GostUtil.AddChainService(out_node.getNodeId(), out_node, nodes);
+                GostDto gostDto = GostUtil.AddChainService(out_node.getNodeId(), out_node, nodes);
+                if (Objects.equals(gostDto.getMsg(), "OK")){
+                    JSONObject data = new JSONObject();
+                    data.put("node_id", out_node.getNodeId());
+                    data.put("name", tunnel.getId() + "_tls");
+                    service_success.add(data);
+                }else {
+                    this.removeById(tunnel.getId());
+                    chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnel.getId()));
+                    for (JSONObject serviceSuccess : service_success) {
+                        JSONArray jsonArray = new JSONArray();
+                        jsonArray.add(serviceSuccess.getString("name"));
+                        GostDto deleteService = GostUtil.DeleteService(serviceSuccess.getLong("node_id"), jsonArray);
+                        System.out.println(deleteService);
+                    }
+                    return R.err(gostDto.getMsg());
+                }
             }
 
         }
@@ -286,12 +367,12 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                 GostUtil.DeleteChains(chainTunnel.getNodeId(), "chains_" + chainTunnel.getTunnelId());
                 JSONArray services = new JSONArray();
                 services.add(chainTunnel.getTunnelId() + "_tls");
-                GostUtil.DeleteChainService(chainTunnel.getNodeId(), services);
+                GostUtil.DeleteService(chainTunnel.getNodeId(), services);
             }
             else { // 出口
                 JSONArray services = new JSONArray();
                 services.add(chainTunnel.getTunnelId() + "_tls");
-                GostUtil.DeleteChainService(chainTunnel.getNodeId(), services);
+                GostUtil.DeleteService(chainTunnel.getNodeId(), services);
             }
         }
         chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", id));
@@ -471,8 +552,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         return R.ok(diagnosisReport);
     }
 
-    @Override
-    public Integer getNodePort(Long nodeId,Integer type, Integer port) {
+    public Integer getNodePort(Long nodeId) {
 
         Node node = nodeService.getById(nodeId);
         if (node == null){
@@ -505,14 +585,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         if (availablePorts.isEmpty()) {
             throw new RuntimeException("节点端口已满，无可用端口");
         }
-        if (type == 1) {
-            return availablePorts.getLast();
-        }else {
-            if (port != null && availablePorts.contains(port)) {
-                return port;
-            }
-            return availablePorts.getFirst();
-        }
+        return availablePorts.getFirst();
     }
 
     public static List<Integer> parsePorts(String input) {
@@ -532,6 +605,10 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             }
         }
         return set.stream().sorted().collect(Collectors.toList());
+    }
+
+    private void isError(GostDto gostDto){
+
     }
 
     private DiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description) {

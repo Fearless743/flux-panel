@@ -56,6 +56,4 @@ public interface TunnelService extends IService<Tunnel> {
      * @return 诊断结果
      */
     R diagnoseTunnel(Long tunnelId);
-
-    Integer getNodePort(Long nodeId, Integer type, Integer port);
 }

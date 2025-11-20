@@ -9,6 +9,7 @@ import { Switch } from "@heroui/switch";
 import { Spinner } from "@heroui/spinner";
 import { Alert } from "@heroui/alert";
 import { Progress } from "@heroui/progress";
+import { Accordion, AccordionItem } from "@heroui/accordion";
 import toast from 'react-hot-toast';
 import axios from 'axios';
 
@@ -875,141 +876,141 @@ export default function NodePage() {
                   }}
                 />
 
-                <Input
-                  label="出口网卡名或IP"
-                  placeholder="请输入出口网卡名或IP"
-                  value={form.interfaceName}
-                  onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
-                  isInvalid={!!errors.interfaceName}
-                  errorMessage={errors.interfaceName}
-                  variant="bordered"
-                  description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
-                />
+                {/* 高级配置 */}
+                <Accordion variant="bordered">
+                  <AccordionItem 
+                    key="advanced" 
+                    aria-label="高级配置"
+                    title="高级配置"
+                  >
+                    <div className="space-y-4 pb-2">
+                      <Input
+                        label="出口网卡名或IP"
+                        placeholder="请输入出口网卡名或IP"
+                        value={form.interfaceName}
+                        onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
+                        isInvalid={!!errors.interfaceName}
+                        errorMessage={errors.interfaceName}
+                        variant="bordered"
+                        description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
+                      />
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="TCP监听地址"
-                    placeholder="请输入TCP监听地址"
-                    value={form.tcpListenAddr}
-                    onChange={(e) => setForm(prev => ({ ...prev, tcpListenAddr: e.target.value }))}
-                    isInvalid={!!errors.tcpListenAddr}
-                    errorMessage={errors.tcpListenAddr}
-                    variant="bordered"
-                    startContent={
-                      <div className="pointer-events-none flex items-center">
-                        <span className="text-default-400 text-small">TCP</span>
-                      </div>
-                    }
-                  />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          label="TCP监听地址"
+                          placeholder="请输入TCP监听地址"
+                          value={form.tcpListenAddr}
+                          onChange={(e) => setForm(prev => ({ ...prev, tcpListenAddr: e.target.value }))}
+                          isInvalid={!!errors.tcpListenAddr}
+                          errorMessage={errors.tcpListenAddr}
+                          variant="bordered"
+                          startContent={
+                            <div className="pointer-events-none flex items-center">
+                              <span className="text-default-400 text-small">TCP</span>
+                            </div>
+                          }
+                        />
 
-                  <Input
-                    label="UDP监听地址"
-                    placeholder="请输入UDP监听地址"
-                    value={form.udpListenAddr}
-                    onChange={(e) => setForm(prev => ({ ...prev, udpListenAddr: e.target.value }))}
-                    isInvalid={!!errors.udpListenAddr}
-                    errorMessage={errors.udpListenAddr}
-                    variant="bordered"
-                    startContent={
-                      <div className="pointer-events-none flex items-center">
-                        <span className="text-default-400 text-small">UDP</span>
-                      </div>
-                    }
-                  />
-                </div>
-
-                {/* 屏蔽协议 */}
-                <div className="mt-1">
-                  <div className="text-sm font-medium text-default-700">屏蔽协议</div>
-                  <div className="text-xs text-default-500 mb-2">开启开关以屏蔽对应协议</div>
-                  {protocolDisabled && (
-                    <Alert
-                      color="warning"
-                      variant="flat"
-                      description={protocolDisabledReason || '等待节点上线后再设置'}
-                      className="mb-2"
-                    />
-                  )}
-                  <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 bg-default-50 dark:bg-default-100 p-3 rounded-md border border-default-200 dark:border-default-100/30 ${protocolDisabled ? 'opacity-70' : ''}`}>
-                    {/* HTTP tile */}
-                    <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
-                      <div className="flex items-center gap-2 mb-2">
-                        <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg>
-                        <div className="text-sm font-medium text-default-700">HTTP</div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-default-500">禁用/启用</div>
-                        <Switch
-                          size="sm"
-                          isSelected={form.http === 1}
-                          isDisabled={protocolDisabled}
-                          onValueChange={(v) => setForm(prev => ({ ...prev, http: v ? 1 : 0 }))}
+                        <Input
+                          label="UDP监听地址"
+                          placeholder="请输入UDP监听地址"
+                          value={form.udpListenAddr}
+                          onChange={(e) => setForm(prev => ({ ...prev, udpListenAddr: e.target.value }))}
+                          isInvalid={!!errors.udpListenAddr}
+                          errorMessage={errors.udpListenAddr}
+                          variant="bordered"
+                          startContent={
+                            <div className="pointer-events-none flex items-center">
+                              <span className="text-default-400 text-small">UDP</span>
+                            </div>
+                          }
                         />
                       </div>
-                      <div className="mt-1 text-xs text-default-400">{form.http === 1 ? '已开启' : '已关闭'}</div>
-                    </div>
+                      {/* 屏蔽协议 */}
+                      <div>
+                        <div className="text-sm font-medium text-default-700 mb-2">屏蔽协议</div>
+                        <div className="text-xs text-default-500 mb-2">开启开关以屏蔽对应协议</div>
+                        {protocolDisabled && (
+                          <Alert
+                            color="warning"
+                            variant="flat"
+                            description={protocolDisabledReason || '等待节点上线后再设置'}
+                            className="mb-2"
+                          />
+                        )}
+                        <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 bg-default-50 dark:bg-default-100 p-3 rounded-md border border-default-200 dark:border-default-100/30 ${protocolDisabled ? 'opacity-70' : ''}`}>
+                          {/* HTTP tile */}
+                          <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg>
+                              <div className="text-sm font-medium text-default-700">HTTP</div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-default-500">禁用/启用</div>
+                              <Switch
+                                size="sm"
+                                isSelected={form.http === 1}
+                                isDisabled={protocolDisabled}
+                                onValueChange={(v) => setForm(prev => ({ ...prev, http: v ? 1 : 0 }))}
+                              />
+                            </div>
+                            <div className="mt-1 text-xs text-default-400">{form.http === 1 ? '已开启' : '已关闭'}</div>
+                          </div>
 
-                    {/* TLS tile */}
-                    <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
-                      <div className="flex items-center gap-2 mb-2">
-                        <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 10V7a6 6 0 1 1 12 0v3"/><rect x="4" y="10" width="16" height="10" rx="2"/></svg>
-                        <div className="text-sm font-medium text-default-700">TLS</div>
+                          {/* TLS tile */}
+                          <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 10V7a6 6 0 1 1 12 0v3"/><rect x="4" y="10" width="16" height="10" rx="2"/></svg>
+                              <div className="text-sm font-medium text-default-700">TLS</div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-default-500">禁用/启用</div>
+                              <Switch
+                                size="sm"
+                                isSelected={form.tls === 1}
+                                isDisabled={protocolDisabled}
+                                onValueChange={(v) => setForm(prev => ({ ...prev, tls: v ? 1 : 0 }))}
+                              />
+                            </div>
+                            <div className="mt-1 text-xs text-default-400">{form.tls === 1 ? '已开启' : '已关闭'}</div>
+                          </div>
+
+                          {/* SOCKS tile */}
+                          <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                              <div className="text-sm font-medium text-default-700">SOCKS</div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-default-500">禁用/启用</div>
+                              <Switch
+                                size="sm"
+                                isSelected={form.socks === 1}
+                                isDisabled={protocolDisabled}
+                                onValueChange={(v) => setForm(prev => ({ ...prev, socks: v ? 1 : 0 }))}
+                              />
+                            </div>
+                            <div className="mt-1 text-xs text-default-400">{form.socks === 1 ? '已开启' : '已关闭'}</div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-default-500">禁用/启用</div>
-                        <Switch
-                          size="sm"
-                          isSelected={form.tls === 1}
-                          isDisabled={protocolDisabled}
-                          onValueChange={(v) => setForm(prev => ({ ...prev, tls: v ? 1 : 0 }))}
-                        />
-                      </div>
-                      <div className="mt-1 text-xs text-default-400">{form.tls === 1 ? '已开启' : '已关闭'}</div>
-                    </div>
 
-                    {/* SOCKS tile */}
-                    <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
-                      <div className="flex items-center gap-2 mb-2">
-                        <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        <div className="text-sm font-medium text-default-700">SOCKS</div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-default-500">禁用/启用</div>
-                        <Switch
-                          size="sm"
-                          isSelected={form.socks === 1}
-                          isDisabled={protocolDisabled}
-                          onValueChange={(v) => setForm(prev => ({ ...prev, socks: v ? 1 : 0 }))}
-                        />
-                      </div>
-                      <div className="mt-1 text-xs text-default-400">{form.socks === 1 ? '已开启' : '已关闭'}</div>
-                    </div>
-                  </div>
-                </div>
-
-
-
-                <Alert
+                      <Alert
                         color="danger"
                         variant="flat"
                         description="请不要在出口节点执行屏蔽协议，否则可能影响转发；屏蔽协议仅需在入口节点执行。"
-                        className="mt-3"
                       />
-                
+                    </div>
+                  </AccordionItem>
+                </Accordion>
+
                 <Alert
-                        color="primary"
-                        variant="flat"
-                        description="服务器ip是你要添加的服务器的ip地址，不是面板的ip地址。"
-                        className="mt-4"
-                      />
+                  color="primary"
+                  variant="flat"
+                  description="服务器ip是你要添加的服务器的ip地址，不是面板的ip地址。"
+                  className="mt-4"
+                />
                 
-                <Alert
-                        color="primary"
-                        variant="flat"
-                        title="TCP,UDP监听地址"
-                        description="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明"
-                        className="mt-4"
-                      />
               </div>
             </ModalBody>
             <ModalFooter>

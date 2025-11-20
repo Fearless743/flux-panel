@@ -6,6 +6,7 @@ import com.admin.common.dto.GostDto;
 import com.admin.common.dto.NodeDto;
 import com.admin.common.dto.NodeUpdateDto;
 import com.admin.common.lang.R;
+import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
 import com.admin.mapper.NodeMapper;
@@ -125,9 +126,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ip"));
         if (viteConfig == null) return R.err("请先前往网站配置中设置ip");
         StringBuilder command = new StringBuilder();
-        command.append("curl -L https://github.com/bqlpfy/flux-panel/releases/download/2.0.2-beta/install.sh")
+        command.append("curl -L https://github.com/bqlpfy/flux-panel/releases/download/2.0.3-beta/install.sh")
                 .append(" -o ./install.sh && chmod +x ./install.sh && ");
-        String processedServerAddr = processServerAddress(viteConfig.getValue());
+        String processedServerAddr = GostUtil.processServerAddress(viteConfig.getValue());
         command.append("./install.sh")
                 .append(" -a ").append(processedServerAddr)  // 服务器地址
                 .append(" -s ").append(node.getSecret());    // 节点密钥
@@ -182,44 +183,6 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     }
 
 
-    private String processServerAddress(String serverAddr) {
-        if (StrUtil.isBlank(serverAddr)) {
-            return serverAddr;
-        }
-        
-        // 如果已经被方括号包裹，直接返回
-        if (serverAddr.startsWith("[")) {
-            return serverAddr;
-        }
-        
-        // 查找最后一个冒号，分离主机和端口
-        int lastColonIndex = serverAddr.lastIndexOf(':');
-        if (lastColonIndex == -1) {
-            // 没有端口号，直接检查是否需要包裹
-            return isIPv6Address(serverAddr) ? "[" + serverAddr + "]" : serverAddr;
-        }
-        
-        String host = serverAddr.substring(0, lastColonIndex);
-        String port = serverAddr.substring(lastColonIndex);
-        
-        // 检查主机部分是否为IPv6地址
-        if (isIPv6Address(host)) {
-            return "[" + host + "]" + port;
-        }
-        
-        return serverAddr;
-    }
 
-
-    private boolean isIPv6Address(String address) {
-        // IPv6地址包含多个冒号，至少2个
-        if (!address.contains(":")) {
-            return false;
-        }
-        
-        // 计算冒号数量，IPv6地址至少有2个冒号
-        long colonCount = address.chars().filter(ch -> ch == ':').count();
-        return colonCount >= 2;
-    }
 
 }

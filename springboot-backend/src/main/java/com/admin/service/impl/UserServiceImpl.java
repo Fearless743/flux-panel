@@ -264,44 +264,61 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         for (UserPackageDto.UserForwardDetailDto forward : forwards) {
             Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
             if (tunnel == null) continue;
+            
             List<ForwardPort> forwardPorts = forwardPortService.list(
                     new QueryWrapper<ForwardPort>().eq("forward_id", forward.getId())
             );
             if (forwardPorts.isEmpty()) continue;
+            
             boolean useTunnelInIp = tunnel.getInIp() != null && !tunnel.getInIp().trim().isEmpty();
-            List<String> ipList = new ArrayList<>();
-            List<Integer> portList = new ArrayList<>();
+            java.util.Set<String> ipPortSet = new java.util.LinkedHashSet<>();
+            
             if (useTunnelInIp) {
+                // 使用隧道的inIp（求笛卡尔积）
+                List<String> ipList = new ArrayList<>();
+                List<Integer> portList = new ArrayList<>();
+                
                 String[] tunnelInIps = tunnel.getInIp().split(",");
                 for (String ip : tunnelInIps) {
                     if (ip != null && !ip.trim().isEmpty()) {
                         ipList.add(ip.trim());
                     }
                 }
-            } else {
+                
                 for (ForwardPort forwardPort : forwardPorts) {
-                    Node node = nodeService.getById(forwardPort.getNodeId());
-                    if (node != null && node.getServerIp() != null) {
-                        ipList.add(node.getServerIp());
+                    if (forwardPort.getPort() != null) {
+                        portList.add(forwardPort.getPort());
                     }
                 }
-            }
-            for (ForwardPort forwardPort : forwardPorts) {
-                if (forwardPort.getPort() != null) {
-                    portList.add(forwardPort.getPort());
+                
+                List<String> uniqueIps = ipList.stream().distinct().toList();
+                List<Integer> uniquePorts = portList.stream().distinct().toList();
+                
+                for (String ip : uniqueIps) {
+                    for (Integer port : uniquePorts) {
+                        ipPortSet.add(ip + ":" + port);
+                    }
+                }
+                
+                if (!uniquePorts.isEmpty()) {
+                    forward.setInPort(uniquePorts.getFirst());
+                }
+            } else {
+                // 使用节点的serverIp（一对一，不求笛卡尔积）
+                for (ForwardPort forwardPort : forwardPorts) {
+                    Node node = nodeService.getById(forwardPort.getNodeId());
+                    if (node != null && node.getServerIp() != null && forwardPort.getPort() != null) {
+                        ipPortSet.add(node.getServerIp() + ":" + forwardPort.getPort());
+                    }
+                }
+                
+                if (!forwardPorts.isEmpty() && forwardPorts.getFirst().getPort() != null) {
+                    forward.setInPort(forwardPorts.getFirst().getPort());
                 }
             }
-            List<String> uniqueIps = ipList.stream().distinct().toList();
-            List<Integer> uniquePorts = portList.stream().distinct().toList();
-            java.util.Set<String> ipPortSet = new java.util.LinkedHashSet<>();
-            for (String ip : uniqueIps) {
-                for (Integer port : uniquePorts) {
-                    ipPortSet.add(ip + ":" + port);
-                }
-            }
+            
             if (!ipPortSet.isEmpty()) {
                 forward.setInIp(String.join(",", ipPortSet));
-                forward.setInPort(uniquePorts.getFirst());
             }
         }
     }

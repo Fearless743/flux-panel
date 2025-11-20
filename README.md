@@ -2,6 +2,51 @@
 # flux-panel转发面板 哆啦A梦转发面板
 
 
+# 1.x无法无损升级到2.x请备份好数据
+# 1.x无法无损升级到2.x请备份好数据
+# 1.x无法无损升级到2.x请备份好数据
+# 1.x无法无损升级到2.x请备份好数据
+# 1.x无法无损升级到2.x请备份好数据
+
+# 赞助商
+
+<p align="center">
+  <a href="https://vps.town/" style="margin: 0 20px;">
+    <img src="https://vps.town/static/images/sponsor.png" width="150"><br>
+    <sub>vps.town</sub>
+  </a>
+
+  <a href="https://whmcs.as211392.com/" style="margin: 0 20px;">
+    <img src="https://whmcs.as211392.com/templates/lagom2/assets/img/logo/logo_big_inverse.1194265346.png" width="150"><br>
+    <sub>DreamCloud</sub>
+  </a>
+</p>
+
+
+
+
+1.x迁移2.x流程如下
+1.进入1.x的后台在转发页面导出所有转发保存
+2.使用1.x节点脚本卸载所有节点
+```
+curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+```
+3.使用1.x面版脚本卸载面板
+
+```
+curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+```
+4.使用2.x脚本安装面板
+
+```
+curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+```
+
+
+使用1.x版本的请使用上面给出的脚本，不要使用最新的，最新的默认2.x
+嫌弃麻烦或者想稳定的我不推荐你升级到2.x版本 目前还在beta阶段，很多问题。
+
+
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
 ---
 ## 特性
@@ -18,11 +63,21 @@
 ---
 ### Docker Compose部署
 #### 快速部署
-面板端：
+面板端(1.x)：
+```bash
+curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+```
+节点端(1.x)：
+```bash
+curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+
+```
+
+面板端(2.x)：
 ```bash
 curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
-节点端：
+节点端(2.x)：
 ```bash
 curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
