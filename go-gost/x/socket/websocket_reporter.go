@@ -1132,6 +1132,34 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 
 	fmt.Printf("🔍 开始TCP ping测试: %s，次数: %d，超时: %dms\n", target, count, timeoutMs)
 
+	// 如果是域名，先解析一次DNS，避免每次连接都重新解析导致延迟累加
+	var resolvedIPs []string
+	if net.ParseIP(ip) == nil {
+		// 是域名，需要解析
+		fmt.Printf("🔍 检测到域名，正在解析DNS...\n")
+		dnsStart := time.Now()
+		
+		addrs, err := net.LookupHost(ip)
+		dnsDuration := time.Since(dnsStart)
+		
+		if err != nil {
+			return 0, 100.0, fmt.Errorf("DNS解析失败: %v", err)
+		}
+		if len(addrs) == 0 {
+			return 0, 100.0, fmt.Errorf("DNS解析未返回任何IP地址")
+		}
+		
+		resolvedIPs = addrs
+		fmt.Printf("✅ DNS解析完成 (%.2fms)，解析到 %d 个IP: %v\n", 
+			dnsDuration.Seconds()*1000, len(addrs), addrs)
+		
+		// 使用第一个解析到的IP进行测试
+		target = net.JoinHostPort(addrs[0], fmt.Sprintf("%d", port))
+		fmt.Printf("🎯 使用IP地址进行测试: %s\n", target)
+	} else {
+		fmt.Printf("🎯 使用IP地址进行测试: %s\n", target)
+	}
+
 	for i := 0; i < count; i++ {
 		start := time.Now()
 
