@@ -53,7 +53,7 @@ public class GostUtil {
             Node node_info = node_s.get(chainTunnel.getNodeId());
             JSONObject node = new JSONObject();
             node.put("name", "node_" + chainTunnel.getInx());
-            node.put("addr", processServerAddress(node_info.getServerIp()) + ":" + chainTunnel.getPort());
+            node.put("addr", processServerAddress(node_info.getServerIp() + ":" + chainTunnel.getPort()));
             node.put("connector", connector);
             node.put("dialer", dialer);
 
