@@ -12,12 +12,6 @@
 </p>
 
 
-
-
-使用1.x版本的请使用上面给出的脚本，不要使用最新的，最新的默认2.x
-嫌弃麻烦或者想稳定的我不推荐你升级到2.x版本 目前还在beta阶段，很多问题。
-
-
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
 ---
 ## 特性
