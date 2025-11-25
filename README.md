@@ -1,5 +1,3 @@
-## 尽量不要安装2.0版本使用下方1.×的去安装稳定版。2.0版本现在有很多小问题在改架构，想回退版本，但是有很多2.0的用户，所以不能强制回退。。
-
 # flux-panel转发面板 哆啦A梦转发面板
 
 # 赞助商
@@ -12,28 +10,6 @@
     <img src="./doc/as211392.png" width="300">
   </a>
 </p>
-
-# 1.x无法无损升级到2.x请备份好数据
-1.x迁移2.x流程如下
-1.进入1.x的后台在转发页面导出所有转发保存
-2.使用1.x节点脚本卸载所有节点
-```
-curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/install.sh -o install.sh && chmod +x install.sh && ./install.sh
-```
-3.使用1.x面版脚本卸载面板
-
-```
-curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-```
-4.使用2.x脚本安装面板
-
-```
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-```
-
-
-使用1.x版本的请使用上面给出的脚本，不要使用最新的，最新的默认2.x
-嫌弃麻烦或者想稳定的我不推荐你升级到2.x版本 目前还在beta阶段，很多问题。
 
 
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
@@ -52,23 +28,23 @@ curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/pane
 ---
 ### Docker Compose部署
 #### 快速部署
-面板端(1.x)：
-```bash
-curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-```
-节点端(1.x)：
-```bash
-curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.2/install.sh -o install.sh && chmod +x install.sh && ./install.sh
-
-```
-
-面板端(2.x)：
+面板端(稳定版)：
 ```bash
 curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
-节点端(2.x)：
+节点端(稳定版)：
 ```bash
 curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+
+```
+
+面板端(开发版)：
+```bash
+curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+```
+节点端(开发版)：
+```bash
+curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
 ```
 
@@ -114,5 +90,3 @@ curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/inst
 | Aptos      | `0xf2f9fb14749457748506a8281628d556e8540d1eb586d202cd8b02b99d369ef8`  |
 
 [![Star History Chart](https://api.star-history.com/svg?repos=bqlpfy/flux-panel&type=Date)](https://www.star-history.com/#bqlpfy/flux-panel&Date)
-
-
