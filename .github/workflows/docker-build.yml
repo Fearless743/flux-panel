@@ -263,6 +263,9 @@ jobs:
           gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
           gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
           
+          echo "📤 上传数据库初始化文件..."
+          gh release upload "${VERSION}" ./gost.sql --clobber
+          
           echo "✅ 所有文件已上传到 Release ${VERSION}"
 
   update-release-gost:
@@ -333,6 +336,10 @@ jobs:
           echo "📤 更新 Docker Compose 配置文件..."
           gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
           gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
+          
+          # 上传数据库初始化文件（覆盖）
+          echo "📤 更新数据库初始化文件..."
+          gh release upload "${VERSION}" ./gost.sql --clobber
           
           echo "✅ 文件更新完成！Release ${VERSION} 中的脚本和配置已更新"
           echo "ℹ️ Docker 镜像和 GOST 二进制未重新构建"
