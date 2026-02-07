@@ -68,11 +68,11 @@ curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main
 - 非交互模式：可通过参数一次性安装。
 
 ```bash
-./install.sh -a "ws://你的面板地址:端口" -s "你的节点密钥"
+./install.sh -a "https://你的面板地址" -s "你的节点密钥"
 ```
 
 - 参数说明：
-  - `-a`：面板服务地址（节点连接地址）
+  - `-a`：面板服务地址（节点连接地址，支持 `ws://`、`wss://`、`http://`、`https://`）
   - `-s`：节点密钥
 
 #### 默认管理员账号

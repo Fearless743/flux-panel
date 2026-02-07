@@ -178,7 +178,7 @@ get_config_params() {
     echo "请输入配置参数："
     
     if [[ -z "$SERVER_ADDR" ]]; then
-      read -p "服务器地址: " SERVER_ADDR
+      read -p "服务器地址(支持 ws/wss/http/https): " SERVER_ADDR
     fi
     
     if [[ -z "$SECRET" ]]; then
