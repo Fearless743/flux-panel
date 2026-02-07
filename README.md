@@ -30,23 +30,50 @@
 #### 快速部署
 面板端(稳定版)：
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
 节点端(稳定版)：
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
 ```
 
 面板端(开发版)：
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
 节点端(开发版)：
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
 ```
+
+#### 安装脚本使用方法
+
+推荐使用（beta 分支）：
+
+```bash
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+```
+
+`panel_install.sh`（面板端）：
+
+- 运行脚本后按菜单选择安装/更新/卸载。
+- 安装时会提示输入前端端口和后端端口，默认分别为 `6366` 和 `6365`。
+
+`install.sh`（节点端）：
+
+- 交互模式：直接执行后按菜单安装/更新/卸载。
+- 非交互模式：可通过参数一次性安装。
+
+```bash
+./install.sh -a "ws://你的面板地址:端口" -s "你的节点密钥"
+```
+
+- 参数说明：
+  - `-a`：面板服务地址（节点连接地址）
+  - `-s`：节点密钥
 
 #### 默认管理员账号
 
