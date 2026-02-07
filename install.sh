@@ -19,7 +19,7 @@ get_architecture() {
 # 构建下载地址
 build_download_url() {
     local ARCH=$(get_architecture)
-    echo "https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/go-gost/gost-${ARCH}"
+    echo "https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/go-gost/gost-${ARCH}"
 }
 
 # 下载地址

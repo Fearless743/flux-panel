@@ -40,21 +40,21 @@ curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main
 
 面板端(开发版)：
 ```bash
-curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
 节点端(开发版)：
 ```bash
-curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
 ```
 
 #### 安装脚本使用方法
 
-推荐使用（beta 分支）：
+推荐使用（main 分支）：
 
 ```bash
-curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 ```
 
 `panel_install.sh`（面板端）：
