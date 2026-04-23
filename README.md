@@ -9,18 +9,6 @@
 感谢大家的理解与支持。
 
 
-# 赞助商
-<p align="center">
-  <a href="https://vps.town" style="margin: 0 20px; text-align:center;">
-    <img src="./doc/vpstown.png" width="300">
-  </a>
-
-  <a href="https://whmcs.as211392.com" style="margin: 0 20px; text-align:center;">
-    <img src="./doc/as211392.png" width="300">
-  </a>
-</p>
-
-
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
 ---
 ## 特性
