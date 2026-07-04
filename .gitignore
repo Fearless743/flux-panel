@@ -261,3 +261,5 @@ sql/
 # 二进制发布产物统一走 GitHub Releases，不入库
 *.ipa
 *.apk
+.opencode/
+go-gost/gost
