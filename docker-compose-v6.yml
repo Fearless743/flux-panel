@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/fearless743/springboot-backend:2.0.8-beta
+    image: ghcr.io/fearless743/springboot-backend:latest
     container_name: springboot-backend
     restart: unless-stopped
     environment:
@@ -25,7 +25,7 @@ services:
       start_period: 60s
 
   frontend:
-    image: ghcr.io/fearless743/vite-frontend:2.0.8-beta
+    image: ghcr.io/fearless743/vite-frontend:latest
     container_name: vite-frontend
     restart: unless-stopped
     ports:
