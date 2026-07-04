@@ -5,6 +5,7 @@ import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.entity.Forward;
 import com.baomidou.mybatisplus.extension.service.IService;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -80,4 +81,33 @@ public interface ForwardService extends IService<Forward> {
      * @return 更新结果
      */
     R updateForwardOrder(Map<String, Object> params);
+
+    /**
+     * 批量删除转发
+     * @param ids 转发ID列表
+     * @return 结果
+     */
+    R batchDelete(List<Long> ids);
+
+    /**
+     * 批量暂停转发
+     * @param ids 转发ID列表
+     * @return 结果
+     */
+    R batchPause(List<Long> ids);
+
+    /**
+     * 批量恢复转发
+     * @param ids 转发ID列表
+     * @return 结果
+     */
+    R batchResume(List<Long> ids);
+
+    /**
+     * 批量更改隧道
+     * @param ids 转发ID列表
+     * @param tunnelId 目标隧道ID
+     * @return 结果
+     */
+    R batchChangeTunnel(List<Long> ids, Integer tunnelId);
 }

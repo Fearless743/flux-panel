@@ -11,29 +11,23 @@ get_architecture() {
             echo "arm64"
             ;;
         *)
-            echo "amd64"  # 默认使用 amd64
+            echo "amd64"
             ;;
     esac
 }
 
-# 构建下载地址
 build_download_url() {
     local ARCH=$(get_architecture)
     echo "https://github.com/Fearless743/flux-panel/releases/latest/download/gost-${ARCH}"
 }
 
-# 下载地址
 DOWNLOAD_URL=$(build_download_url)
 INSTALL_DIR="/etc/flux_agent"
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
-    # 拼接 URL
     DOWNLOAD_URL="https://ghfast.top/${DOWNLOAD_URL}"
 fi
 
-
-
-# 显示菜单
 show_menu() {
   echo "==============================================="
   echo "              管理脚本"
@@ -46,7 +40,6 @@ show_menu() {
   echo "==============================================="
 }
 
-# 删除脚本自身
 delete_self() {
   echo ""
   echo "🗑️ 操作已完成，正在清理脚本文件..."
@@ -55,17 +48,13 @@ delete_self() {
   rm -f "$SCRIPT_PATH" && echo "✅ 脚本文件已删除" || echo "❌ 删除脚本文件失败"
 }
 
-# 检查并安装 tcpkill
 check_and_install_tcpkill() {
-  # 检查 tcpkill 是否已安装
   if command -v tcpkill &> /dev/null; then
     return 0
   fi
   
-  # 检测操作系统类型
   OS_TYPE=$(uname -s)
   
-  # 检查是否需要 sudo
   if [[ $EUID -ne 0 ]]; then
     SUDO_CMD="sudo"
   else
@@ -79,7 +68,6 @@ check_and_install_tcpkill() {
     return 0
   fi
   
-  # 检测 Linux 发行版并安装对应的包
   if [ -f /etc/os-release ]; then
     . /etc/os-release
     DISTRO=$ID
@@ -123,8 +111,6 @@ check_and_install_tcpkill() {
   return 0
 }
 
-
-# 获取用户输入的配置参数
 get_config_params() {
   if [[ -z "$SERVER_ADDR" || -z "$SECRET" ]]; then
     echo "请输入配置参数："
@@ -144,37 +130,31 @@ get_config_params() {
   fi
 }
 
-# 解析命令行参数
-while getopts "a:s:" opt; do
+while getopts "a:s:l" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
     s) SECRET="$OPTARG" ;;
+    l) SSL_ENABLED="true" ;;
     *) echo "❌ 无效参数"; exit 1 ;;
   esac
 done
 
-# 安装功能
 install_flux_agent() {
   echo "🚀 开始安装 flux_agent..."
   get_config_params
 
-    # 检查并安装 tcpkill
   check_and_install_tcpkill
-  
 
   mkdir -p "$INSTALL_DIR"
 
-  # 停止并禁用已有服务
   if systemctl list-units --full -all | grep -Fq "flux_agent.service"; then
     echo "🔍 检测到已存在的flux_agent服务"
     systemctl stop flux_agent 2>/dev/null && echo "🛑 停止服务"
     systemctl disable flux_agent 2>/dev/null && echo "🚫 禁用自启"
   fi
 
-  # 删除旧文件
   [[ -f "$INSTALL_DIR/flux_agent" ]] && echo "🧹 删除旧文件 flux_agent" && rm -f "$INSTALL_DIR/flux_agent"
 
-  # 下载 flux_agent
   echo "⬇️ 下载 flux_agent 中..."
   curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/flux_agent"
   if [[ ! -f "$INSTALL_DIR/flux_agent" || ! -s "$INSTALL_DIR/flux_agent" ]]; then
@@ -184,20 +164,18 @@ install_flux_agent() {
   chmod +x "$INSTALL_DIR/flux_agent"
   echo "✅ 下载完成"
 
-  # 打印版本
   echo "🔎 flux_agent 版本：$($INSTALL_DIR/flux_agent -V)"
 
-  # 写入 config.json (安装时总是创建新的)
   CONFIG_FILE="$INSTALL_DIR/config.json"
   echo "📄 创建新配置: config.json"
   cat > "$CONFIG_FILE" <<EOF
 {
   "addr": "$SERVER_ADDR",
-  "secret": "$SECRET"
+  "secret": "$SECRET",
+  "ssl": ${SSL_ENABLED:-false}
 }
 EOF
 
-  # 写入 gost.json
   GOST_CONFIG="$INSTALL_DIR/gost.json"
   if [[ -f "$GOST_CONFIG" ]]; then
     echo "⏭️ 跳过配置文件: gost.json (已存在)"
@@ -208,10 +186,8 @@ EOF
 EOF
   fi
 
-  # 加强权限
   chmod 600 "$INSTALL_DIR"/*.json
 
-  # 创建 systemd 服务
   SERVICE_FILE="/etc/systemd/system/flux_agent.service"
   cat > "$SERVICE_FILE" <<EOF
 [Unit]
@@ -227,12 +203,10 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 
-  # 启动服务
   systemctl daemon-reload
   systemctl enable flux_agent
   systemctl start flux_agent
 
-  # 检查状态
   echo "🔄 检查服务状态..."
   if systemctl is-active --quiet flux_agent; then
     echo "✅ 安装完成，flux_agent服务已启动并设置为开机启动。"
@@ -244,7 +218,6 @@ EOF
   fi
 }
 
-# 更新功能
 update_flux_agent() {
   echo "🔄 开始更新 flux_agent..."
   
@@ -255,10 +228,8 @@ update_flux_agent() {
   
   echo "📥 使用下载地址: $DOWNLOAD_URL"
   
-  # 检查并安装 tcpkill
   check_and_install_tcpkill
   
-  # 先下载新版本
   echo "⬇️ 下载最新版本..."
   curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/flux_agent.new"
   if [[ ! -f "$INSTALL_DIR/flux_agent.new" || ! -s "$INSTALL_DIR/flux_agent.new" ]]; then
@@ -266,27 +237,22 @@ update_flux_agent() {
     return 1
   fi
 
-  # 停止服务
   if systemctl list-units --full -all | grep -Fq "flux_agent.service"; then
     echo "🛑 停止 flux_agent 服务..."
     systemctl stop flux_agent
   fi
 
-  # 替换文件
   mv "$INSTALL_DIR/flux_agent.new" "$INSTALL_DIR/flux_agent"
   chmod +x "$INSTALL_DIR/flux_agent"
   
-  # 打印版本
   echo "🔎 新版本：$($INSTALL_DIR/flux_agent -V)"
 
-  # 重启服务
   echo "🔄 重启服务..."
   systemctl start flux_agent
   
   echo "✅ 更新完成，服务已重新启动。"
 }
 
-# 卸载功能
 uninstall_flux_agent() {
   echo "🗑️ 开始卸载 flux_agent..."
   
@@ -296,41 +262,34 @@ uninstall_flux_agent() {
     return 0
   fi
 
-  # 停止并禁用服务
   if systemctl list-units --full -all | grep -Fq "flux_agent.service"; then
     echo "🛑 停止并禁用服务..."
     systemctl stop flux_agent 2>/dev/null
     systemctl disable flux_agent 2>/dev/null
   fi
 
-  # 删除服务文件
   if [[ -f "/etc/systemd/system/flux_agent.service" ]]; then
     rm -f "/etc/systemd/system/flux_agent.service"
     echo "🧹 删除服务文件"
   fi
 
-  # 删除安装目录
   if [[ -d "$INSTALL_DIR" ]]; then
     rm -rf "$INSTALL_DIR"
     echo "🧹 删除安装目录: $INSTALL_DIR"
   fi
 
-  # 重载 systemd
   systemctl daemon-reload
 
   echo "✅ 卸载完成"
 }
 
-# 主逻辑
 main() {
-  # 如果提供了命令行参数，直接执行安装
   if [[ -n "$SERVER_ADDR" && -n "$SECRET" ]]; then
     install_flux_agent
     delete_self
     exit 0
   fi
 
-  # 显示交互式菜单
   while true; do
     show_menu
     read -p "请输入选项 (1-4): " choice
@@ -364,5 +323,4 @@ main() {
   done
 }
 
-# 执行主函数
 main

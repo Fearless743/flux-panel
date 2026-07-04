@@ -13,6 +13,7 @@ type Config struct {
 	Http   int    `json:"http"`
 	Tls    int    `json:"tls"`
 	Socks  int    `json:"socks"`
+	Ssl    bool   `json:"ssl"`
 }
 
 // LoadConfig 加载配置文件

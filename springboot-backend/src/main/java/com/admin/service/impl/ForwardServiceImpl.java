@@ -644,6 +644,126 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     @Override
+    public R batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return R.err("请选择要删除的转发");
+        }
+        List<String> errors = new ArrayList<>();
+        int success = 0;
+        for (Long id : ids) {
+            try {
+                R result = deleteForward(id);
+                if (result.getCode() == 0) {
+                    success++;
+                } else {
+                    errors.add("ID-" + id + ": " + result.getMsg());
+                }
+            } catch (Exception e) {
+                errors.add("ID-" + id + ": " + e.getMessage());
+            }
+        }
+        String msg = "成功删除" + success + "个转发";
+        if (!errors.isEmpty()) {
+            msg += "，失败" + errors.size() + "个: " + String.join("; ", errors);
+        }
+        return success > 0 ? R.ok(msg) : R.err(msg);
+    }
+
+    @Override
+    public R batchPause(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return R.err("请选择要暂停的转发");
+        }
+        List<String> errors = new ArrayList<>();
+        int success = 0;
+        for (Long id : ids) {
+            try {
+                R result = pauseForward(id);
+                if (result.getCode() == 0) {
+                    success++;
+                } else {
+                    errors.add("ID-" + id + ": " + result.getMsg());
+                }
+            } catch (Exception e) {
+                errors.add("ID-" + id + ": " + e.getMessage());
+            }
+        }
+        String msg = "成功暂停" + success + "个转发";
+        if (!errors.isEmpty()) {
+            msg += "，失败" + errors.size() + "个: " + String.join("; ", errors);
+        }
+        return success > 0 ? R.ok(msg) : R.err(msg);
+    }
+
+    @Override
+    public R batchResume(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return R.err("请选择要恢复的转发");
+        }
+        List<String> errors = new ArrayList<>();
+        int success = 0;
+        for (Long id : ids) {
+            try {
+                R result = resumeForward(id);
+                if (result.getCode() == 0) {
+                    success++;
+                } else {
+                    errors.add("ID-" + id + ": " + result.getMsg());
+                }
+            } catch (Exception e) {
+                errors.add("ID-" + id + ": " + e.getMessage());
+            }
+        }
+        String msg = "成功恢复" + success + "个转发";
+        if (!errors.isEmpty()) {
+            msg += "，失败" + errors.size() + "个: " + String.join("; ", errors);
+        }
+        return success > 0 ? R.ok(msg) : R.err(msg);
+    }
+
+    @Override
+    public R batchChangeTunnel(List<Long> ids, Integer tunnelId) {
+        if (ids == null || ids.isEmpty()) {
+            return R.err("请选择要更改隧道的转发");
+        }
+        if (tunnelId == null) {
+            return R.err("请选择目标隧道");
+        }
+        List<String> errors = new ArrayList<>();
+        int success = 0;
+        UserInfo currentUser = getCurrentUserInfo();
+        for (Long id : ids) {
+            try {
+                Forward existForward = validateForwardExists(id, currentUser);
+                if (existForward == null) {
+                    errors.add("ID-" + id + ": 转发不存在或无权限");
+                    continue;
+                }
+                ForwardUpdateDto dto = new ForwardUpdateDto();
+                dto.setId(id);
+                dto.setTunnelId(tunnelId);
+                dto.setName(existForward.getName());
+                dto.setUserId(existForward.getUserId() != null ? existForward.getUserId() : 0);
+                dto.setRemoteAddr(existForward.getRemoteAddr() != null ? existForward.getRemoteAddr() : "");
+                dto.setStrategy(existForward.getStrategy());
+                R result = updateForward(dto);
+                if (result.getCode() == 0) {
+                    success++;
+                } else {
+                    errors.add("ID-" + id + ": " + result.getMsg());
+                }
+            } catch (Exception e) {
+                errors.add("ID-" + id + ": " + e.getMessage());
+            }
+        }
+        String msg = "成功迁移" + success + "个转发";
+        if (!errors.isEmpty()) {
+            msg += "，失败" + errors.size() + "个: " + String.join("; ", errors);
+        }
+        return success > 0 ? R.ok(msg) : R.err(msg);
+    }
+
+    @Override
     @Transactional
     public R updateForwardOrder(Map<String, Object> params) {
         // 1. 获取当前用户信息

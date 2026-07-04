@@ -130,8 +130,14 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                 .append(" -o ./install.sh && chmod +x ./install.sh && ");
         String processedServerAddr = GostUtil.processServerAddress(viteConfig.getValue());
         command.append("./install.sh")
-                .append(" -a ").append(processedServerAddr)  // 服务器地址
-                .append(" -s ").append(node.getSecret());    // 节点密钥
+                .append(" -a ").append(processedServerAddr)
+                .append(" -s ").append(node.getSecret());
+
+        ViteConfig sslConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ssl"));
+        if (sslConfig != null && "true".equals(sslConfig.getValue())) {
+            command.append(" -l");
+        }
+
         return R.ok(command);
 
     }

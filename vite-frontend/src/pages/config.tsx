@@ -98,6 +98,12 @@ const CONFIG_ITEMS: ConfigItem[] = [
         description: '拖动滑块完成图片拼接' 
       }
     ]
+  },
+  {
+    key: 'ssl',
+    label: '启用 WSS (WebSocket SSL)',
+    description: '开启后，节点与面板之间的 WebSocket 通讯将使用 WSS 加密连接，需要在面板后端配置 SSL 证书',
+    type: 'switch'
   }
 ];
 
@@ -105,7 +111,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
 const getInitialConfigs = (): Record<string, string> => {
   if (typeof window === 'undefined') return {};
   
-  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type', 'ip'];
+  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type', 'ip', 'ssl'];
   const initialConfigs: Record<string, string> = {};
   
   try {

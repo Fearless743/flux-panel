@@ -2,6 +2,7 @@ package com.admin.controller;
 
 import com.admin.common.aop.LogAnnotation;
 import com.admin.common.annotation.RequireRole;
+import com.admin.common.dto.BatchForwardDto;
 import com.admin.common.dto.ForwardDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.lang.R;
@@ -95,6 +96,30 @@ public class ForwardController extends BaseController {
     @PostMapping("/update-order")
     public R updateForwardOrder(@RequestBody Map<String, Object> params) {
         return forwardService.updateForwardOrder(params);
+    }
+
+    @LogAnnotation
+    @PostMapping("/batch-delete")
+    public R batchDelete(@RequestBody BatchForwardDto dto) {
+        return forwardService.batchDelete(dto.getIds());
+    }
+
+    @LogAnnotation
+    @PostMapping("/batch-pause")
+    public R batchPause(@RequestBody BatchForwardDto dto) {
+        return forwardService.batchPause(dto.getIds());
+    }
+
+    @LogAnnotation
+    @PostMapping("/batch-resume")
+    public R batchResume(@RequestBody BatchForwardDto dto) {
+        return forwardService.batchResume(dto.getIds());
+    }
+
+    @LogAnnotation
+    @PostMapping("/batch-change-tunnel")
+    public R batchChangeTunnel(@RequestBody BatchForwardDto dto) {
+        return forwardService.batchChangeTunnel(dto.getIds(), dto.getTunnelId());
     }
 
 }

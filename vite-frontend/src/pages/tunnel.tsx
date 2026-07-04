@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, CardBody } from "@heroui/card";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Button } from "@heroui/button";
 import { Input, Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
@@ -515,74 +515,73 @@ export default function TunnelPage() {
         </div>
 
         {/* 隧道列表 */}
-        {tunnels.length > 0 ? (
-          <div className="space-y-2">
-            {tunnels.map((tunnel) => {
-              const typeDisplay = getTypeDisplay(tunnel.type);
-
-              return (
-                <div
-                  key={tunnel.id}
-                  className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 px-3 py-2.5 bg-content1 border border-divider rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-                >
-                  {/* 名称 + 类型 */}
-                  <div className="flex items-center gap-2 md:w-56 md:flex-shrink-0 min-w-0">
-                    <h3 className="font-semibold text-foreground truncate text-sm">{tunnel.name}</h3>
+        <Table
+          aria-label="隧道列表"
+          classNames={{
+            wrapper: "shadow-none p-0",
+            th: "bg-default-50 text-default-600 font-medium text-xs",
+          }}
+        >
+          <TableHeader>
+            <TableColumn>名称</TableColumn>
+            <TableColumn>拓扑结构</TableColumn>
+            <TableColumn>流量配置</TableColumn>
+            <TableColumn align="end">操作</TableColumn>
+          </TableHeader>
+          <TableBody
+            items={tunnels}
+            emptyContent={
+              <div className="text-center py-16">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
+                    <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">暂无隧道配置</h3>
+                    <p className="text-default-500 text-sm mt-1">还没有创建任何隧道配置，点击上方按钮开始创建</p>
+                  </div>
+                </div>
+              </div>
+            }
+          >
+            {(tunnel) => (
+              <TableRow key={tunnel.id}>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground text-sm">{tunnel.name}</span>
                     <Chip
-                      color={typeDisplay.color as any}
+                      color={getTypeDisplay(tunnel.type).color as any}
                       variant="flat"
                       size="sm"
-                      className="text-xs flex-shrink-0"
+                      className="text-xs"
                     >
-                      {typeDisplay.text}
+                      {getTypeDisplay(tunnel.type).text}
                     </Chip>
                   </div>
-
-                  {/* 拓扑结构 */}
-                  <div className="flex items-center gap-2 text-xs flex-1 min-w-0">
-                    {/* 入口节点 */}
-                    <div className="flex items-center gap-1 px-2 py-1 bg-primary-50 dark:bg-primary-100/20 rounded border border-primary-200 dark:border-primary-300/20">
-                      <svg className="w-3 h-3 text-primary-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 2v8h10V6H5z" clipRule="evenodd" />
-                      </svg>
-                      <span className="font-semibold text-primary-700 dark:text-primary-400">
-                        {tunnel.inNodeId?.length || 0}入口
-                      </span>
-                    </div>
-
-                    {/* 箭头 */}
-                    <svg className="w-4 h-4 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                    <span className="px-2 py-1 bg-primary-50 dark:bg-primary-100/20 rounded border border-primary-200 dark:border-primary-300/20 text-primary-700 dark:text-primary-400 font-medium whitespace-nowrap">
+                      {tunnel.inNodeId?.length || 0}入口
+                    </span>
+                    <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-
-                    {/* 转发链 */}
-                    <div className="flex items-center gap-1 px-2 py-1 bg-secondary-50 dark:bg-secondary-100/20 rounded border border-secondary-200 dark:border-secondary-300/20">
-                      <svg className="w-3 h-3 text-secondary-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
-                      </svg>
-                      <span className="font-semibold text-secondary-700 dark:text-secondary-400">
-                        {tunnel.type === 2 ? (tunnel.chainNodes?.length || 0) : 0}跳
-                      </span>
-                    </div>
-
-                    {/* 箭头 */}
-                    <svg className="w-4 h-4 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span className="px-2 py-1 bg-secondary-50 dark:bg-secondary-100/20 rounded border border-secondary-200 dark:border-secondary-300/20 text-secondary-700 dark:text-secondary-400 font-medium whitespace-nowrap">
+                      {tunnel.type === 2 ? (tunnel.chainNodes?.length || 0) : 0}跳
+                    </span>
+                    <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-
-                    {/* 出口节点 */}
-                    <div className="flex items-center gap-1 px-2 py-1 bg-success-50 dark:bg-success-100/20 rounded border border-success-200 dark:border-success-300/20">
-                      <svg className="w-3 h-3 text-success-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
-                      </svg>
-                      <span className="font-semibold text-success-700 dark:text-success-400">
-                        {tunnel.type === 2 ? (tunnel.outNodeId?.length || 0) : (tunnel.inNodeId?.length || 0)}出口
-                      </span>
-                    </div>
+                    <span className="px-2 py-1 bg-success-50 dark:bg-success-100/20 rounded border border-success-200 dark:border-success-300/20 text-success-700 dark:text-success-400 font-medium whitespace-nowrap">
+                      {tunnel.type === 2 ? (tunnel.outNodeId?.length || 0) : (tunnel.inNodeId?.length || 0)}出口
+                    </span>
                   </div>
-
-                  {/* 流量配置 */}
-                  <div className="flex items-center gap-1.5 md:flex-shrink-0">
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
                     <Chip variant="flat" size="sm" className="text-xs">
                       {getFlowDisplay(tunnel.flow)}
                     </Chip>
@@ -590,75 +589,49 @@ export default function TunnelPage() {
                       {tunnel.trafficRatio}x
                     </Chip>
                   </div>
-
-                  {/* 操作 */}
-                  <div className="flex items-center gap-1.5 md:flex-shrink-0 md:ml-auto">
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1 justify-end">
                     <Button
                       size="sm"
                       variant="flat"
                       color="primary"
+                      isIconOnly
                       onPress={() => handleEdit(tunnel)}
-                      className="min-h-8 flex-1 md:flex-none"
-                      startContent={
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                        </svg>
-                      }
                     >
-                      编辑
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                      </svg>
                     </Button>
                     <Button
                       size="sm"
                       variant="flat"
                       color="warning"
+                      isIconOnly
                       onPress={() => handleDiagnose(tunnel)}
-                      className="min-h-8 flex-1 md:flex-none"
-                      startContent={
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                      }
                     >
-                      诊断
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
                     </Button>
                     <Button
                       size="sm"
                       variant="flat"
                       color="danger"
+                      isIconOnly
                       onPress={() => handleDelete(tunnel)}
-                      className="min-h-8 flex-1 md:flex-none"
-                      startContent={
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clipRule="evenodd" />
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z" clipRule="evenodd" />
-                        </svg>
-                      }
                     >
-                      删除
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clipRule="evenodd" />
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z" clipRule="evenodd" />
+                      </svg>
                     </Button>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          /* 空状态 */
-          <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-            <CardBody className="text-center py-16">
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">暂无隧道配置</h3>
-                  <p className="text-default-500 text-sm mt-1">还没有创建任何隧道配置，点击上方按钮开始创建</p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-        )}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
 
         {/* 新增/编辑模态框 */}
         <Modal 

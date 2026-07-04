@@ -66,6 +66,12 @@ export const diagnoseForward = (forwardId: number) => Network.post("/forward/dia
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/update-order", data);
 
+// 批量操作
+export const batchDeleteForward = (ids: number[]) => Network.post("/forward/batch-delete", { ids });
+export const batchPauseForward = (ids: number[]) => Network.post("/forward/batch-pause", { ids });
+export const batchResumeForward = (ids: number[]) => Network.post("/forward/batch-resume", { ids });
+export const batchChangeTunnelForward = (ids: number[], tunnelId: number) => Network.post("/forward/batch-change-tunnel", { ids, tunnelId });
+
 // 限速规则CRUD操作 - 全部使用POST请求
 export const createSpeedLimit = (data: any) => Network.post("/speed-limit/create", data);
 export const getSpeedLimitList = () => Network.post("/speed-limit/list");

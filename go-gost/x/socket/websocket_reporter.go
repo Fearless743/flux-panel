@@ -90,6 +90,7 @@ type WebSocketReporter struct {
 	addr           string // 保存服务器地址
 	secret         string // 保存密钥
 	version        string // 保存版本号
+	ssl            bool   // 是否使用 WSS
 	conn           *websocket.Conn
 	reconnectTime  time.Duration
 	pingInterval   time.Duration
@@ -205,15 +206,22 @@ func (w *WebSocketReporter) connect() error {
 		Http   int    `json:"http"`
 		Tls    int    `json:"tls"`
 		Socks  int    `json:"socks"`
+		Ssl    bool   `json:"ssl"`
 	}
 
 	var cfg LocalConfig
 	if b, err := os.ReadFile("config.json"); err == nil {
 		json.Unmarshal(b, &cfg)
+		// 更新 ssl 配置
+		w.ssl = cfg.Ssl
 	}
 
 	// 使用最新的配置重新构建 URL
-	currentURL := "ws://" + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
+	scheme := "ws://"
+	if w.ssl {
+		scheme = "wss://"
+	}
+	currentURL := scheme + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
 		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
 
 	u, err := url.Parse(currentURL)
@@ -1040,10 +1048,14 @@ func getMemoryInfo() MemoryInfo {
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
-func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, version string) *WebSocketReporter {
+func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ssl bool, version string) *WebSocketReporter {
 
 	// 构建初始 WebSocket URL
-	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
+	scheme := "ws://"
+	if ssl {
+		scheme = "wss://"
+	}
+	fullURL := scheme + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
 
 	fmt.Printf("🔗 WebSocket连接URL: %s\n", fullURL)
 
@@ -1052,6 +1064,7 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 	reporter.addr = addr
 	reporter.secret = secret
 	reporter.version = version
+	reporter.ssl = ssl
 	reporter.Start()
 	return reporter
 }
