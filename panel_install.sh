@@ -7,9 +7,10 @@ export LC_ALL=C
 
 
 
-# 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://github.com/Fearless743/flux-panel/releases/download/2.0.8-beta/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://github.com/Fearless743/flux-panel/releases/download/2.0.8-beta/docker-compose-v6.yml"
+# 全局下载地址配置（配置文件从仓库分支获取，与安装脚本同源）
+BRANCH="beta"
+DOCKER_COMPOSEV4_URL="https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/${BRANCH}/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/${BRANCH}/docker-compose-v6.yml"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then

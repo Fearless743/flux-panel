@@ -198,17 +198,9 @@ jobs:
               --repo ${{ github.repository }}
           fi
 
-          # 上传所有文件到 release
+          # 只上传二进制文件到 release，安装脚本和配置文件通过仓库 raw 地址分发
           echo "📤 上传 GOST 二进制文件..."
           gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
 
-          echo "📤 上传安装脚本..."
-          gh release upload "${VERSION}" ./install.sh --clobber
-          gh release upload "${VERSION}" ./panel_install.sh --clobber
-
-          echo "📤 上传 Docker Compose 配置文件..."
-          gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
-          gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
-
-          echo "✅ 所有文件已上传到 Release ${VERSION}"
+          echo "✅ 二进制文件已上传到 Release ${VERSION}"
