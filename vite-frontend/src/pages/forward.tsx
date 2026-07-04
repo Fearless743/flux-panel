@@ -24,7 +24,7 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  rectSortingStrategy,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import {
   useSortable,
@@ -1189,172 +1189,171 @@ export default function ForwardPage() {
 
     return (
       <div ref={setNodeRef} style={style} {...attributes}>
-        {renderForwardCard(forward, listeners)}
+        {renderForwardRow(forward, listeners)}
       </div>
     );
   };
 
-  // 渲染转发卡片
-  const renderForwardCard = (forward: Forward, listeners?: any) => {
+  // 渲染转发列表行
+  const renderForwardRow = (forward: Forward, listeners?: any) => {
     const statusDisplay = getStatusDisplay(forward.status);
     const strategyDisplay = getStrategyDisplay(forward.strategy);
-    
-    return (
-      <Card key={forward.id} className="group shadow-sm border border-divider hover:shadow-md transition-shadow duration-200">
-        <CardHeader className="pb-2">
-          <div className="flex justify-between items-start w-full">
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-foreground truncate text-sm">{forward.name}</h3>
-              <p className="text-xs text-default-500 truncate">{forward.tunnelName}</p>
-            </div>
-            <div className="flex items-center gap-1.5 ml-2">
-              {viewMode === 'direct' && (
-                <div 
-                  className={`cursor-grab active:cursor-grabbing p-2 text-default-400 hover:text-default-600 transition-colors touch-manipulation ${
-                    isMobile 
-                      ? 'opacity-100' // 移动端始终显示
-                      : 'opacity-0 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
-                  }`}
-                  {...listeners}
-                  title={isMobile ? "长按拖拽排序" : "拖拽排序"}
-                  style={{ touchAction: 'none' }}
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M7 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 2zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 14zm6-8a2 2 0 1 1-.001-4.001A2 2 0 0 1 13 6zm0 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 14z" />
-                  </svg>
-                </div>
-              )}
-              <Switch
-                size="sm"
-                isSelected={forward.serviceRunning}
-                onValueChange={() => handleServiceToggle(forward)}
-                isDisabled={forward.status !== 1 && forward.status !== 0}
-              />
-              <Chip 
-                color={statusDisplay.color as any} 
-                variant="flat" 
-                size="sm"
-                className="text-xs"
-              >
-                {statusDisplay.text}
-              </Chip>
-            </div>
-          </div>
-        </CardHeader>
-        
-        <CardBody className="pt-0 pb-3">
-          <div className="space-y-2">
-            {/* 地址信息 */}
-            <div className="space-y-1">
-              <div 
-                className={`cursor-pointer px-2 py-1 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
-                  hasMultipleAddresses(forward.inIp) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
-                }`}
-                onClick={() => showAddressModal(forward.inIp, forward.inPort, '入口端口')}
-                title={formatInAddress(forward.inIp, forward.inPort)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-xs font-medium text-default-600 flex-shrink-0">入口:</span>
-                    <code className="text-xs font-mono text-foreground truncate min-w-0">
-                      {formatInAddress(forward.inIp, forward.inPort)}
-                    </code>
-                  </div>
-                  {hasMultipleAddresses(forward.inIp) && (
-                    <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  )}
-                </div>
-              </div>
-              
-              <div 
-                className={`cursor-pointer px-2 py-1 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 ${
-                  hasMultipleAddresses(forward.remoteAddr) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
-                }`}
-                onClick={() => showAddressModal(forward.remoteAddr, null, '目标地址')}
-                title={formatRemoteAddress(forward.remoteAddr)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-xs font-medium text-default-600 flex-shrink-0">目标:</span>
-                    <code className="text-xs font-mono text-foreground truncate min-w-0">
-                      {formatRemoteAddress(forward.remoteAddr)}
-                    </code>
-                  </div>
-                  {hasMultipleAddresses(forward.remoteAddr) && (
-                    <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  )}
-                </div>
-              </div>
-            </div>
 
-            {/* 统计信息 */}
-            <div className="flex items-center justify-between pt-2 border-t border-divider">
-              <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
-                {strategyDisplay.text}
-              </Chip>
-              <div className="flex items-center gap-1">
-                <Chip variant="flat" size="sm" className="text-xs" color="primary">
-                  ↑{formatFlow(forward.inFlow || 0)}
-                </Chip>
-               
+    return (
+      <div
+        key={forward.id}
+        className="group flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-3 px-3 py-2.5 bg-content1 border border-divider rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+      >
+        {/* 拖拽手柄 + 名称 + 隧道 */}
+        <div className="flex items-center gap-1.5 lg:w-52 lg:flex-shrink-0 min-w-0">
+          {viewMode === 'direct' && listeners && (
+            <div
+              className="cursor-grab active:cursor-grabbing p-1.5 text-default-400 hover:text-default-600 transition-colors touch-manipulation flex-shrink-0"
+              {...listeners}
+              title={isMobile ? "长按拖拽排序" : "拖拽排序"}
+              style={{ touchAction: 'none' }}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M7 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 2zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 14zm6-8a2 2 0 1 1-.001-4.001A2 2 0 0 1 13 6zm0 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 14z" />
+              </svg>
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-foreground truncate text-sm">{forward.name}</h3>
+            <p className="text-xs text-default-500 truncate">{forward.tunnelName}</p>
+          </div>
+          {/* 移动端：状态开关放在首行右侧 */}
+          <div className="flex items-center gap-1.5 lg:hidden">
+            <Switch
+              size="sm"
+              isSelected={forward.serviceRunning}
+              onValueChange={() => handleServiceToggle(forward)}
+              isDisabled={forward.status !== 1 && forward.status !== 0}
+            />
+            <Chip color={statusDisplay.color as any} variant="flat" size="sm" className="text-xs">
+              {statusDisplay.text}
+            </Chip>
+          </div>
+        </div>
+
+        {/* 地址信息 */}
+        <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2 flex-1 min-w-0">
+          <div
+            className={`cursor-pointer px-2 py-1 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 flex-1 min-w-0 ${
+              hasMultipleAddresses(forward.inIp) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
+            }`}
+            onClick={() => showAddressModal(forward.inIp, forward.inPort, '入口端口')}
+            title={formatInAddress(forward.inIp, forward.inPort)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="text-xs font-medium text-default-600 flex-shrink-0">入口:</span>
+                <code className="text-xs font-mono text-foreground truncate min-w-0">
+                  {formatInAddress(forward.inIp, forward.inPort)}
+                </code>
               </div>
-              <Chip variant="flat" size="sm" className="text-xs" color="success">
-                  ↓{formatFlow(forward.outFlow || 0)}
-                </Chip>
+              {hasMultipleAddresses(forward.inIp) && (
+                <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              )}
             </div>
           </div>
-          
-          <div className="flex gap-1.5 mt-3">
-            <Button
-              size="sm"
-              variant="flat"
-              color="primary"
-              onPress={() => handleEdit(forward)}
-              className="flex-1 min-h-8"
-              startContent={
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+
+          <div
+            className={`cursor-pointer px-2 py-1 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300 transition-colors duration-200 flex-1 min-w-0 ${
+              hasMultipleAddresses(forward.remoteAddr) ? 'hover:bg-default-100 dark:hover:bg-default-200/50' : ''
+            }`}
+            onClick={() => showAddressModal(forward.remoteAddr, null, '目标地址')}
+            title={formatRemoteAddress(forward.remoteAddr)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="text-xs font-medium text-default-600 flex-shrink-0">目标:</span>
+                <code className="text-xs font-mono text-foreground truncate min-w-0">
+                  {formatRemoteAddress(forward.remoteAddr)}
+                </code>
+              </div>
+              {hasMultipleAddresses(forward.remoteAddr) && (
+                <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-              }
-            >
-              编辑
-            </Button>
-            <Button
-              size="sm"
-              variant="flat"
-              color="warning"
-              onPress={() => handleDiagnose(forward)}
-              className="flex-1 min-h-8"
-              startContent={
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              }
-            >
-              诊断
-            </Button>
-            <Button
-              size="sm"
-              variant="flat"
-              color="danger"
-              onPress={() => handleDelete(forward)}
-              className="flex-1 min-h-8"
-              startContent={
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clipRule="evenodd" />
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z" clipRule="evenodd" />
-                </svg>
-              }
-            >
-              删除
-            </Button>
+              )}
+            </div>
           </div>
-        </CardBody>
-      </Card>
+        </div>
+
+        {/* 策略 + 流量 */}
+        <div className="flex items-center gap-1.5 lg:flex-shrink-0">
+          <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
+            {strategyDisplay.text}
+          </Chip>
+          <Chip variant="flat" size="sm" className="text-xs" color="primary">
+            ↑{formatFlow(forward.inFlow || 0)}
+          </Chip>
+          <Chip variant="flat" size="sm" className="text-xs" color="success">
+            ↓{formatFlow(forward.outFlow || 0)}
+          </Chip>
+        </div>
+
+        {/* 状态 + 操作（桌面端） */}
+        <div className="flex items-center gap-1.5 lg:flex-shrink-0 lg:ml-auto">
+          <div className="hidden lg:flex items-center gap-1.5">
+            <Switch
+              size="sm"
+              isSelected={forward.serviceRunning}
+              onValueChange={() => handleServiceToggle(forward)}
+              isDisabled={forward.status !== 1 && forward.status !== 0}
+            />
+            <Chip color={statusDisplay.color as any} variant="flat" size="sm" className="text-xs">
+              {statusDisplay.text}
+            </Chip>
+          </div>
+          <Button
+            size="sm"
+            variant="flat"
+            color="primary"
+            onPress={() => handleEdit(forward)}
+            className="min-h-8 flex-1 lg:flex-none"
+            startContent={
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+              </svg>
+            }
+          >
+            编辑
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            color="warning"
+            onPress={() => handleDiagnose(forward)}
+            className="min-h-8 flex-1 lg:flex-none"
+            startContent={
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            }
+          >
+            诊断
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            color="danger"
+            onPress={() => handleDelete(forward)}
+            className="min-h-8 flex-1 lg:flex-none"
+            startContent={
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z" clipRule="evenodd" />
+              </svg>
+            }
+          >
+            删除
+          </Button>
+        </div>
+      </div>
     );
   };
 
@@ -1495,8 +1494,8 @@ export default function ForwardPage() {
                           }
                           className="shadow-none border border-divider"
                         >
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 p-4">
-                            {tunnelGroup.forwards.map((forward) => renderForwardCard(forward, undefined))}
+                          <div className="space-y-2 p-4">
+                            {tunnelGroup.forwards.map((forward) => renderForwardRow(forward, undefined))}
                           </div>
                         </AccordionItem>
                       ))}
@@ -1534,9 +1533,9 @@ export default function ForwardPage() {
             >
               <SortableContext
                 items={getSortedForwards().map(f => f.id || 0).filter(id => id > 0)}
-                strategy={rectSortingStrategy}
+                strategy={verticalListSortingStrategy}
               >
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                <div className="space-y-2">
                   {getSortedForwards().map((forward) => (
                     forward && forward.id ? (
                       <SortableForwardCard key={forward.id} forward={forward} />
