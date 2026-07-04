@@ -1174,6 +1174,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
 
+    private static final Random RANDOM = new Random();
+
     public List<ChainTunnel> get_port(List<ChainTunnel> chainTunnelList, Integer in_port, Long forward_id) {
         List<List<Integer>> list = new ArrayList<>();
 
@@ -1201,29 +1203,29 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return chainTunnelList;
         }
 
-        // ========== 未指定 in_port 查找最小的共同端口 ==========
+        // ========== 未指定 in_port 随机分配共同端口 ==========
         Set<Integer> intersection = new HashSet<>(list.getFirst());
         for (int i = 1; i < list.size(); i++) {
             intersection.retainAll(list.get(i));
         }
 
         if (!intersection.isEmpty()) {
-            // 找最小端口
-            Integer commonMin = intersection.stream().min(Integer::compareTo).orElseThrow();
+            // 从共同端口中随机选择一个
+            List<Integer> commonPorts = new ArrayList<>(intersection);
+            Integer randomPort = commonPorts.get(RANDOM.nextInt(commonPorts.size()));
 
-            // 设置到所有节点
             for (ChainTunnel tunnel : chainTunnelList) {
-                tunnel.setPort(commonMin);
+                tunnel.setPort(randomPort);
             }
 
             return chainTunnelList;
         }
 
-        // ========== 没有共同端口取各自第一个可用端口 ==========
+        // ========== 没有共同端口，每个节点随机取一个可用端口 ==========
         for (int i = 0; i < chainTunnelList.size(); i++) {
             List<Integer> ports = list.get(i);
-            Integer first = ports.getFirst();
-            chainTunnelList.get(i).setPort(first);
+            Integer randomPort = ports.get(RANDOM.nextInt(ports.size()));
+            chainTunnelList.get(i).setPort(randomPort);
         }
 
         return chainTunnelList;
