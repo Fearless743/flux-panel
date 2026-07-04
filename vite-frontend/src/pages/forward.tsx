@@ -507,9 +507,13 @@ export default function ForwardPage() {
     }
   };
 
-  // 处理隧道选择变化
+  // 处理隧道选择变化（切换隧道时重置入口端口，由后端在新隧道上重新分配）
   const handleTunnelChange = (tunnelId: string) => {
-    setForm(prev => ({ ...prev, tunnelId: parseInt(tunnelId) }));
+    setForm(prev => {
+      const newTunnelId = parseInt(tunnelId);
+      if (prev.tunnelId === newTunnelId) return prev;
+      return { ...prev, tunnelId: newTunnelId, inPort: null };
+    });
   };
 
   // 提交表单
@@ -1606,8 +1610,7 @@ export default function ForwardPage() {
                       isInvalid={!!errors.tunnelId}
                       errorMessage={errors.tunnelId}
                       variant="bordered"
-                      isDisabled={isEdit}
-                      description={isEdit ? "编辑时无法修改关联隧道" : undefined}
+                      description={isEdit ? "修改隧道后将自动迁移转发服务，原入口端口可用时保持不变" : undefined}
                     >
                       {tunnels.map((tunnel) => (
                         <SelectItem key={tunnel.id} >

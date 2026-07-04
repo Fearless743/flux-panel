@@ -20,6 +20,9 @@ public class ForwardUpdateDto {
     @NotBlank(message = "转发名称不能为空")
     private String name;
 
+    // 可选：传入且与当前隧道不同时，将转发迁移到新隧道
+    private Integer tunnelId;
+
     @NotBlank(message = "远程地址不能为空")
     private String remoteAddr;
 

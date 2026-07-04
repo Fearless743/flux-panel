@@ -322,6 +322,13 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
     public R updateTunnel(TunnelUpdateDto tunnelUpdateDto) {
         Tunnel existingTunnel = this.getById(tunnelUpdateDto.getId());
         if (existingTunnel == null) return R.err("隧道不存在");
+
+        // 传入入口节点时，重建隧道节点拓扑并实时下发gost配置
+        if (tunnelUpdateDto.getInNodeId() != null && !tunnelUpdateDto.getInNodeId().isEmpty()) {
+            R result = reconfigureTunnelNodes(existingTunnel, tunnelUpdateDto);
+            if (result.getCode() != 0) return result;
+        }
+
         Tunnel tunnel = new Tunnel();
         tunnel.setId(tunnelUpdateDto.getId());
         tunnel.setName(tunnelUpdateDto.getName());
@@ -343,6 +350,267 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
 
         this.updateById(tunnel);
         return R.ok();
+    }
+
+    /**
+     * 重建隧道的入口/转发链/出口节点配置，并将差异实时下发到各节点端gost
+     */
+    private R reconfigureTunnelNodes(Tunnel tunnel, TunnelUpdateDto dto) {
+        Long tunnelId = tunnel.getId();
+        boolean isTunnelForward = tunnel.getType() == 2;
+
+        List<List<ChainTunnel>> chainGroups = new ArrayList<>();
+        List<ChainTunnel> outNodesReq = new ArrayList<>();
+        if (isTunnelForward) {
+            if (dto.getOutNodeId() == null || dto.getOutNodeId().isEmpty()) return R.err("出口不能为空");
+            if (dto.getChainNodes() != null) chainGroups = dto.getChainNodes();
+            outNodesReq = dto.getOutNodeId();
+        }
+
+        // 规范化新配置（不信任前端传来的id/port，仅取拓扑信息）
+        List<ChainTunnel> newEntries = new ArrayList<>();
+        List<List<ChainTunnel>> newChains = new ArrayList<>();
+        List<ChainTunnel> newOuts = new ArrayList<>();
+        List<Long> nodeIds = new ArrayList<>();
+
+        for (ChainTunnel in : dto.getInNodeId()) {
+            ChainTunnel ct = new ChainTunnel();
+            ct.setTunnelId(tunnelId);
+            ct.setChainType(1);
+            ct.setNodeId(in.getNodeId());
+            newEntries.add(ct);
+            nodeIds.add(in.getNodeId());
+        }
+        int inx = 1;
+        for (List<ChainTunnel> group : chainGroups) {
+            List<ChainTunnel> newGroup = new ArrayList<>();
+            for (ChainTunnel c : group) {
+                ChainTunnel ct = new ChainTunnel();
+                ct.setTunnelId(tunnelId);
+                ct.setChainType(2);
+                ct.setNodeId(c.getNodeId());
+                ct.setProtocol(c.getProtocol());
+                ct.setStrategy(c.getStrategy());
+                ct.setInx(inx);
+                newGroup.add(ct);
+                nodeIds.add(c.getNodeId());
+            }
+            if (!newGroup.isEmpty()) {
+                newChains.add(newGroup);
+                inx++;
+            }
+        }
+        for (ChainTunnel out : outNodesReq) {
+            ChainTunnel ct = new ChainTunnel();
+            ct.setTunnelId(tunnelId);
+            ct.setChainType(3);
+            ct.setNodeId(out.getNodeId());
+            ct.setProtocol(out.getProtocol());
+            ct.setStrategy(out.getStrategy());
+            newOuts.add(ct);
+            nodeIds.add(out.getNodeId());
+        }
+
+        Set<Long> nodeIdSet = new HashSet<>(nodeIds);
+        if (nodeIdSet.size() != nodeIds.size()) return R.err("节点重复");
+
+        Map<Long, Node> nodes = new HashMap<>();
+        List<Node> nodeList = nodeService.list(new QueryWrapper<Node>().in("id", nodeIds));
+        if (nodeList.size() != nodeIdSet.size()) return R.err("部分节点不存在");
+        for (Node node : nodeList) {
+            if (node.getStatus() != 1) return R.err("节点 " + node.getName() + " 不在线，无法下发配置");
+            nodes.put(node.getId(), node);
+        }
+
+        // 旧配置记录
+        List<ChainTunnel> oldRecords = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnelId));
+        Map<Long, Integer> oldPorts = new HashMap<>();
+        for (ChainTunnel old : oldRecords) {
+            if (old.getPort() != null) oldPorts.put(old.getNodeId(), old.getPort());
+        }
+
+        // 为转发链/出口节点分配端口，同一节点沿用旧端口避免端口漂移
+        try {
+            for (List<ChainTunnel> group : newChains) {
+                for (ChainTunnel ct : group) {
+                    Integer port = oldPorts.get(ct.getNodeId());
+                    ct.setPort(port != null ? port : getNodePort(ct.getNodeId()));
+                }
+            }
+            for (ChainTunnel ct : newOuts) {
+                Integer port = oldPorts.get(ct.getNodeId());
+                ct.setPort(port != null ? port : getNodePort(ct.getNodeId()));
+            }
+        } catch (RuntimeException e) {
+            return R.err(e.getMessage());
+        }
+
+        List<String> failures = new ArrayList<>();
+
+        // 清理不再需要的旧gost配置
+        if (isTunnelForward) {
+            Set<Long> chainNeeded = new HashSet<>();   // 需要 chains_x 的节点：入口 + 转发链
+            Set<Long> serviceNeeded = new HashSet<>(); // 需要 x_tls 服务的节点：转发链 + 出口
+            for (ChainTunnel ct : newEntries) chainNeeded.add(ct.getNodeId());
+            for (List<ChainTunnel> group : newChains) {
+                for (ChainTunnel ct : group) {
+                    chainNeeded.add(ct.getNodeId());
+                    serviceNeeded.add(ct.getNodeId());
+                }
+            }
+            for (ChainTunnel ct : newOuts) serviceNeeded.add(ct.getNodeId());
+
+            Set<Long> chainCleaned = new HashSet<>();
+            Set<Long> serviceCleaned = new HashSet<>();
+            for (ChainTunnel old : oldRecords) {
+                boolean hadChain = old.getChainType() == 1 || old.getChainType() == 2;
+                boolean hadService = old.getChainType() == 2 || old.getChainType() == 3;
+                if (hadChain && !chainNeeded.contains(old.getNodeId()) && chainCleaned.add(old.getNodeId())) {
+                    GostUtil.DeleteChains(old.getNodeId(), "chains_" + tunnelId);
+                }
+                if (hadService && !serviceNeeded.contains(old.getNodeId()) && serviceCleaned.add(old.getNodeId())) {
+                    JSONArray services = new JSONArray();
+                    services.add(tunnelId + "_tls");
+                    GostUtil.DeleteService(old.getNodeId(), services);
+                }
+            }
+        }
+
+        // 替换数据库记录
+        chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnelId));
+        List<ChainTunnel> allNew = new ArrayList<>(newEntries);
+        for (List<ChainTunnel> group : newChains) allNew.addAll(group);
+        allNew.addAll(newOuts);
+        chainTunnelService.saveBatch(allNew);
+
+        // 下发新配置（先更新，不存在则新增）
+        if (isTunnelForward) {
+            for (ChainTunnel entry : newEntries) {
+                List<ChainTunnel> target = newChains.isEmpty() ? newOuts : newChains.getFirst();
+                GostDto res = pushChains(entry.getNodeId(), target, nodes);
+                if (!Objects.equals(res.getMsg(), "OK")) {
+                    failures.add("入口[" + nodes.get(entry.getNodeId()).getName() + "]链下发失败: " + res.getMsg());
+                }
+            }
+            for (int i = 0; i < newChains.size(); i++) {
+                List<ChainTunnel> target = (i + 1 < newChains.size()) ? newChains.get(i + 1) : newOuts;
+                for (ChainTunnel ct : newChains.get(i)) {
+                    GostDto res = pushChains(ct.getNodeId(), target, nodes);
+                    if (!Objects.equals(res.getMsg(), "OK")) {
+                        failures.add("转发链[" + nodes.get(ct.getNodeId()).getName() + "]链下发失败: " + res.getMsg());
+                    }
+                    res = pushChainService(ct.getNodeId(), ct, nodes);
+                    if (!Objects.equals(res.getMsg(), "OK")) {
+                        failures.add("转发链[" + nodes.get(ct.getNodeId()).getName() + "]服务下发失败: " + res.getMsg());
+                    }
+                }
+            }
+            for (ChainTunnel ct : newOuts) {
+                GostDto res = pushChainService(ct.getNodeId(), ct, nodes);
+                if (!Objects.equals(res.getMsg(), "OK")) {
+                    failures.add("出口[" + nodes.get(ct.getNodeId()).getName() + "]服务下发失败: " + res.getMsg());
+                }
+            }
+        }
+
+        // 入口节点变化时迁移其上的转发服务
+        Set<Long> oldEntryIds = oldRecords.stream()
+                .filter(ct -> ct.getChainType() != null && ct.getChainType() == 1)
+                .map(ChainTunnel::getNodeId)
+                .collect(Collectors.toSet());
+        Set<Long> newEntryIds = newEntries.stream().map(ChainTunnel::getNodeId).collect(Collectors.toSet());
+        migrateForwardServices(tunnel, oldEntryIds, newEntryIds, nodes, failures);
+
+        if (!failures.isEmpty()) {
+            return R.err("配置已保存，但部分下发失败: " + String.join("；", failures));
+        }
+        return R.ok();
+    }
+
+    private GostDto pushChains(Long nodeId, List<ChainTunnel> target, Map<Long, Node> nodes) {
+        GostDto res = GostUtil.UpdateChains(nodeId, target, nodes);
+        if (!Objects.equals(res.getMsg(), "OK") && res.getMsg() != null && res.getMsg().contains("not found")) {
+            res = GostUtil.AddChains(nodeId, target, nodes);
+        }
+        return res;
+    }
+
+    private GostDto pushChainService(Long nodeId, ChainTunnel chainTunnel, Map<Long, Node> nodes) {
+        GostDto res = GostUtil.AddChainService(nodeId, chainTunnel, nodes, "UpdateService");
+        if (!Objects.equals(res.getMsg(), "OK") && res.getMsg() != null && res.getMsg().contains("not found")) {
+            res = GostUtil.AddChainService(nodeId, chainTunnel, nodes, "AddService");
+        }
+        return res;
+    }
+
+    /**
+     * 入口节点变化时，把隧道下所有转发的入口服务从移除的节点上删除、在新增的节点上创建
+     */
+    private void migrateForwardServices(Tunnel tunnel, Set<Long> oldEntryIds, Set<Long> newEntryIds,
+                                        Map<Long, Node> nodes, List<String> failures) {
+        Set<Long> removed = new HashSet<>(oldEntryIds);
+        removed.removeAll(newEntryIds);
+        Set<Long> added = new HashSet<>(newEntryIds);
+        added.removeAll(oldEntryIds);
+        if (removed.isEmpty() && added.isEmpty()) return;
+
+        List<Forward> forwards = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnel.getId()));
+        for (Forward forward : forwards) {
+            UserTunnel userTunnel = userTunnelService.getOne(new QueryWrapper<UserTunnel>()
+                    .eq("user_id", forward.getUserId())
+                    .eq("tunnel_id", tunnel.getId()));
+            String serviceName = forward.getId() + "_" + forward.getUserId() + "_" + (userTunnel != null ? userTunnel.getId() : 0);
+            Integer limiter = userTunnel != null ? userTunnel.getSpeedId() : null;
+
+            // 记录转发原入口端口（优先取保留节点上的端口），迁移到新节点时尽量沿用
+            Integer preferredPort = null;
+            List<ForwardPort> existingPorts = forwardPortService.list(
+                    new QueryWrapper<ForwardPort>().eq("forward_id", forward.getId()));
+            for (ForwardPort fp : existingPorts) {
+                if (fp.getPort() == null) continue;
+                if (preferredPort == null) preferredPort = fp.getPort();
+                if (!removed.contains(fp.getNodeId())) {
+                    preferredPort = fp.getPort();
+                    break;
+                }
+            }
+
+            for (Long nodeId : removed) {
+                JSONArray services = new JSONArray();
+                services.add(serviceName + "_tcp");
+                services.add(serviceName + "_udp");
+                GostUtil.DeleteService(nodeId, services);
+                forwardPortService.remove(new QueryWrapper<ForwardPort>()
+                        .eq("forward_id", forward.getId())
+                        .eq("node_id", nodeId));
+            }
+
+            for (Long nodeId : added) {
+                try {
+                    List<Integer> availablePorts = getAvailablePorts(nodeId);
+                    if (availablePorts.isEmpty()) {
+                        throw new RuntimeException("节点端口已满，无可用端口");
+                    }
+                    // 原入口端口在新节点可用时保持不变，否则回退自动分配
+                    Integer port = (preferredPort != null && availablePorts.contains(preferredPort))
+                            ? preferredPort : availablePorts.getFirst();
+                    ForwardPort forwardPort = new ForwardPort();
+                    forwardPort.setForwardId(forward.getId());
+                    forwardPort.setNodeId(nodeId);
+                    forwardPort.setPort(port);
+                    forwardPortService.save(forwardPort);
+                    GostDto res = GostUtil.AddAndUpdateService(serviceName, limiter, nodes.get(nodeId), forward, forwardPort, tunnel, "AddService");
+                    if (!Objects.equals(res.getMsg(), "OK")) {
+                        failures.add("转发[" + forward.getName() + "]在节点[" + nodes.get(nodeId).getName() + "]创建失败: " + res.getMsg());
+                    } else if (forward.getStatus() != null && forward.getStatus() == 0) {
+                        // 已暂停的转发保持暂停状态
+                        GostUtil.PauseAndResumeService(nodeId, serviceName, "PauseService");
+                    }
+                } catch (RuntimeException e) {
+                    failures.add("转发[" + forward.getName() + "]在节点[" + nodes.get(nodeId).getName() + "]分配端口失败: " + e.getMessage());
+                }
+            }
+        }
     }
 
 
@@ -553,6 +821,14 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
     }
 
     public Integer getNodePort(Long nodeId) {
+        List<Integer> availablePorts = getAvailablePorts(nodeId);
+        if (availablePorts.isEmpty()) {
+            throw new RuntimeException("节点端口已满，无可用端口");
+        }
+        return availablePorts.getFirst();
+    }
+
+    public List<Integer> getAvailablePorts(Long nodeId) {
 
         Node node = nodeService.getById(nodeId);
         if (node == null){
@@ -578,14 +854,9 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
 
         // 3. 从可用端口范围中筛选未被占用的端口
         List<Integer> parsedPorts = parsePorts(node.getPort());
-        List<Integer> availablePorts = parsedPorts.stream()
+        return parsedPorts.stream()
                 .filter(p -> !usedPorts.contains(p))
                 .toList();
-
-        if (availablePorts.isEmpty()) {
-            throw new RuntimeException("节点端口已满，无可用端口");
-        }
-        return availablePorts.getFirst();
     }
 
     public static List<Integer> parsePorts(String input) {

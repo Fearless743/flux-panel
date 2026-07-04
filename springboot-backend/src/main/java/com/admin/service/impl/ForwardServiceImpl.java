@@ -226,6 +226,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("隧道不存在");
         }
 
+        // 目标隧道与当前不同时，走隧道迁移流程
+        if (forwardUpdateDto.getTunnelId() != null
+                && !forwardUpdateDto.getTunnelId().equals(existForward.getTunnelId())) {
+            return changeForwardTunnel(currentUser, existForward, tunnel, forwardUpdateDto);
+        }
+
         UserPermissionResult permissionResult = checkUserPermissions(currentUser, tunnel, null);
         if (permissionResult.isHasError()) {
             return R.err(permissionResult.getErrorMessage());
@@ -272,6 +278,109 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             forwardPortService.updateById(forwardPort);
             GostDto gostDto = GostUtil.AddAndUpdateService(serviceName, limiter, node, existForward, forwardPort, tunnel, "UpdateService");
             if (!Objects.equals(gostDto.getMsg(), "OK")) return R.err(gostDto.getMsg());
+        }
+
+        return R.ok();
+    }
+
+    /**
+     * 将转发迁移到新隧道：先在新隧道入口节点分配端口，再删除旧隧道入口节点上的服务，
+     * 最后在新隧道入口节点创建服务并实时下发
+     */
+    private R changeForwardTunnel(UserInfo currentUser, Forward existForward, Tunnel oldTunnel, ForwardUpdateDto dto) {
+        Tunnel newTunnel = validateTunnel(dto.getTunnelId());
+        if (newTunnel == null) {
+            return R.err("目标隧道不存在");
+        }
+        if (newTunnel.getStatus() != 1) {
+            return R.err("目标隧道已禁用");
+        }
+
+        // 校验当前用户对新隧道的权限和配额
+        UserPermissionResult permissionResult = checkUserPermissions(currentUser, newTunnel, existForward.getId());
+        if (permissionResult.isHasError()) {
+            return R.err(permissionResult.getErrorMessage());
+        }
+
+        // 转发归属用户在新隧道上的权限（管理员操作他人转发时按归属用户计算）
+        UserTunnel newUserTunnel = getUserTunnel(existForward.getUserId(), newTunnel.getId().intValue());
+        User ownerInfo = userService.getById(existForward.getUserId());
+        if (ownerInfo != null && ownerInfo.getRoleId() != 0 && newUserTunnel == null) {
+            return R.err("该转发所属用户没有目标隧道权限");
+        }
+
+        // 先在新隧道入口节点分配端口（失败则不影响现有服务）
+        List<ChainTunnel> newEntryNodes = chainTunnelService.list(new QueryWrapper<ChainTunnel>()
+                .eq("tunnel_id", newTunnel.getId())
+                .eq("chain_type", 1));
+        if (newEntryNodes.isEmpty()) {
+            return R.err("目标隧道没有入口节点");
+        }
+        try {
+            // 未指定端口时优先沿用原入口端口（需在所有新入口节点上可用），否则回退自动分配
+            Integer inPort = dto.getInPort();
+            if (inPort == null) {
+                List<ForwardPort> oldForwardPorts = forwardPortService.list(
+                        new QueryWrapper<ForwardPort>().eq("forward_id", existForward.getId()));
+                if (!oldForwardPorts.isEmpty() && oldForwardPorts.getFirst().getPort() != null) {
+                    Integer oldPort = oldForwardPorts.getFirst().getPort();
+                    boolean availableOnAll = true;
+                    for (ChainTunnel chainTunnel : newEntryNodes) {
+                        if (!getNodePort(chainTunnel.getNodeId(), existForward.getId()).contains(oldPort)) {
+                            availableOnAll = false;
+                            break;
+                        }
+                    }
+                    if (availableOnAll) {
+                        inPort = oldPort;
+                    }
+                }
+            }
+            newEntryNodes = get_port(newEntryNodes, inPort, existForward.getId());
+        } catch (RuntimeException e) {
+            return R.err(e.getMessage());
+        }
+
+        // 删除旧隧道入口节点上的服务
+        UserTunnel oldUserTunnel = getUserTunnel(existForward.getUserId(), oldTunnel.getId().intValue());
+        String oldServiceName = buildServiceName(existForward.getId(), existForward.getUserId(), oldUserTunnel);
+        List<ChainTunnel> oldEntryNodes = chainTunnelService.list(new QueryWrapper<ChainTunnel>()
+                .eq("tunnel_id", oldTunnel.getId())
+                .eq("chain_type", 1));
+        for (ChainTunnel chainTunnel : oldEntryNodes) {
+            JSONArray services = new JSONArray();
+            services.add(oldServiceName + "_tcp");
+            services.add(oldServiceName + "_udp");
+            GostUtil.DeleteService(chainTunnel.getNodeId(), services);
+        }
+        forwardPortService.remove(new QueryWrapper<ForwardPort>().eq("forward_id", existForward.getId()));
+
+        // 更新转发记录
+        existForward.setTunnelId(dto.getTunnelId());
+        existForward.setName(dto.getName());
+        existForward.setRemoteAddr(dto.getRemoteAddr());
+        existForward.setStrategy(dto.getStrategy());
+        existForward.setStatus(1);
+        existForward.setUpdatedTime(System.currentTimeMillis());
+        this.updateById(existForward);
+
+        // 在新隧道入口节点创建服务
+        String newServiceName = buildServiceName(existForward.getId(), existForward.getUserId(), newUserTunnel);
+        Integer limiter = newUserTunnel != null ? newUserTunnel.getSpeedId() : null;
+        for (ChainTunnel chainTunnel : newEntryNodes) {
+            Node node = nodeService.getById(chainTunnel.getNodeId());
+            if (node == null) {
+                return R.err("目标隧道部分入口节点不存在");
+            }
+            ForwardPort forwardPort = new ForwardPort();
+            forwardPort.setForwardId(existForward.getId());
+            forwardPort.setNodeId(chainTunnel.getNodeId());
+            forwardPort.setPort(chainTunnel.getPort());
+            forwardPortService.save(forwardPort);
+            GostDto gostDto = GostUtil.AddAndUpdateService(newServiceName, limiter, node, existForward, forwardPort, newTunnel, "AddService");
+            if (!Objects.equals(gostDto.getMsg(), "OK")) {
+                return R.err("节点[" + node.getName() + "]服务创建失败: " + gostDto.getMsg());
+            }
         }
 
         return R.ok();

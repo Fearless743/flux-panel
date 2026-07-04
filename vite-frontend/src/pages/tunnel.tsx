@@ -693,7 +693,7 @@ export default function TunnelPage() {
                     {isEdit ? '编辑隧道' : '新增隧道'}
                   </h2>
                   <p className="text-small text-default-500">
-                    {isEdit ? '编辑时只能修改隧道名称、流量计算和流量倍率' : '创建新的隧道配置'}
+                    {isEdit ? '修改配置后将实时下发到相关节点（隧道类型不可修改）' : '创建新的隧道配置'}
                   </p>
                 </ModalHeader>
                 <ModalBody>
@@ -806,7 +806,6 @@ export default function TunnelPage() {
                          isInvalid={!!errors.inNodeId}
                          errorMessage={errors.inNodeId}
                          variant="bordered"
-                         isDisabled={isEdit}
                        >
                         {nodes.map((node) => (
                           <SelectItem 
@@ -860,7 +859,6 @@ export default function TunnelPage() {
                                 ]
                               }));
                             }}
-                            isDisabled={isEdit}
                             startContent={
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -889,7 +887,6 @@ export default function TunnelPage() {
                                       variant="light"
                                       isIconOnly
                                       onPress={() => removeChainNode(groupIndex)}
-                                      isDisabled={isEdit}
                                     >
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -932,7 +929,6 @@ export default function TunnelPage() {
                                         }}
                                         variant="bordered"
                                         size="sm"
-                                        isDisabled={isEdit}
                                         classNames={{
                                           label: "text-xs",
                                           value: "text-sm"
@@ -991,7 +987,6 @@ export default function TunnelPage() {
                                       }}
                                       variant="bordered"
                                       size="sm"
-                                      isDisabled={isEdit}
                                       classNames={{
                                         label: "text-xs",
                                         value: "text-sm"
@@ -1018,7 +1013,6 @@ export default function TunnelPage() {
                                       }}
                                       variant="bordered"
                                       size="sm"
-                                      isDisabled={isEdit}
                                       classNames={{
                                         label: "text-xs",
                                         value: "text-sm"
@@ -1083,7 +1077,6 @@ export default function TunnelPage() {
                               isInvalid={!!errors.outNodeId}
                               errorMessage={errors.outNodeId}
                               variant="bordered"
-                              isDisabled={isEdit}
                               classNames={{
                                 label: "text-xs",
                                 value: "text-sm"
@@ -1154,7 +1147,6 @@ export default function TunnelPage() {
                             isInvalid={!!errors.protocol}
                             errorMessage={errors.protocol}
                             variant="bordered"
-                            isDisabled={isEdit}
                             classNames={{
                               label: "text-xs",
                               value: "text-sm"
@@ -1197,7 +1189,6 @@ export default function TunnelPage() {
                               }
                             }}
                             variant="bordered"
-                            isDisabled={isEdit}
                             classNames={{
                               label: "text-xs",
                               value: "text-sm"

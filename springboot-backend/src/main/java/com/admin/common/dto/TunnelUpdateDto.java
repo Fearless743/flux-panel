@@ -30,4 +30,11 @@ public class TunnelUpdateDto {
     @DecimalMin(value = "0.0", inclusive = false, message = "流量倍率必须大于0.0")
     @DecimalMax(value = "100.0", message = "流量倍率不能大于100.0")
     private BigDecimal trafficRatio;
+
+    // 以下节点配置为可选：传入入口节点时会重建隧道节点拓扑并实时下发到节点端gost
+    private List<ChainTunnel> inNodeId;
+
+    private List<List<ChainTunnel>> chainNodes;
+
+    private List<ChainTunnel> outNodeId;
 }
