@@ -18,6 +18,11 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
 
+      - name: Install cross-compilation toolchain (ARM64)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Cache cargo registry & target
         uses: Swatinem/rust-cache@v2
         with:
@@ -29,6 +34,9 @@ jobs:
 
       - name: Build release binary (ARM64)
         working-directory: ./gost-rs
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --target aarch64-unknown-linux-gnu --bin flux_agent
 
       - name: Copy to artifact name (AMD64)
