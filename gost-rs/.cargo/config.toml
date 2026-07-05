@@ -1,0 +1,10 @@
+[build]
+# 体积优化默认项；release profile 在 Cargo.toml 中已显式配置
+incremental = true
+
+# 不强制使用 rust-lld，让 build script 用系统 ld，
+# 二进制本身由 gcc/clang 链接，体积优化依赖 release profile 中的 lto/strip。
+# 如需更激进体积优化，可在 release build 时临时设置 RUSTFLAGS="-C link-arg=-fuse-ld=lld"
+
+[net]
+git-fetch-with-cli = true

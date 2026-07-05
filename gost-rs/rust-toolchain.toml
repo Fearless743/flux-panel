@@ -1,0 +1,3 @@
+[toolchain]
+# 升级到 1.85.0：edition2024 已稳定，兼容新版 crates.io 依赖
+channel = "1.86.0"
