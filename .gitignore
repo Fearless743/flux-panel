@@ -263,3 +263,5 @@ sql/
 *.apk
 .opencode/
 go-gost/gost
+# Rust 构建产物
+gost-rs/target/

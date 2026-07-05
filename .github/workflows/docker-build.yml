@@ -7,65 +7,53 @@ on:
       - '[0-9]*'
 
 jobs:
-  build-gost:
-    name: Build & Compress GOST Binary
+  build-rust:
+    name: Build Rust flux_agent
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - name: Install Rust toolchain 1.86
+        uses: dtolnay/rust-toolchain@1.86.0
         with:
-          go-version: '1.21'
+          targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
 
-      - name: Cache Go modules
-        uses: actions/cache@v3
+      - name: Cache cargo registry & target
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          workspaces: gost-rs -> target
 
-      - name: Install UPX
+      - name: Build release binary (AMD64)
+        working-directory: ./gost-rs
+        run: cargo build --release --target x86_64-unknown-linux-gnu --bin flux_agent
+
+      - name: Build release binary (ARM64)
+        working-directory: ./gost-rs
+        run: cargo build --release --target aarch64-unknown-linux-gnu --bin flux_agent
+
+      - name: Copy to artifact name (AMD64)
+        working-directory: ./gost-rs
         run: |
-          wget https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
-          tar -xf upx-4.2.1-amd64_linux.tar.xz
-          sudo mv upx-4.2.1-amd64_linux/upx /usr/local/bin/
-          rm -rf upx-4.2.1-amd64_linux*
+          cp target/x86_64-unknown-linux-gnu/release/flux_agent ./gost-amd64
+          chmod +x ./gost-amd64
 
-      - name: Build GOST binary (AMD64)
-        working-directory: ./go-gost
+      - name: Copy to artifact name (ARM64)
+        working-directory: ./gost-rs
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost-amd64
+          cp target/aarch64-unknown-linux-gnu/release/flux_agent ./gost-arm64
+          chmod +x ./gost-arm64
 
-      - name: Build GOST binary (ARM64)
-        working-directory: ./go-gost
-        run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o gost-arm64
-
-      - name: Compress with UPX (AMD64)
-        working-directory: ./go-gost
-        run: |
-          upx --best --lzma gost-amd64
-
-      - name: Compress with UPX (ARM64)
-        working-directory: ./go-gost
-        run: |
-          upx --best --lzma gost-arm64
-
-      - name: Upload GOST AMD64 artifact
+      - name: Upload AMD64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: gost-binary-amd64
-          path: ./go-gost/gost-amd64
+          path: ./gost-rs/gost-amd64
 
-      - name: Upload GOST ARM64 artifact
+      - name: Upload ARM64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: gost-binary-arm64
-          path: ./go-gost/gost-arm64
+          path: ./gost-rs/gost-arm64
 
   build-vite:
     name: Build & Push Vite Frontend
@@ -151,7 +139,7 @@ jobs:
 
   create-release:
     name: Create Release
-    needs: [build-gost, build-vite, build-java]
+    needs: [build-rust, build-vite, build-java]
     runs-on: ubuntu-latest
     permissions:
       contents: write
