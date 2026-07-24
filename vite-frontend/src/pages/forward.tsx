@@ -383,11 +383,16 @@ export default function ForwardPage() {
     }
   };
 
-  // 处理隧道选择变化（切换隧道时重置入口端口，由后端在新隧道上重新分配）
+  // 处理隧道选择变化：
+  // - 新建：清空入口端口，由后端在新隧道上自动分配
+  // - 编辑/改隧道：保留原入口端口，后端在目标隧道上尽量沿用（批量改隧道同逻辑）
   const handleTunnelChange = (tunnelId: string) => {
     setForm(prev => {
       const newTunnelId = parseInt(tunnelId);
       if (prev.tunnelId === newTunnelId) return prev;
+      if (isEdit) {
+        return { ...prev, tunnelId: newTunnelId };
+      }
       return { ...prev, tunnelId: newTunnelId, inPort: null };
     });
   };

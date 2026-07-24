@@ -416,26 +416,10 @@ func (s *ForwardService) changeForwardTunnel(user CurrentUser, exist *model.Forw
 		return fmt.Errorf("目标隧道没有入口节点")
 	}
 
-	inPort := req.InPort
-	if inPort == nil {
-		oldPorts, _ := s.Port.ListByForwardID(exist.ID)
-		if len(oldPorts) > 0 {
-			oldPort := oldPorts[0].Port
-			availableOnAll := true
-			for _, ct := range newEntryNodes {
-				avail, err := s.getNodePort(ct.NodeID, exist.ID)
-				if err != nil {
-					return err
-				}
-				if !containsInt(avail, oldPort) {
-					availableOnAll = false
-					break
-				}
-			}
-			if availableOnAll {
-				inPort = &oldPort
-			}
-		}
+	// 换隧道时保持原入口端口：优先请求指定，否则取原 forward_port
+	inPort, err := s.resolveKeepInPort(req.InPort, exist.ID)
+	if err != nil {
+		return err
 	}
 	newEntryNodes, err = s.getPort(newEntryNodes, inPort, exist.ID)
 	if err != nil {
@@ -1002,6 +986,8 @@ func (s *ForwardService) BatchChangeTunnel(user CurrentUser, ids []int64, tunnel
 			continue
 		}
 		tid := tunnelID
+		// 显式带上原入口端口，保证批量改隧道不重分配
+		inPort, _ := s.resolveKeepInPort(nil, exist.ID)
 		req := ForwardUpdateReq{
 			ID:         id,
 			TunnelID:   &tid,
@@ -1009,6 +995,7 @@ func (s *ForwardService) BatchChangeTunnel(user CurrentUser, ids []int64, tunnel
 			UserID:     exist.UserID,
 			RemoteAddr: exist.RemoteAddr,
 			Strategy:   exist.Strategy,
+			InPort:     inPort,
 		}
 		if err := s.Update(user, req); err != nil {
 			errors = append(errors, fmt.Sprintf("ID-%d: %s", id, err.Error()))
@@ -1021,6 +1008,30 @@ func (s *ForwardService) BatchChangeTunnel(user CurrentUser, ids []int64, tunnel
 		msg += "，失败" + fmt.Sprintf("%d", len(errors)) + "个: " + strings.Join(errors, "; ")
 	}
 	return msg, success > 0
+}
+
+// resolveKeepInPort 换隧道时沿用原入口端口：请求指定优先，否则取该转发已有端口。
+// 返回 nil 表示历史上无端口记录（仅此时才允许 getPort 自动分配）。
+func (s *ForwardService) resolveKeepInPort(reqPort *int, forwardID int64) (*int, error) {
+	if reqPort != nil && *reqPort > 0 {
+		p := *reqPort
+		return &p, nil
+	}
+	oldPorts, err := s.Port.ListByForwardID(forwardID)
+	if err != nil {
+		return nil, err
+	}
+	if len(oldPorts) == 0 {
+		return nil, nil
+	}
+	// 多入口节点时端口应一致；取首个非 0 端口
+	for _, fp := range oldPorts {
+		if fp.Port > 0 {
+			p := fp.Port
+			return &p, nil
+		}
+	}
+	return nil, nil
 }
 
 // ---- helpers ----

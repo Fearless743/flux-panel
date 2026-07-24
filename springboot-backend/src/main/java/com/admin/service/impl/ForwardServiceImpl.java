@@ -317,22 +317,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("目标隧道没有入口节点");
         }
         try {
-            // 未指定端口时优先沿用原入口端口（需在所有新入口节点上可用），否则回退自动分配
+            // 换隧道时保持原入口端口：请求指定优先，否则强制沿用原 forward_port（不可用则 get_port 报错，不静默重分配）
             Integer inPort = dto.getInPort();
-            if (inPort == null) {
+            if (inPort == null || inPort <= 0) {
                 List<ForwardPort> oldForwardPorts = forwardPortService.list(
                         new QueryWrapper<ForwardPort>().eq("forward_id", existForward.getId()));
-                if (!oldForwardPorts.isEmpty() && oldForwardPorts.getFirst().getPort() != null) {
-                    Integer oldPort = oldForwardPorts.getFirst().getPort();
-                    boolean availableOnAll = true;
-                    for (ChainTunnel chainTunnel : newEntryNodes) {
-                        if (!getNodePort(chainTunnel.getNodeId(), existForward.getId()).contains(oldPort)) {
-                            availableOnAll = false;
-                            break;
-                        }
-                    }
-                    if (availableOnAll) {
-                        inPort = oldPort;
+                for (ForwardPort fp : oldForwardPorts) {
+                    if (fp.getPort() != null && fp.getPort() > 0) {
+                        inPort = fp.getPort();
+                        break;
                     }
                 }
             }
@@ -746,6 +739,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 dto.setUserId(existForward.getUserId() != null ? existForward.getUserId() : 0);
                 dto.setRemoteAddr(existForward.getRemoteAddr() != null ? existForward.getRemoteAddr() : "");
                 dto.setStrategy(existForward.getStrategy());
+                // 批量改隧道显式带上原入口端口，避免重分配
+                List<ForwardPort> oldPorts = forwardPortService.list(
+                        new QueryWrapper<ForwardPort>().eq("forward_id", id));
+                for (ForwardPort fp : oldPorts) {
+                    if (fp.getPort() != null && fp.getPort() > 0) {
+                        dto.setInPort(fp.getPort());
+                        break;
+                    }
+                }
                 R result = updateForward(dto);
                 if (result.getCode() == 0) {
                     success++;
