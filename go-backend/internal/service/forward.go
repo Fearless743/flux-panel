@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/gost"
@@ -13,6 +14,9 @@ import (
 	"github.com/Fearless743/flux-panel/go-backend/internal/ws"
 	"github.com/jmoiron/sqlx"
 )
+
+// 批量操作并发度：受节点 WS 往返（最长 10s）主导，并发可显著缩短总耗时
+const batchConcurrency = 8
 
 const forwardBytesToGB = 1024 * 1024 * 1024
 
@@ -426,15 +430,16 @@ func (s *ForwardService) changeForwardTunnel(user CurrentUser, exist *model.Forw
 		return err
 	}
 
-	// 删旧服务
+	// 删旧服务（多入口并行）
 	oldUserTunnel, _ := s.Repo.GetUserTunnel(exist.UserID, int(oldTunnel.ID))
 	oldServiceName := s.buildServiceName(exist.ID, int64(exist.UserID), oldUserTunnel)
 	oldEntryNodes, _ := s.Repo.ListChainTunnelsByTunnel(oldTunnel.ID, "1")
-	for _, ct := range oldEntryNodes {
-		names := []string{oldServiceName + "_tcp", oldServiceName + "_udp"}
-		res := s.Hub.SendMsg(ct.NodeID, gost.DeleteServicePayload(names), "DeleteService")
+	names := []string{oldServiceName + "_tcp", oldServiceName + "_udp"}
+	_ = s.forEachChainNodeParallel(oldEntryNodes, func(node *model.Node) error {
+		res := s.Hub.SendMsg(node.ID, gost.DeleteServicePayload(names), "DeleteService")
 		_ = gost.NormalizeOK(res.Msg)
-	}
+		return nil
+	})
 	_ = s.Port.DeleteByForwardID(exist.ID)
 
 	// 更新转发
@@ -448,12 +453,17 @@ func (s *ForwardService) changeForwardTunnel(user CurrentUser, exist *model.Forw
 		return err
 	}
 
-	// 新服务
+	// 新服务：先串行写库，再并行下发 AddService
 	newServiceName := s.buildServiceName(exist.ID, int64(exist.UserID), newUserTunnel)
 	var limiter *int
 	if newUserTunnel != nil {
 		limiter = newUserTunnel.SpeedID
 	}
+	type entryWork struct {
+		node *model.Node
+		fp   *model.ForwardPort
+	}
+	works := make([]entryWork, 0, len(newEntryNodes))
 	for _, ct := range newEntryNodes {
 		node, err := s.Repo.GetNode(ct.NodeID)
 		if err != nil {
@@ -470,9 +480,34 @@ func (s *ForwardService) changeForwardTunnel(user CurrentUser, exist *model.Forw
 		if _, err := s.Port.Insert(fp); err != nil {
 			return err
 		}
-		msg := s.addOrUpdateService(newServiceName, limiter, node, exist, fp, newTunnel, "AddService")
+		works = append(works, entryWork{node: node, fp: fp})
+	}
+	if len(works) == 1 {
+		w := works[0]
+		msg := s.addOrUpdateService(newServiceName, limiter, w.node, exist, w.fp, newTunnel, "AddService")
 		if !gost.IsOK(msg) {
-			return fmt.Errorf("节点[%s]服务创建失败: %s", node.Name, gost.NormalizeOK(msg))
+			return fmt.Errorf("节点[%s]服务创建失败: %s", w.node.Name, gost.NormalizeOK(msg))
+		}
+		return nil
+	}
+	errCh := make(chan error, len(works))
+	var wg sync.WaitGroup
+	for _, w := range works {
+		w := w
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			msg := s.addOrUpdateService(newServiceName, limiter, w.node, exist, w.fp, newTunnel, "AddService")
+			if !gost.IsOK(msg) {
+				errCh <- fmt.Errorf("节点[%s]服务创建失败: %s", w.node.Name, gost.NormalizeOK(msg))
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -516,18 +551,13 @@ func (s *ForwardService) Delete(user CurrentUser, id int64) error {
 		return err
 	}
 	serviceName := s.buildServiceName(forward.ID, int64(forward.UserID), userTunnel)
-	for _, ct := range chainTunnels {
-		node, err := s.Repo.GetNode(ct.NodeID)
-		if err != nil {
-			return err
-		}
-		if node == nil {
-			return fmt.Errorf("部分节点不存在")
-		}
-		names := []string{serviceName + "_tcp", serviceName + "_udp"}
+	names := []string{serviceName + "_tcp", serviceName + "_udp"}
+	// 多入口节点并行下发删除（单条失败不阻塞其余）
+	_ = s.forEachChainNodeParallel(chainTunnels, func(node *model.Node) error {
 		res := s.Hub.SendMsg(node.ID, gost.DeleteServicePayload(names), "DeleteService")
 		_ = gost.NormalizeOK(res.Msg)
-	}
+		return nil
+	})
 	_ = s.Port.DeleteByForwardID(id)
 	return s.Repo.Delete(id)
 }
@@ -619,18 +649,14 @@ func (s *ForwardService) changeForwardStatus(user CurrentUser, id int64, targetS
 		return err
 	}
 	serviceName := s.buildServiceName(forward.ID, int64(forward.UserID), userTunnel)
-	for _, ct := range chainTunnels {
-		node, err := s.Repo.GetNode(ct.NodeID)
-		if err != nil {
-			return err
-		}
-		if node == nil {
-			return fmt.Errorf("部分节点不存在")
-		}
+	if err := s.forEachChainNodeParallel(chainTunnels, func(node *model.Node) error {
 		res := s.Hub.SendMsg(node.ID, gost.PauseResumePayload(serviceName), gostMethod)
 		if !gost.IsOK(res.Msg) {
 			return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	return s.Repo.UpdateStatus(forward.ID, targetStatus, time.Now().UnixMilli())
 }
@@ -910,85 +936,100 @@ func (s *ForwardService) UpdateOrder(user CurrentUser, items []OrderItem) error 
 
 // ---- batch ----
 
-func (s *ForwardService) BatchDelete(user CurrentUser, ids []int64) (string, bool) {
+// runBatch 对 ids 有限并发执行 fn，汇总成功/失败文案（与原先串行语义一致）。
+func (s *ForwardService) runBatch(ids []int64, emptyMsg, okVerb string, fn func(id int64) error) (string, bool) {
 	if len(ids) == 0 {
-		return "请选择要删除的转发", false
+		return emptyMsg, false
 	}
-	var errors []string
-	success := 0
+	workers := batchConcurrency
+	if workers > len(ids) {
+		workers = len(ids)
+	}
+	type result struct {
+		id  int64
+		err error
+	}
+	jobs := make(chan int64, len(ids))
+	out := make(chan result, len(ids))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range jobs {
+				out <- result{id: id, err: fn(id)}
+			}
+		}()
+	}
 	for _, id := range ids {
-		if err := s.Delete(user, id); err != nil {
-			errors = append(errors, fmt.Sprintf("ID-%d: %s", id, err.Error()))
+		jobs <- id
+	}
+	close(jobs)
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	var errs []string
+	success := 0
+	// 按提交顺序收集失败信息，便于对照
+	errByID := make(map[int64]string, len(ids))
+	for r := range out {
+		if r.err != nil {
+			errByID[r.id] = r.err.Error()
 		} else {
 			success++
 		}
 	}
-	msg := fmt.Sprintf("成功删除%d个转发", success)
-	if len(errors) > 0 {
-		msg += "，失败" + fmt.Sprintf("%d", len(errors)) + "个: " + strings.Join(errors, "; ")
+	for _, id := range ids {
+		if msg, ok := errByID[id]; ok {
+			errs = append(errs, fmt.Sprintf("ID-%d: %s", id, msg))
+		}
+	}
+	msg := fmt.Sprintf("成功%s%d个转发", okVerb, success)
+	if len(errs) > 0 {
+		msg += fmt.Sprintf("，失败%d个: %s", len(errs), strings.Join(errs, "; "))
 	}
 	return msg, success > 0
+}
+
+func (s *ForwardService) BatchDelete(user CurrentUser, ids []int64) (string, bool) {
+	return s.runBatch(ids, "请选择要删除的转发", "删除", func(id int64) error {
+		return s.Delete(user, id)
+	})
 }
 
 func (s *ForwardService) BatchPause(user CurrentUser, ids []int64) (string, bool) {
-	if len(ids) == 0 {
-		return "请选择要暂停的转发", false
-	}
-	var errors []string
-	success := 0
-	for _, id := range ids {
-		if err := s.Pause(user, id); err != nil {
-			errors = append(errors, fmt.Sprintf("ID-%d: %s", id, err.Error()))
-		} else {
-			success++
-		}
-	}
-	msg := fmt.Sprintf("成功暂停%d个转发", success)
-	if len(errors) > 0 {
-		msg += "，失败" + fmt.Sprintf("%d", len(errors)) + "个: " + strings.Join(errors, "; ")
-	}
-	return msg, success > 0
+	return s.runBatch(ids, "请选择要暂停的转发", "暂停", func(id int64) error {
+		return s.Pause(user, id)
+	})
 }
 
 func (s *ForwardService) BatchResume(user CurrentUser, ids []int64) (string, bool) {
-	if len(ids) == 0 {
-		return "请选择要恢复的转发", false
-	}
-	var errors []string
-	success := 0
-	for _, id := range ids {
-		if err := s.Resume(user, id); err != nil {
-			errors = append(errors, fmt.Sprintf("ID-%d: %s", id, err.Error()))
-		} else {
-			success++
-		}
-	}
-	msg := fmt.Sprintf("成功恢复%d个转发", success)
-	if len(errors) > 0 {
-		msg += "，失败" + fmt.Sprintf("%d", len(errors)) + "个: " + strings.Join(errors, "; ")
-	}
-	return msg, success > 0
+	return s.runBatch(ids, "请选择要恢复的转发", "恢复", func(id int64) error {
+		return s.Resume(user, id)
+	})
 }
 
 func (s *ForwardService) BatchChangeTunnel(user CurrentUser, ids []int64, tunnelID int) (string, bool) {
-	if len(ids) == 0 {
-		return "请选择要更改隧道的转发", false
-	}
 	if tunnelID == 0 {
 		return "请选择目标隧道", false
 	}
-	var errors []string
-	success := 0
-	for _, id := range ids {
+	return s.runBatch(ids, "请选择要更改隧道的转发", "迁移", func(id int64) error {
 		exist, err := s.validateForwardExists(id, user)
-		if err != nil || exist == nil {
-			errors = append(errors, fmt.Sprintf("ID-%d: 转发不存在或无权限", id))
-			continue
+		if err != nil {
+			return err
+		}
+		if exist == nil {
+			return fmt.Errorf("转发不存在或无权限")
 		}
 		tid := tunnelID
 		// 显式带上原入口端口，保证批量改隧道不重分配
-		inPort, _ := s.resolveKeepInPort(nil, exist.ID)
-		req := ForwardUpdateReq{
+		inPort, err := s.resolveKeepInPort(nil, exist.ID)
+		if err != nil {
+			return err
+		}
+		return s.Update(user, ForwardUpdateReq{
 			ID:         id,
 			TunnelID:   &tid,
 			Name:       exist.Name,
@@ -996,18 +1037,54 @@ func (s *ForwardService) BatchChangeTunnel(user CurrentUser, ids []int64, tunnel
 			RemoteAddr: exist.RemoteAddr,
 			Strategy:   exist.Strategy,
 			InPort:     inPort,
+		})
+	})
+}
+
+// forEachChainNodeParallel 对入口节点并行执行 fn；任一失败返回首个错误。
+func (s *ForwardService) forEachChainNodeParallel(chainTunnels []model.ChainTunnel, fn func(node *model.Node) error) error {
+	if len(chainTunnels) == 0 {
+		return nil
+	}
+	if len(chainTunnels) == 1 {
+		node, err := s.Repo.GetNode(chainTunnels[0].NodeID)
+		if err != nil {
+			return err
 		}
-		if err := s.Update(user, req); err != nil {
-			errors = append(errors, fmt.Sprintf("ID-%d: %s", id, err.Error()))
-		} else {
-			success++
+		if node == nil {
+			return fmt.Errorf("部分节点不存在")
+		}
+		return fn(node)
+	}
+	errCh := make(chan error, len(chainTunnels))
+	var wg sync.WaitGroup
+	for _, ct := range chainTunnels {
+		ct := ct
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			node, err := s.Repo.GetNode(ct.NodeID)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if node == nil {
+				errCh <- fmt.Errorf("部分节点不存在")
+				return
+			}
+			if err := fn(node); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return err
 		}
 	}
-	msg := fmt.Sprintf("成功迁移%d个转发", success)
-	if len(errors) > 0 {
-		msg += "，失败" + fmt.Sprintf("%d", len(errors)) + "个: " + strings.Join(errors, "; ")
-	}
-	return msg, success > 0
+	return nil
 }
 
 // resolveKeepInPort 换隧道时沿用原入口端口：请求指定优先，否则取该转发已有端口。
