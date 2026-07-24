@@ -91,8 +91,10 @@ jobs:
           VERSION="${{ github.ref_name }}"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
           # 唯一面板镜像；兼容别名便于旧文档/脚本过渡
+          # APP_VERSION 注入前端，管理后台显示与本次 tag 一致
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
+            --build-arg APP_VERSION="${VERSION}" \
             --push \
             -t ghcr.io/${OWNER}/flux-panel:latest \
             -t ghcr.io/${OWNER}/flux-panel:${VERSION} \

@@ -4,8 +4,10 @@ export type SiteConfig = typeof siteConfig;
 
 // 缓存相关常量
 const CACHE_PREFIX = 'vite_config_';
-const VERSION = "2.0.8-beta";
-const APP_VERSION = "1.0.3";
+// 管理后台版本：CI/Docker 构建时由 VITE_APP_VERSION 注入（与推送 tag 一致）
+const VERSION = (import.meta.env.VITE_APP_VERSION || 'dev').trim() || 'dev';
+// 移动端/WebView 壳版本（与面板发布 tag 独立）
+const APP_VERSION = (import.meta.env.VITE_MOBILE_APP_VERSION || '1.0.3').trim() || '1.0.3';
 
 const getInitialConfig = () => {
   if (typeof window === 'undefined') {

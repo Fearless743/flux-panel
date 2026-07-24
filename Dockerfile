@@ -4,12 +4,15 @@
 
 # ---------- 前端 ----------
 FROM node:20-alpine AS frontend
+# 与 CI 推送 tag 一致，写入管理后台显示版本
+ARG APP_VERSION=dev
 WORKDIR /src
 COPY vite-frontend/package.json vite-frontend/package-lock.json ./
 RUN npm ci --legacy-peer-deps
 COPY vite-frontend/ ./
 # 生产构建：VITE_API_BASE 为空 → 浏览器走同源 /api/v1（由 Caddy 反代）
 ENV VITE_API_BASE=
+ENV VITE_APP_VERSION=${APP_VERSION}
 RUN npm run build
 
 # ---------- 后端 ----------
