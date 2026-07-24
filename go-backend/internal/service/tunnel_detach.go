@@ -385,7 +385,8 @@ func pushChains(hub *ws.Hub, nodeID int64, target []model.ChainTunnel, nodes map
 		"data":  data,
 	}
 	res := hub.SendMsg(nodeID, req, "UpdateChains")
-	if !gost.IsOK(res.Msg) && strings.Contains(res.Msg, "not found") {
+	// 空节点 Update 返回 not found，必须 Add（IsOK 不再吞掉 not found）
+	if !gost.IsOK(res.Msg) {
 		res = hub.SendMsg(nodeID, data, "AddChains")
 	}
 	res.Msg = gost.NormalizeOK(res.Msg)
@@ -421,7 +422,7 @@ func pushChainService(hub *ws.Hub, nodeID int64, ct model.ChainTunnel, nodes map
 	}
 	services := gost.BuildChainService(ct.TunnelID, chainTypeOf(ct), proto, tcpListen, port, iface, srcHas)
 	res := hub.SendMsg(nodeID, services, "UpdateService")
-	if !gost.IsOK(res.Msg) && strings.Contains(res.Msg, "not found") {
+	if !gost.IsOK(res.Msg) {
 		res = hub.SendMsg(nodeID, services, "AddService")
 	}
 	res.Msg = gost.NormalizeOK(res.Msg)

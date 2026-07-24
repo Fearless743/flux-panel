@@ -1241,6 +1241,10 @@ func (s *ForwardService) addOrUpdateService(serviceName string, limiter *int, no
 		tunnel.Type, int64(forward.TunnelID), forward.RemoteAddr, forward.Strategy,
 	)
 	res := s.Hub.SendMsg(node.ID, services, meth)
+	// Update 在空节点上必然 not found：回落 Add（弃用本地 gost.json 后的主路径）
+	if meth == "UpdateService" && !gost.IsOK(res.Msg) {
+		res = s.Hub.SendMsg(node.ID, services, "AddService")
+	}
 	return gost.NormalizeOK(res.Msg)
 }
 

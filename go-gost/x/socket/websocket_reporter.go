@@ -119,7 +119,7 @@ func NewWebSocketReporter(serverURL string, secret string) *WebSocketReporter {
 	return &WebSocketReporter{
 		url:            serverURL,
 		reconnectTime:  5 * time.Second,  // 重连间隔
-		pingInterval:   2 * time.Second,  // 发送间隔改为2秒
+		pingInterval:   2 * time.Second,  // 系统信息上报间隔
 		configInterval: 10 * time.Minute, // 配置上报间隔
 		ctx:            ctx,
 		cancel:         cancel,
@@ -369,6 +369,10 @@ func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 }
 
 // receiveMessages 接收服务端发送的消息
+// 读超时需明显大于面板侧应用层 call 间隔；弃用本地 gost.json 后节点依赖 WS 持续在线收配置，
+// 过短读超时会导致空配置窗口、转发中断。
+const wsReadIdleTimeout = 90 * time.Second
+
 func (w *WebSocketReporter) receiveMessages() {
 	for {
 		select {
@@ -384,13 +388,16 @@ func (w *WebSocketReporter) receiveMessages() {
 				return
 			}
 
-			// 设置读取超时
-			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			// 任意服务端下行（含 {"type":"call"} 保活）都会刷新该 deadline
+			conn.SetReadDeadline(time.Now().Add(wsReadIdleTimeout))
 
 			messageType, message, err := conn.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				// 读空闲超时 / 对端关闭都视为需要重连；打印原因便于对照面板日志
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
 					fmt.Printf("❌ WebSocket读取消息错误: %v\n", err)
+				} else {
+					fmt.Printf("⚠️ WebSocket读取结束: %v\n", err)
 				}
 				w.connMutex.Lock()
 				w.connected = false

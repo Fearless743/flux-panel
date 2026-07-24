@@ -127,7 +127,8 @@ func (a *App) HandleWebSocket(c *gin.Context) {
 				"type": "info",
 				"data": string(plain),
 			})
-			a.Hub.BroadcastAdmins(msg)
+			// 异步广播：绝不阻塞节点读循环 / 指令通道
+			go a.Hub.BroadcastAdmins(msg)
 		}
 	}
 }
@@ -138,7 +139,7 @@ func broadcastStatus(a *App, nodeID int64, status int) {
 		"type": "status",
 		"data": status,
 	})
-	a.Hub.BroadcastAdmins(msg)
+	go a.Hub.BroadcastAdmins(msg)
 }
 
 func decryptIfNeeded(secret string, raw []byte) []byte {

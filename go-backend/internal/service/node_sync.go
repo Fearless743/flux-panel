@@ -159,9 +159,9 @@ func (s *NodeSyncService) SyncNodeConfig(nodeID int64) {
 				}
 			}
 			base := fwSvc.buildServiceName(fw.ID, int64(fw.UserID), ut)
-			// Update → Add
+			// 空节点无本地 gost.json：Update 不存在时回落 Add
 			msg := fwSvc.addOrUpdateService(base, limiter, node, fw, fp, tunnel, "UpdateService")
-			if !gost.IsOK(msg) && strings.Contains(msg, "not found") {
+			if !gost.IsOK(msg) {
 				msg = fwSvc.addOrUpdateService(base, limiter, node, fw, fp, tunnel, "AddService")
 			}
 			// exists 也算成功

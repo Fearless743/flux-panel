@@ -17,9 +17,15 @@
 		reverse_proxy 127.0.0.1:6365
 	}
 
-	# 节点 / 管理端 WebSocket
+	# 节点 / 管理端 WebSocket（长连接：关闭读空闲超时，避免代理侧掐断）
 	handle /system-info* {
-		reverse_proxy 127.0.0.1:6365
+		reverse_proxy 127.0.0.1:6365 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
 	}
 
 	# SPA 静态资源（history 模式）

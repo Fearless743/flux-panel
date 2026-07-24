@@ -119,7 +119,7 @@ func main() {
 	log := xlogger.NewLogger()
 	logger.SetDefault(log)
 
-	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, config.Ssl, "2.0.2")
+	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, config.Ssl, version)
 	defer wsReporter.Stop()
 	service.SetHTTPReportURL(config.Addr, config.Secret)
 
@@ -129,5 +129,7 @@ func main() {
 	}
 }
 
-// GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
+// 构建时注入版本（与 Release tag 对齐），例如：
+// VERSION=2.0.9-beta
+// GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o gost
 // upx --best --lzma gost

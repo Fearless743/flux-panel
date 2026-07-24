@@ -51,14 +51,28 @@ func ParseForwardServiceName(n string) (forwardID, userID, userTunnelID int64, o
 	return f, u, t, true
 }
 
-// NormalizeOK exists/not found 归一
+// IsMissing 节点侧资源不存在（Update/Delete 常见）；空节点同步时应回落 Add，不能当成功。
+func IsMissing(msg string) bool {
+	return strings.Contains(msg, "not found")
+}
+
+// IsExists 节点侧资源已存在（Add 幂等成功）。
+func IsExists(msg string) bool {
+	return strings.Contains(msg, "exists")
+}
+
+// IsOK 判定下发结果是否可视为成功。
+// - "OK"：明确成功
+// - "exists"：Add 时已存在，幂等成功
+// 注意：不再把 "not found" 当成功（弃用 gost.json 后 Update 空节点会误判，导致不同步端口）。
+func IsOK(msg string) bool {
+	return msg == "OK" || IsExists(msg)
+}
+
+// NormalizeOK 将幂等成功文案归一为 OK；not found 保持原样，便于调用方回落 Add。
 func NormalizeOK(msg string) string {
-	if strings.Contains(msg, "exists") || strings.Contains(msg, "not found") {
+	if IsExists(msg) {
 		return "OK"
 	}
 	return msg
-}
-
-func IsOK(msg string) bool {
-	return msg == "OK" || strings.Contains(msg, "exists") || strings.Contains(msg, "not found")
 }

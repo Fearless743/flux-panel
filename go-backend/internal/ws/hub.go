@@ -107,6 +107,7 @@ func (h *Hub) SendMsgTimeout(nodeID int64, data any, typ string, timeout time.Du
 }
 
 func (h *Hub) writeConn(conn *websocket.Conn, secret string, plain []byte) error {
+	// 只在取/建 per-conn 写锁时短暂持有 hub.mu；禁止在持有 RLock/Lock 时调用本函数（避免 RWMutex 升级死锁）。
 	h.mu.Lock()
 	lk, ok := h.sessionLocks[conn]
 	if !ok {
@@ -132,13 +133,20 @@ func (h *Hub) writeConn(conn *websocket.Conn, secret string, plain []byte) error
 
 	lk.Lock()
 	defer lk.Unlock()
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return conn.WriteMessage(websocket.TextMessage, msg)
 }
 
 func (h *Hub) BroadcastAdmins(message []byte) {
+	// 先快照连接列表再释放锁，写操作在锁外进行，避免 RLock→Lock 死锁卡死节点指令通道。
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	conns := make([]*websocket.Conn, 0, len(h.adminSessions))
 	for conn := range h.adminSessions {
+		conns = append(conns, conn)
+	}
+	h.mu.RUnlock()
+
+	for _, conn := range conns {
 		_ = h.writeConn(conn, "", message)
 	}
 }

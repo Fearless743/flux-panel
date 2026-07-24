@@ -130,14 +130,19 @@ get_config_params() {
   fi
 }
 
-while getopts "a:s:l" opt; do
+while getopts "a:s:lu" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
     s) SECRET="$OPTARG" ;;
     l) SSL_ENABLED="true" ;;
-    *) echo "❌ 无效参数"; exit 1 ;;
+    u) DO_UPDATE="true" ;;
+    *) echo "❌ 无效参数（支持 -a 地址 -s 密钥 -l SSL -u 一键更新）"; exit 1 ;;
   esac
 done
+# 支持：./install.sh update | upgrade（无菜单一键更新）
+if [[ "${1:-}" == "update" || "${1:-}" == "upgrade" ]]; then
+  DO_UPDATE="true"
+fi
 
 install_flux_agent() {
   echo "🚀 开始安装 flux_agent..."
@@ -285,6 +290,13 @@ uninstall_flux_agent() {
 }
 
 main() {
+  # 一键更新：-u / update / upgrade（不进菜单）
+  if [[ "${DO_UPDATE:-}" == "true" ]]; then
+    update_flux_agent
+    delete_self
+    exit $?
+  fi
+
   if [[ -n "$SERVER_ADDR" && -n "$SECRET" ]]; then
     install_flux_agent
     delete_self
@@ -294,7 +306,7 @@ main() {
   while true; do
     show_menu
     read -p "请输入选项 (1-4): " choice
-    
+
     case $choice in
       1)
         install_flux_agent
