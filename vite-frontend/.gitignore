@@ -26,5 +26,6 @@ dist-ssr
 
 pnpm-lock.yaml
 yarn.lock
-package-lock.json
+# package-lock.json 需入库：Docker 构建使用 npm ci
 bun.lockb
+bun.lock
