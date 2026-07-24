@@ -1,0 +1,42 @@
+# 面板入口：静态前端 + 反代 Go 后端（本机 127.0.0.1:6365）
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	encode gzip zstd
+
+	# API
+	handle /api/* {
+		reverse_proxy 127.0.0.1:6365
+	}
+
+	# 节点流量/配置上报
+	handle /flow/* {
+		reverse_proxy 127.0.0.1:6365
+	}
+
+	# 节点 / 管理端 WebSocket
+	handle /system-info* {
+		reverse_proxy 127.0.0.1:6365
+	}
+
+	# SPA 静态资源（history 模式）
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

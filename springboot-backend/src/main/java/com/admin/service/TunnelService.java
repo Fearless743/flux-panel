@@ -45,6 +45,16 @@ public interface TunnelService extends IService<Tunnel> {
     R deleteTunnel(Long id);
 
     /**
+     * 从所有隧道拓扑中剔除指定节点（不删除隧道本身）
+     * 用于删除节点时：只移除 chain_tunnel / forward_port 引用，并尽量清理该节点上的 gost 配置，
+     * 然后对剩余节点重推拓扑。若某隧道剔除后将没有入口（或隧道转发没有出口），则拒绝删除。
+     *
+     * @param nodeId 节点ID
+     * @return 结果
+     */
+    R detachNodeFromTunnels(Long nodeId);
+
+    /**
      * 获取用户可用的隧道列表
      * @return 结果
      */

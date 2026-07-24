@@ -13,6 +13,11 @@
 
 
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
+
+**面板**为 **单一 Docker 镜像**（Caddy + Go 后端 + 前端静态资源）：`ghcr.io/fearless743/flux-panel`。  
+- 后端实现：`go-backend/`（契约兼容原 `/api/v1`、`/flow`、`/system-info`）  
+- `springboot-backend/`、`vite-frontend` 独立镜像均已弃用构建路径（前端源码仍在 `vite-frontend/`，由根 `Dockerfile` 一并构建）
+
 ---
 ## 特性
 
@@ -22,6 +27,7 @@
 - 可针对 **指定用户的指定隧道进行限速** 设置
 - 支持配置 **单向或双向流量计费方式**，灵活适配不同计费模型
 - 提供灵活的转发策略配置，适用于多种网络场景
+- **一体镜像**：Caddy 对外 80，同源提供页面与 API/WS/flow，只需映射一个端口
 
 
 ## 部署流程
@@ -46,6 +52,27 @@ curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta
 ```bash
 curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
+```
+
+#### 镜像与端口
+
+| 项 | 说明 |
+|----|------|
+| 镜像 | `ghcr.io/fearless743/flux-panel:latest` |
+| 容器端口 | **80**（Caddy） |
+| 宿主机默认 | `PANEL_PORT=6366` |
+| 内部后端 | `127.0.0.1:6365`（不对外暴露） |
+
+节点与浏览器均访问 **同一端口**；面板「网站配置 → ip」请填 `主机:面板端口`（或域名）。
+
+手动启动示例：
+
+```bash
+docker run -d --name flux-panel \
+  -p 6366:80 \
+  -e JWT_SECRET=your-secret \
+  -v sqlite_data:/app/data \
+  ghcr.io/fearless743/flux-panel:latest
 ```
 
 #### 默认管理员账号

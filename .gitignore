@@ -176,6 +176,10 @@ build/
 *.so
 *.dylib
 your_app.exe
+go-backend/data/
+go-backend/logs/
+go-backend/server
+/tmp/go-backend*
 
 # Go 测试二进制文件
 *.test
@@ -189,6 +193,9 @@ go.work.sum
 
 # 编译器输出
 vendor/
+
+# springboot-backend 已弃用（仅保留源码对照，不提交构建产物）
+# 见 springboot-backend/DEPRECATED.md
 
 # ==========================================
 # Docker

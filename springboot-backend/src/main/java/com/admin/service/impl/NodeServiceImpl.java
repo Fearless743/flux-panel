@@ -108,10 +108,12 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             return R.err("节点不存在");
         }
 
-        List<ChainTunnel> list = chainTunnelService.list(new QueryWrapper<ChainTunnel>().eq("node_id", id).groupBy("tunnel_id"));
-        for (ChainTunnel tunnel : list) {
-            tunnelService.deleteTunnel(tunnel.getTunnelId());
+        // 不再级联删除隧道：仅从各隧道拓扑中剔除该节点
+        R detachResult = tunnelService.detachNodeFromTunnels(id);
+        if (detachResult.getCode() != 0) {
+            return detachResult;
         }
+
         this.removeById(id);
         return R.ok();
     }

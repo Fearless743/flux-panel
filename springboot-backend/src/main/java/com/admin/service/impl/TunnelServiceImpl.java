@@ -15,6 +15,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * @author QAQ
  * @since 2025-06-03
  */
+@Slf4j
 @Service
 public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> implements TunnelService {
 
@@ -645,6 +647,269 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         }
         chainTunnelService.remove(new QueryWrapper<ChainTunnel>().eq("tunnel_id", id));
         return R.ok();
+    }
+
+    /**
+     * 删除节点时：从所有隧道拓扑中剔除该节点，不删除隧道本身。
+     * - 清理该节点上的 gost 配置（入口转发服务 / chains / tls 服务）
+     * - 删除 chain_tunnel、forward_port 中对该节点的引用
+     * - 对剩余节点重推拓扑（隧道转发）
+     * - 若剔除后隧道将没有入口，或隧道转发将没有出口，则拒绝删除
+     */
+    @Override
+    public R detachNodeFromTunnels(Long nodeId) {
+        if (nodeId == null) {
+            return R.err("节点ID不能为空");
+        }
+
+        List<ChainTunnel> nodeLinks = chainTunnelService.list(
+                new QueryWrapper<ChainTunnel>().eq("node_id", nodeId));
+        if (nodeLinks.isEmpty()) {
+            // 无隧道引用该节点，顺手清理可能残留的 forward_port
+            forwardPortService.remove(new QueryWrapper<ForwardPort>().eq("node_id", nodeId));
+            return R.ok();
+        }
+
+        Set<Long> tunnelIds = nodeLinks.stream()
+                .map(ChainTunnel::getTunnelId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        // 预校验：剔除后是否仍有入口 /（隧道转发）出口
+        List<String> blockers = new ArrayList<>();
+        Map<Long, Tunnel> tunnelMap = new HashMap<>();
+        Map<Long, List<ChainTunnel>> allByTunnel = new HashMap<>();
+
+        for (Long tunnelId : tunnelIds) {
+            Tunnel tunnel = this.getById(tunnelId);
+            if (tunnel == null) {
+                continue;
+            }
+            tunnelMap.put(tunnelId, tunnel);
+
+            List<ChainTunnel> all = chainTunnelService.list(
+                    new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnelId));
+            allByTunnel.put(tunnelId, all);
+
+            long remainEntry = all.stream()
+                    .filter(ct -> ct.getChainType() != null && ct.getChainType() == 1)
+                    .filter(ct -> !nodeId.equals(ct.getNodeId()))
+                    .count();
+            long remainExit = all.stream()
+                    .filter(ct -> ct.getChainType() != null && ct.getChainType() == 3)
+                    .filter(ct -> !nodeId.equals(ct.getNodeId()))
+                    .count();
+
+            if (remainEntry == 0) {
+                blockers.add("隧道[" + tunnel.getName() + "]剔除后将没有入口节点");
+            }
+            if (tunnel.getType() != null && tunnel.getType() == 2 && remainExit == 0) {
+                blockers.add("隧道[" + tunnel.getName() + "]剔除后将没有出口节点");
+            }
+        }
+
+        if (!blockers.isEmpty()) {
+            return R.err("无法删除节点：" + String.join("；", blockers)
+                    + "。请先在隧道编辑中更换入口/出口，或删除相关隧道后再删节点。");
+        }
+
+        List<String> warnings = new ArrayList<>();
+
+        for (Long tunnelId : tunnelIds) {
+            Tunnel tunnel = tunnelMap.get(tunnelId);
+            if (tunnel == null) {
+                continue;
+            }
+            List<ChainTunnel> all = allByTunnel.getOrDefault(tunnelId, Collections.emptyList());
+            List<ChainTunnel> removedRoles = all.stream()
+                    .filter(ct -> nodeId.equals(ct.getNodeId()))
+                    .collect(Collectors.toList());
+            boolean wasEntry = removedRoles.stream()
+                    .anyMatch(ct -> ct.getChainType() != null && ct.getChainType() == 1);
+            boolean wasChain = removedRoles.stream()
+                    .anyMatch(ct -> ct.getChainType() != null && ct.getChainType() == 2);
+            boolean wasExit = removedRoles.stream()
+                    .anyMatch(ct -> ct.getChainType() != null && ct.getChainType() == 3);
+
+            log.info("删除节点时从隧道剔除: nodeId={}, tunnelId={}, tunnelName={}, entry={}, chain={}, exit={}",
+                    nodeId, tunnelId, tunnel.getName(), wasEntry, wasChain, wasExit);
+
+            // 1) 清理该节点上的 gost 配置（节点可能已离线，失败只记警告）
+            try {
+                if (wasEntry) {
+                    List<Forward> forwards = forwardService.list(
+                            new QueryWrapper<Forward>().eq("tunnel_id", tunnelId));
+                    for (Forward forward : forwards) {
+                        UserTunnel userTunnel = userTunnelService.getOne(new QueryWrapper<UserTunnel>()
+                                .eq("user_id", forward.getUserId())
+                                .eq("tunnel_id", tunnelId));
+                        String serviceName = forward.getId() + "_" + forward.getUserId() + "_"
+                                + (userTunnel != null ? userTunnel.getId() : 0);
+                        JSONArray services = new JSONArray();
+                        services.add(serviceName + "_tcp");
+                        services.add(serviceName + "_udp");
+                        GostUtil.DeleteService(nodeId, services);
+                    }
+                    // 隧道转发入口还有 chains
+                    if (tunnel.getType() != null && tunnel.getType() == 2) {
+                        GostUtil.DeleteChains(nodeId, "chains_" + tunnelId);
+                    }
+                }
+                if (wasChain) {
+                    GostUtil.DeleteChains(nodeId, "chains_" + tunnelId);
+                    JSONArray services = new JSONArray();
+                    services.add(tunnelId + "_tls");
+                    GostUtil.DeleteService(nodeId, services);
+                }
+                if (wasExit) {
+                    JSONArray services = new JSONArray();
+                    services.add(tunnelId + "_tls");
+                    GostUtil.DeleteService(nodeId, services);
+                }
+            } catch (Exception e) {
+                log.warn("清理节点 {} 上隧道 {} 的 gost 配置失败: {}", nodeId, tunnelId, e.getMessage());
+                warnings.add("隧道[" + tunnel.getName() + "]节点端配置清理失败: " + e.getMessage());
+            }
+
+            // 2) 删 DB 引用
+            chainTunnelService.remove(new QueryWrapper<ChainTunnel>()
+                    .eq("tunnel_id", tunnelId)
+                    .eq("node_id", nodeId));
+            if (wasEntry) {
+                List<Forward> tunnelForwards = forwardService.list(
+                        new QueryWrapper<Forward>().eq("tunnel_id", tunnelId));
+                if (!tunnelForwards.isEmpty()) {
+                    List<Long> forwardIds = tunnelForwards.stream()
+                            .map(Forward::getId)
+                            .collect(Collectors.toList());
+                    forwardPortService.remove(new QueryWrapper<ForwardPort>()
+                            .eq("node_id", nodeId)
+                            .in("forward_id", forwardIds));
+                }
+            }
+
+            // 3) 剩余拓扑
+            List<ChainTunnel> remaining = chainTunnelService.list(
+                    new QueryWrapper<ChainTunnel>().eq("tunnel_id", tunnelId));
+            List<ChainTunnel> entries = remaining.stream()
+                    .filter(ct -> ct.getChainType() != null && ct.getChainType() == 1)
+                    .collect(Collectors.toList());
+            Map<Integer, List<ChainTunnel>> chainGroups = remaining.stream()
+                    .filter(ct -> ct.getChainType() != null && ct.getChainType() == 2)
+                    .collect(Collectors.groupingBy(
+                            ct -> ct.getInx() != null ? ct.getInx() : 0,
+                            TreeMap::new,
+                            Collectors.toList()));
+            List<List<ChainTunnel>> chains = new ArrayList<>(chainGroups.values());
+            List<ChainTunnel> outs = remaining.stream()
+                    .filter(ct -> ct.getChainType() != null && ct.getChainType() == 3)
+                    .collect(Collectors.toList());
+
+            // 4) 刷新隧道入口 IP 展示
+            refreshTunnelInIp(tunnel, entries);
+
+            // 5) 隧道转发：对剩余节点重推 chain / service
+            if (tunnel.getType() != null && tunnel.getType() == 2) {
+                Set<Long> remainNodeIds = remaining.stream()
+                        .map(ChainTunnel::getNodeId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+                Map<Long, Node> nodes = new HashMap<>();
+                if (!remainNodeIds.isEmpty()) {
+                    List<Node> nodeList = nodeService.list(
+                            new QueryWrapper<Node>().in("id", remainNodeIds));
+                    for (Node n : nodeList) {
+                        nodes.put(n.getId(), n);
+                    }
+                }
+
+                for (ChainTunnel entry : entries) {
+                    Node n = nodes.get(entry.getNodeId());
+                    if (n == null || n.getStatus() == null || n.getStatus() != 1) {
+                        warnings.add("隧道[" + tunnel.getName() + "]入口节点离线或缺失，跳过链重推");
+                        continue;
+                    }
+                    List<ChainTunnel> target = chains.isEmpty() ? outs : chains.get(0);
+                    if (target == null || target.isEmpty()) {
+                        warnings.add("隧道[" + tunnel.getName() + "]入口后无下一跳，跳过链重推");
+                        continue;
+                    }
+                    GostDto res = pushChains(entry.getNodeId(), target, nodes);
+                    if (!Objects.equals(res.getMsg(), "OK")) {
+                        warnings.add("隧道[" + tunnel.getName() + "]入口链重推失败: " + res.getMsg());
+                    }
+                }
+
+                for (int i = 0; i < chains.size(); i++) {
+                    List<ChainTunnel> target = (i + 1 < chains.size()) ? chains.get(i + 1) : outs;
+                    for (ChainTunnel ct : chains.get(i)) {
+                        Node n = nodes.get(ct.getNodeId());
+                        if (n == null || n.getStatus() == null || n.getStatus() != 1) {
+                            warnings.add("隧道[" + tunnel.getName() + "]转发链节点离线或缺失，跳过重推");
+                            continue;
+                        }
+                        if (target != null && !target.isEmpty()) {
+                            GostDto res = pushChains(ct.getNodeId(), target, nodes);
+                            if (!Objects.equals(res.getMsg(), "OK")) {
+                                warnings.add("隧道[" + tunnel.getName() + "]转发链重推失败: " + res.getMsg());
+                            }
+                        }
+                        GostDto res = pushChainService(ct.getNodeId(), ct, nodes);
+                        if (!Objects.equals(res.getMsg(), "OK")) {
+                            warnings.add("隧道[" + tunnel.getName() + "]转发链服务重推失败: " + res.getMsg());
+                        }
+                    }
+                }
+
+                for (ChainTunnel ct : outs) {
+                    Node n = nodes.get(ct.getNodeId());
+                    if (n == null || n.getStatus() == null || n.getStatus() != 1) {
+                        warnings.add("隧道[" + tunnel.getName() + "]出口节点离线或缺失，跳过服务重推");
+                        continue;
+                    }
+                    GostDto res = pushChainService(ct.getNodeId(), ct, nodes);
+                    if (!Objects.equals(res.getMsg(), "OK")) {
+                        warnings.add("隧道[" + tunnel.getName() + "]出口服务重推失败: " + res.getMsg());
+                    }
+                }
+            }
+        }
+
+        // 兜底：清理该节点残留的 forward_port
+        forwardPortService.remove(new QueryWrapper<ForwardPort>().eq("node_id", nodeId));
+
+        if (!warnings.isEmpty()) {
+            log.warn("删除节点 {} 时部分隧道重推/清理有警告: {}", nodeId, warnings);
+            // 拓扑 DB 已剔除成功，节点仍可删除；警告通过成功消息带出
+            R ok = R.ok();
+            ok.setMsg("节点关联已从隧道中剔除，但部分配置同步失败: " + String.join("；", warnings));
+            return ok;
+        }
+        return R.ok();
+    }
+
+    /**
+     * 根据当前入口节点列表刷新隧道 in_ip 展示字段
+     */
+    private void refreshTunnelInIp(Tunnel tunnel, List<ChainTunnel> entries) {
+        if (tunnel == null || tunnel.getId() == null) {
+            return;
+        }
+        StringBuilder inIp = new StringBuilder();
+        for (ChainTunnel entry : entries) {
+            Node node = nodeService.getById(entry.getNodeId());
+            if (node != null && StringUtils.isNotBlank(node.getServerIp())) {
+                if (inIp.length() > 0) {
+                    inIp.append(",");
+                }
+                inIp.append(node.getServerIp());
+            }
+        }
+        Tunnel update = new Tunnel();
+        update.setId(tunnel.getId());
+        update.setInIp(inIp.toString());
+        update.setUpdatedTime(System.currentTimeMillis());
+        this.updateById(update);
     }
 
 
