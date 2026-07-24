@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/gost"
 	"github.com/Fearless743/flux-panel/go-backend/internal/model"
@@ -211,6 +212,63 @@ func (s *NodeService) InstallCommand(id int64) (string, error) {
 		b.WriteString(" -l")
 	}
 	return b.String(), nil
+}
+
+// NodeUpgradeReq 远程升级请求
+type NodeUpgradeReq struct {
+	ID      int64  `json:"id"`
+	Version string `json:"version"` // 空或 latest；也可为 tag 如 v1.2.3
+	URL     string `json:"url"`     // 可选，覆盖默认 Release 地址（节点侧仍校验白名单）
+	Sha256  string `json:"sha256"`  // 可选
+	Arch    string `json:"arch"`    // 可选 amd64/arm64，默认由节点自检
+}
+
+// Upgrade 向在线节点下发 Upgrade 命令；节点下载校验替换后重启，失败自动 rollback
+func (s *NodeService) Upgrade(req NodeUpgradeReq) (string, error) {
+	if req.ID == 0 {
+		return "", fmt.Errorf("节点ID不能为空")
+	}
+	if s.Hub == nil {
+		return "", fmt.Errorf("WebSocket 未初始化")
+	}
+	node, err := s.Repo.GetByID(req.ID)
+	if err != nil {
+		return "", err
+	}
+	if node == nil {
+		return "", fmt.Errorf("节点不存在")
+	}
+	if !s.Hub.IsNodeOnline(req.ID) {
+		return "", fmt.Errorf("节点不在线，无法远程升级")
+	}
+
+	version := strings.TrimSpace(req.Version)
+	if version == "" {
+		version = "latest"
+	}
+	payload := map[string]any{
+		"version": version,
+	}
+	if u := strings.TrimSpace(req.URL); u != "" {
+		payload["url"] = u
+	}
+	if sum := strings.TrimSpace(req.Sha256); sum != "" {
+		payload["sha256"] = sum
+	}
+	if arch := strings.TrimSpace(req.Arch); arch != "" {
+		payload["arch"] = arch
+	}
+
+	// 节点侧异步下载；此处只等「任务已接受」
+	res := s.Hub.SendMsgTimeout(req.ID, payload, "Upgrade", 15*time.Second)
+	if !gost.IsOK(res.Msg) {
+		return "", fmt.Errorf("%s", res.Msg)
+	}
+	msg := "升级任务已接受，节点将在后台下载并重启；失败时自动回滚到上一版本，请稍后刷新查看版本号"
+	if node.Version != nil && *node.Version != "" {
+		msg = fmt.Sprintf("当前版本 %s；%s", *node.Version, msg)
+	}
+	return msg, nil
 }
 
 func (s *NodeService) GetBySecret(secret string) (*model.Node, error) {

@@ -60,6 +60,11 @@ func (h *Hub) IsNodeOnline(nodeID int64) bool {
 
 // SendMsg 面板 → 节点，等待 requestId 响应，超时 10s
 func (h *Hub) SendMsg(nodeID int64, data any, typ string) GostResult {
+	return h.SendMsgTimeout(nodeID, data, typ, 10*time.Second)
+}
+
+// SendMsgTimeout 同 SendMsg，可自定义等待超时（如远程升级下载）
+func (h *Hub) SendMsgTimeout(nodeID int64, data any, typ string, timeout time.Duration) GostResult {
 	h.mu.RLock()
 	conn := h.nodeSessions[nodeID]
 	meta := h.nodeMeta[nodeID]
@@ -67,6 +72,9 @@ func (h *Hub) SendMsg(nodeID int64, data any, typ string) GostResult {
 
 	if conn == nil {
 		return GostResult{Msg: "节点不在线"}
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
 	}
 
 	reqID := uuid.NewString()
@@ -93,7 +101,7 @@ func (h *Hub) SendMsg(nodeID int64, data any, typ string) GostResult {
 	select {
 	case res := <-ch:
 		return res
-	case <-time.After(10 * time.Second):
+	case <-time.After(timeout):
 		return GostResult{Msg: "等待响应超时"}
 	}
 }

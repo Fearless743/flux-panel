@@ -50,6 +50,7 @@ func RegisterRoutes(r *gin.Engine, app *App) {
 				admin.POST("/node/update", app.NodeUpdate)
 				admin.POST("/node/delete", app.NodeDelete)
 				admin.POST("/node/install", app.NodeInstall)
+				admin.POST("/node/upgrade", app.NodeUpgrade)
 
 				admin.POST("/tunnel/create", app.TunnelCreate)
 				admin.POST("/tunnel/list", app.TunnelList)

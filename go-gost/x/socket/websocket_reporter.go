@@ -561,6 +561,11 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 		err = w.handleSetProtocol(cmd.Data)
 		response.Type = "SetProtocolResponse"
 
+	// 远程升级（下载/校验/替换后由脚本 restart，失败自动 rollback）
+	case "Upgrade":
+		err = w.handleUpgrade(cmd.Data)
+		response.Type = "UpgradeResponse"
+
 	default:
 		err = fmt.Errorf("未知命令类型: %s", cmd.Type)
 		response.Type = "UnknownCommandResponse"

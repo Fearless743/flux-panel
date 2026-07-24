@@ -82,6 +82,21 @@ func (a *App) NodeInstall(c *gin.Context) {
 	response.OK(c, cmd)
 }
 
+// NodeUpgrade POST /node/upgrade 远程升级在线节点二进制
+func (a *App) NodeUpgrade(c *gin.Context) {
+	var req service.NodeUpgradeReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Err(c, "参数错误")
+		return
+	}
+	msg, err := a.nodeService().Upgrade(req)
+	if err != nil {
+		response.Err(c, err.Error())
+		return
+	}
+	response.OK(c, msg)
+}
+
 func asInt64(v any) (int64, bool) {
 	switch t := v.(type) {
 	case float64:

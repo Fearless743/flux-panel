@@ -14,12 +14,13 @@ import toast from 'react-hot-toast';
 import axios from 'axios';
 
 
-import { 
-  createNode, 
-  getNodeList, 
-  updateNode, 
+import {
+  createNode,
+  getNodeList,
+  updateNode,
   deleteNode,
-  getNodeInstallCommand
+  getNodeInstallCommand,
+  upgradeNode
 } from "@/api";
 
 interface Node {
@@ -46,6 +47,7 @@ interface Node {
     uptime: number;
   } | null;
   copyLoading?: boolean;
+  upgradeLoading?: boolean;
 }
 
 interface NodeForm {
@@ -503,12 +505,42 @@ export default function NodePage() {
     }
   };
 
+  // 远程升级到 GitHub Release latest（节点侧下载校验，失败自动回滚）
+  const handleUpgrade = async (node: Node) => {
+    if (node.connectionStatus !== 'online') {
+      toast.error('节点不在线，无法远程升级');
+      return;
+    }
+    if (!window.confirm(`确定将节点「${node.name}」升级到最新版本？\n升级过程会短暂中断转发；失败将自动回滚。`)) {
+      return;
+    }
+    setNodeList(prev => prev.map(n =>
+      n.id === node.id ? { ...n, upgradeLoading: true } : n
+    ));
+    try {
+      const res = await upgradeNode({ id: node.id, version: 'latest' });
+      if (res.code === 0) {
+        toast.success(typeof res.data === 'string' ? res.data : '升级指令已下发，节点即将重启');
+        // 重启后稍晚刷新列表以看到新版本
+        setTimeout(() => { loadNodes(); }, 8000);
+      } else {
+        toast.error(res.msg || '升级失败');
+      }
+    } catch (error) {
+      toast.error('升级请求失败，请重试');
+    } finally {
+      setNodeList(prev => prev.map(n =>
+        n.id === node.id ? { ...n, upgradeLoading: false } : n
+      ));
+    }
+  };
+
   // 复制安装命令
   const handleCopyInstallCommand = async (node: Node) => {
-    setNodeList(prev => prev.map(n => 
+    setNodeList(prev => prev.map(n =>
       n.id === node.id ? { ...n, copyLoading: true } : n
     ));
-    
+
     try {
       const res = await getNodeInstallCommand(node.id);
       if (res.code === 0 && res.data) {
@@ -802,6 +834,17 @@ export default function NodePage() {
                         className="flex-1 min-h-8"
                       >
                         安装
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="secondary"
+                        onPress={() => handleUpgrade(node)}
+                        isLoading={node.upgradeLoading}
+                        isDisabled={node.connectionStatus !== 'online'}
+                        className="flex-1 min-h-8"
+                      >
+                        升级
                       </Button>
                       <Button
                         size="sm"
