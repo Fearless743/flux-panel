@@ -63,11 +63,9 @@ func (p *parser) Parse() (*config.Config, error) {
 	}
 	cfg = mergeConfig(cfg, cmdCfg)
 
-	if len(cfg.Services) == 0 && p.args.ApiAddr == "" && cfg.API == nil {
-		if err := cfg.Load(); err != nil {
-			return nil, err
-		}
-	}
+	// 未指定 -C 时不再从默认路径加载 gost.json。
+	// 节点以空配置启动，由面板 WS 上线后下发完整期望配置。
+	// 显式 -C 仍可通过上方分支读文件（开发/调试）。
 
 	if v := os.Getenv("GOST_LOGGER_LEVEL"); v != "" {
 		cfg.Log = &config.LogConfig{

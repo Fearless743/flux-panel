@@ -79,6 +79,8 @@ func (a *App) HandleWebSocket(c *gin.Context) {
 		} else {
 			slog.Info("节点连接建立成功", "nodeId", sessionID, "version", version)
 			broadcastStatus(a, sessionID, 1)
+			// 上线后按 DB 全量重放期望配置（异步，不阻塞读循环）
+			go service.NewNodeSyncService(a.DB, a.Hub).SyncNodeConfig(sessionID)
 		}
 	} else {
 		a.Hub.RegisterAdmin(conn, sessionID)

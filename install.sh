@@ -176,17 +176,13 @@ install_flux_agent() {
 }
 EOF
 
-  GOST_CONFIG="$INSTALL_DIR/gost.json"
-  if [[ -f "$GOST_CONFIG" ]]; then
-    echo "⏭️ 跳过配置文件: gost.json (已存在)"
-  else
-    echo "📄 创建新配置: gost.json"
-    cat > "$GOST_CONFIG" <<EOF
-{}
-EOF
+  # 代理运行时配置由面板通过 WebSocket 下发，不再使用本地 gost.json
+  if [[ -f "$INSTALL_DIR/gost.json" ]]; then
+    echo "🧹 移除遗留配置: gost.json（改由面板实时下发）"
+    rm -f "$INSTALL_DIR/gost.json"
   fi
 
-  chmod 600 "$INSTALL_DIR"/*.json
+  chmod 600 "$CONFIG_FILE"
 
   SERVICE_FILE="/etc/systemd/system/flux_agent.service"
   cat > "$SERVICE_FILE" <<EOF
@@ -246,6 +242,11 @@ update_flux_agent() {
   chmod +x "$INSTALL_DIR/flux_agent"
   
   echo "🔎 新版本：$($INSTALL_DIR/flux_agent -V)"
+
+  if [[ -f "$INSTALL_DIR/gost.json" ]]; then
+    echo "🧹 移除遗留配置: gost.json（改由面板实时下发）"
+    rm -f "$INSTALL_DIR/gost.json"
+  fi
 
   echo "🔄 重启服务..."
   systemctl start flux_agent

@@ -299,8 +299,7 @@ func (s *NodeSyncService) loadNodesForChains(cts []model.ChainTunnel) (map[int64
 		return nil, err
 	}
 	for i := range list {
-		n := list[i]
-		out[n.ID] = &n
+		out[list[i].ID] = &list[i]
 	}
 	return out, nil
 }
