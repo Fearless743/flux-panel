@@ -1,7 +1,6 @@
 package com.admin.config;
 
 import cloud.tianai.captcha.common.constant.CaptchaTypeConstant;
-import cloud.tianai.captcha.resource.FontCache;
 import cloud.tianai.captcha.resource.ResourceStore;
 import cloud.tianai.captcha.resource.common.model.dto.Resource;
 import cloud.tianai.captcha.resource.common.model.dto.ResourceMap;
@@ -43,7 +42,6 @@ public class CaptchaResourceConfiguration {
         }
 
 
-        //添加自定义字体
-        resourceStore.addResource(FontCache.FONT_TYPE, new Resource("classpath", "fonts/SIMSUN.TTC", "default"));
+        // 字体使用 captcha 库内置默认字体，不再打包 SIMSUN.TTC（约 10MB）
     }
 }

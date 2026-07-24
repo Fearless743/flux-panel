@@ -263,3 +263,7 @@ sql/
 *.apk
 .opencode/
 go-gost/gost
+
+# 验证码字体不入库（体积大，使用库内置默认字体）
+**/SIMSUN.TTC
+springboot-backend/src/main/resources/fonts/
