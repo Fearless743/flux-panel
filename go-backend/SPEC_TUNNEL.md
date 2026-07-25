@@ -18,7 +18,7 @@ inNodeId/chainNodes/outNodeId 分组
 reconfigure: 规范化拓扑、端口沿用、清旧 gost、DB 替换、push Update优先、migrateForwardServices
 
 ## deleteTunnel
-删 forwards、user_tunnel、清 gost、chain_tunnel
+有 forward 或 user_tunnel 引用则拒绝删除（提示先删转发、取消用户分配）；无关联时清 gost、chain_tunnel、tunnel。**禁止级联删转发/用户权限**
 
 ## diagnoseTunnel
 TcpPing 拓扑路径

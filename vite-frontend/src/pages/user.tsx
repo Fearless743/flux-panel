@@ -1,22 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Button } from "@heroui/button";
-import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
-import { 
-  Table, 
-  TableHeader, 
-  TableColumn, 
-  TableBody, 
-  TableRow, 
-  TableCell 
-} from "@heroui/table";
-import { 
-  Modal, 
-  ModalContent, 
-  ModalHeader, 
-  ModalBody, 
+import {
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
   ModalFooter,
-  useDisclosure 
+  useDisclosure
 } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
 import { Select, SelectItem } from "@heroui/select";
@@ -24,6 +15,7 @@ import { RadioGroup, Radio } from "@heroui/radio";
 import { DatePicker } from "@heroui/date-picker";
 import { Spinner } from "@heroui/spinner";
 import { Progress } from "@heroui/progress";
+import { Divider } from "@heroui/divider";
 
 import toast from 'react-hot-toast';
 import { 
@@ -526,15 +518,34 @@ export default function UserPage() {
     speedLimit => speedLimit.tunnelId === editTunnelForm?.tunnelId
   );
 
+  const cellClass = "px-3 py-3 align-middle";
+  const activeCount = users.filter((u) => u.status === 1).length;
+
   return (
-    
       <div className="px-3 lg:px-6 py-8">
       {/* 页面头部 */}
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="page-title">用户管理</h1>
+            <p className="page-desc">
+              共 {pagination.total || users.length} 个用户
+              {users.length > 0 && (
+                <span className="text-default-400"> · 正常 {activeCount} · 禁用 {users.length - activeCount}</span>
+              )}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="flat"
+            color="primary"
+            onPress={handleAdd}
+          >
+            新增
+          </Button>
         </div>
-        
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
           <div className="flex items-center gap-3 flex-1 max-w-md">
             <Input
               value={searchKeyword}
@@ -542,32 +553,23 @@ export default function UserPage() {
               placeholder="搜索用户名"
               startContent={<SearchIcon className="w-4 h-4 text-default-400" />}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              size="sm"
               className="flex-1"
               classNames={{
-                base: "bg-default-100",
-                input: "bg-transparent",
-                inputWrapper: "bg-default-100 border-2 border-default-200 hover:border-default-300 focus-within:border-primary data-[hover=true]:border-default-300"
+                inputWrapper: "bg-content1 border border-divider shadow-none"
               }}
             />
             <Button
-              onClick={handleSearch}
-              variant="solid"
+              onPress={handleSearch}
+              variant="flat"
               color="primary"
+              size="sm"
               isIconOnly
-              className="min-h-10 w-10"
+              aria-label="搜索"
             >
               <SearchIcon className="w-4 h-4" />
             </Button>
           </div>
-          
-          <Button
-              variant="flat"
-              color="primary"
-              onPress={handleAdd}
-             
-            >
-              新增
-            </Button>
         </div>
       </div>
 
@@ -576,167 +578,169 @@ export default function UserPage() {
         <div className="flex items-center justify-center h-64">
           <div className="flex items-center gap-3">
             <Spinner size="sm" />
-            <span className="text-default-600">正在加载...</span>
+            <span className="text-default-500 text-sm">正在加载...</span>
           </div>
         </div>
       ) : users.length === 0 ? (
-        <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-          <CardBody className="text-center py-16">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                <UserIcon className="w-8 h-8 text-default-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">暂无用户数据</h3>
-                <p className="text-default-500 text-sm mt-1">还没有创建任何用户，点击上方按钮开始创建</p>
-              </div>
+        <div className="text-center py-16 panel-card border border-divider shadow-panel bg-content1">
+          <div className="flex flex-col items-center gap-4">
+            <div className="empty-state-icon">
+              <UserIcon className="w-8 h-8" />
             </div>
-          </CardBody>
-        </Card>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">暂无用户数据</h3>
+              <p className="text-default-500 text-sm mt-1">还没有创建任何用户，点击上方按钮开始创建</p>
+            </div>
+          </div>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-          {users.map((user) => {
-            const userStatus = getUserStatus(user);
-            const expStatus = user.expTime ? getExpireStatus(user.expTime) : null;
-            const usedFlow = calculateUserTotalUsedFlow(user);
-            const flowPercent = user.flow > 0 ? Math.min((usedFlow / (user.flow * 1024 * 1024 * 1024)) * 100, 100) : 0;
-            
-            return (
-              <Card 
-                key={user.id} 
-                className="shadow-sm border border-divider hover:shadow-md transition-shadow duration-200"
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start w-full">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-foreground truncate text-sm">
-                        {user.name || user.user}
-                      </h3>
-                      <p className="text-xs text-default-500 truncate">@{user.user}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 ml-2">
-                      <Chip 
-                        color={userStatus.color} 
-                        variant="flat" 
+        <div className="panel-table-wrap">
+          <table className="w-full text-sm min-w-[960px]" aria-label="用户列表">
+            <thead>
+              <tr className="bg-default-50 text-default-600 font-medium text-xs">
+                <th className="px-3 py-2.5 text-left">用户</th>
+                <th className="px-3 py-2.5 text-left">状态</th>
+                <th className="px-3 py-2.5 text-left min-w-[10rem]">流量</th>
+                <th className="px-3 py-2.5 text-left">转发配额</th>
+                <th className="px-3 py-2.5 text-left">重置</th>
+                <th className="px-3 py-2.5 text-left">有效期</th>
+                <th className="px-3 py-2.5 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-divider">
+              {users.map((user) => {
+                const userStatus = getUserStatus(user);
+                const expStatus = user.expTime ? getExpireStatus(user.expTime) : null;
+                const usedFlow = calculateUserTotalUsedFlow(user);
+                const flowLimitBytes = (user.flow || 0) * 1024 * 1024 * 1024;
+                const isUnlimited = user.flow === 99999;
+                const flowPercent = !isUnlimited && flowLimitBytes > 0
+                  ? Math.min((usedFlow / flowLimitBytes) * 100, 100)
+                  : 0;
+
+                return (
+                  <tr key={user.id} className="bg-content1 hover:bg-default-50/70 transition-colors">
+                    <td className={cellClass}>
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground text-sm truncate">
+                          {user.name || user.user}
+                        </div>
+                        <div className="text-xs text-default-500 truncate">@{user.user}</div>
+                      </div>
+                    </td>
+                    <td className={cellClass}>
+                      <Chip
+                        color={userStatus.color}
+                        variant="flat"
                         size="sm"
                         className="text-xs"
+                        startContent={
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ml-1 ${user.status === 1 ? 'bg-success' : 'bg-danger'}`} />
+                        }
                       >
                         {userStatus.text}
                       </Chip>
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardBody className="pt-0 pb-3">
-                  <div className="space-y-2">
-                    {/* 流量信息 */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">流量限制</span>
-                        <span className="font-medium text-xs">{formatFlow(user.flow, 'gb')}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">已使用</span>
-                        <span className="font-medium text-xs text-danger">{formatFlow(usedFlow)}</span>
-                      </div>
-                      <Progress 
-                        size="sm" 
-                        value={flowPercent}
-                        color={flowPercent > 90 ? 'danger' : flowPercent > 70 ? 'warning' : 'success'}
-                        className="mt-1"
-                        aria-label={`流量使用 ${flowPercent.toFixed(1)}%`}
-                      />
-                    </div>
-
-                    {/* 其他信息 */}
-                    <div className="space-y-1.5 pt-2 border-t border-divider">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">转发数量</span>
-                        <span className="font-medium text-xs">{user.num}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">重置日期</span>
-                        <span className="text-xs">{user.flowResetTime === 0 ? '不重置' : `每月${user.flowResetTime}号`}</span>
-                      </div>
-                      {user.expTime && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-default-600">过期时间</span>
-                          <div className="text-right">
-                            {expStatus && expStatus.color === 'success' ? (
-                              <div className="text-xs">{formatDate(user.expTime)}</div>
-                            ) : (
-                              <Chip 
-                                color={expStatus?.color || 'default'} 
-                                variant="flat" 
-                                size="sm"
-                                className="text-xs"
-                              >
-                                {expStatus?.text || '未知状态'}
-                              </Chip>
-                            )}
-                          </div>
+                    </td>
+                    <td className={cellClass}>
+                      <div className="min-w-[9rem] max-w-[14rem]">
+                        <div className="flex justify-between text-xs mb-1 gap-2">
+                          <span className="text-default-500 truncate">
+                            {isUnlimited ? '无限制' : formatFlow(user.flow, 'gb')}
+                          </span>
+                          <span className="font-mono text-danger whitespace-nowrap">
+                            {formatFlow(usedFlow)}
+                          </span>
                         </div>
+                        <Progress
+                          size="sm"
+                          value={isUnlimited ? 0 : flowPercent}
+                          color={flowPercent > 90 ? 'danger' : flowPercent > 70 ? 'warning' : 'success'}
+                          aria-label={`${user.user} 流量使用 ${flowPercent.toFixed(1)}%`}
+                        />
+                        <div className="text-[11px] text-default-400 mt-0.5">
+                          {isUnlimited ? '已用流量' : `已用 ${flowPercent.toFixed(1)}%`}
+                        </div>
+                      </div>
+                    </td>
+                    <td className={cellClass}>
+                      <span className="text-xs font-medium text-foreground">
+                        {user.num === 99999 ? '无限制' : user.num}
+                      </span>
+                    </td>
+                    <td className={cellClass}>
+                      <span className="text-xs text-default-600 whitespace-nowrap">
+                        {user.flowResetTime === 0 ? '不重置' : `每月${user.flowResetTime}号`}
+                      </span>
+                    </td>
+                    <td className={cellClass}>
+                      {user.expTime ? (
+                        <div className="space-y-1">
+                          <div className="text-xs text-default-600 whitespace-nowrap">
+                            {formatDate(user.expTime)}
+                          </div>
+                          {expStatus && expStatus.color !== 'success' && (
+                            <Chip
+                              color={expStatus.color}
+                              variant="flat"
+                              size="sm"
+                              className="text-xs"
+                            >
+                              {expStatus.text}
+                            </Chip>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-default-400">永久</span>
                       )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1.5 mt-3">
-                    {/* 第一行：编辑和重置 */}
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="primary"
-                        onPress={() => handleEdit(user)}
-                        className="flex-1 min-h-8"
-                        startContent={<EditIcon className="w-3 h-3" />}
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="warning"
-                        onPress={() => handleResetFlow(user)}
-                        className="flex-1 min-h-8"
-                        startContent={
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                          </svg>
-                        }
-                      >
-                        重置
-                      </Button>
-                    </div>
-                    
-                    {/* 第二行：权限和删除 */}
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="success"
-                        onPress={() => handleManageTunnels(user)}
-                        className="flex-1 min-h-8"
-                        startContent={<SettingsIcon className="w-3 h-3" />}
-                      >
-                        权限
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="danger"
-                        onPress={() => handleDelete(user)}
-                        className="flex-1 min-h-8"
-                        startContent={<DeleteIcon className="w-3 h-3" />}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            );
-          })}
+                    </td>
+                    <td className={cellClass}>
+                      <div className="flex items-center gap-1 justify-end flex-wrap">
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="primary"
+                          onPress={() => handleEdit(user)}
+                          className="min-w-unit-14"
+                          startContent={<EditIcon className="w-3 h-3" />}
+                        >
+                          编辑
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="warning"
+                          onPress={() => handleResetFlow(user)}
+                          className="min-w-unit-14"
+                        >
+                          重置
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="success"
+                          onPress={() => handleManageTunnels(user)}
+                          className="min-w-unit-14"
+                          startContent={<SettingsIcon className="w-3 h-3" />}
+                        >
+                          权限
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="danger"
+                          onPress={() => handleDelete(user)}
+                          className="min-w-unit-14"
+                          startContent={<DeleteIcon className="w-3 h-3" />}
+                        >
+                          删除
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -859,237 +863,353 @@ export default function UserPage() {
       <Modal
         isOpen={isTunnelModalOpen}
         onClose={onTunnelModalClose}
-        size="2xl"
-      scrollBehavior="outside"
-      backdrop="blur"
-      placement="center"
+        size="5xl"
+        scrollBehavior="inside"
+        backdrop="blur"
+        placement="center"
         isDismissable={false}
         classNames={{
-          base: "max-w-[95vw] sm:max-w-4xl"
+          base: "max-w-[96vw] sm:max-w-5xl",
+          body: "py-4",
         }}
       >
         <ModalContent>
-          <ModalHeader>
-            用户 {currentUser?.user} 的隧道权限管理
+          <ModalHeader className="flex flex-col items-start gap-1 pb-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-lg font-semibold tracking-tight">隧道权限</span>
+              {currentUser && (
+                <Chip size="sm" variant="flat" color="primary" className="text-xs">
+                  @{currentUser.user}
+                </Chip>
+              )}
+            </div>
+            <p className="text-xs font-normal text-default-500">
+              已分配 {userTunnels.length} 条
+              {availableTunnels.length > 0
+                ? ` · 还可分配 ${availableTunnels.length} 条`
+                : tunnels.length > 0
+                  ? ' · 全部隧道已分配'
+                  : ' · 暂无可用隧道'}
+            </p>
           </ModalHeader>
           <ModalBody>
-            <div className="space-y-6">
-              {/* 分配新权限部分 */}
-              <div>
-                <h3 className="text-lg font-semibold mb-4">分配新权限</h3>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Select
-                      label="选择隧道"
-                      selectedKeys={tunnelForm.tunnelId ? [tunnelForm.tunnelId.toString()] : []}
-                      onSelectionChange={(keys) => {
-                        const value = Array.from(keys)[0] as string;
-                        setTunnelForm(prev => ({ ...prev, tunnelId: Number(value) || null, speedId: null }));
-                      }}
-                    >
-                      {availableTunnels.map(tunnel => (
-                        <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
-                          {tunnel.name}
-                        </SelectItem>
-                      ))}
-                    </Select>
-                    
-                    <Select
-                      label="限速规则"
-                      selectedKeys={tunnelForm.speedId ? [tunnelForm.speedId.toString()] : ["null"]}
-                      onSelectionChange={(keys) => {
-                        const value = Array.from(keys)[0] as string;
-                        setTunnelForm(prev => ({ ...prev, speedId: value === "null" ? null : Number(value) }));
-                      }}
-                      isDisabled={!tunnelForm.tunnelId}
-                    >
-                      {[
-                        <SelectItem key="null" textValue="不限速">不限速</SelectItem>,
-                        ...availableSpeedLimits.map(speedLimit => (
-                          <SelectItem key={speedLimit.id.toString()} textValue={speedLimit.name}>
-                            {speedLimit.name}
-                          </SelectItem>
-                        ))
-                      ]}
-                    </Select>
-                    
-                    <Input
-                      label="流量限制(GB)"
-                      type="number"
-                      value={tunnelForm.flow.toString()}
-                      onChange={(e) => {
-                        const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                        setTunnelForm(prev => ({ ...prev, flow: value }));
-                      }}
-                      min="1"
-                      max="99999"
-                    />
-                    
-                    <Input
-                      label="转发数量"
-                      type="number"
-                      value={tunnelForm.num.toString()}
-                      onChange={(e) => {
-                        const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                        setTunnelForm(prev => ({ ...prev, num: value }));
-                      }}
-                      min="1"
-                      max="99999"
-                    />
-                    
-                    <Select
-                      label="流量重置日期"
-                      selectedKeys={[tunnelForm.flowResetTime.toString()]}
-                      onSelectionChange={(keys) => {
-                        const value = Array.from(keys)[0] as string;
-                        setTunnelForm(prev => ({ ...prev, flowResetTime: Number(value) }));
-                      }}
-                    >
-                      <>
-                        <SelectItem key="0" textValue="不重置">
-                          不重置
-                        </SelectItem>
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                        <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                          每月{day}号（0点重置）
-                        </SelectItem>
-                      ))}
-                      </>
-                    </Select>
-                    
-                    <DatePicker
-                      label="到期时间"
-                      value={tunnelForm.expTime ? parseDate(tunnelForm.expTime.toISOString().split('T')[0]) as any : null}
-                      onChange={(date) => {
-                        if (date) {
-                          const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
-                          setTunnelForm(prev => ({ ...prev, expTime: jsDate }));
-                        } else {
-                          setTunnelForm(prev => ({ ...prev, expTime: null }));
-                        }
-                      }}
-                      showMonthAndYearPickers
-                      className="cursor-pointer"
-                    />
+            <div className="space-y-5">
+              {/* 分配新权限 */}
+              <section className="panel-surface-muted p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">分配新权限</h3>
+                    <p className="text-xs text-default-500 mt-0.5">
+                      选择未分配隧道并设置配额、限速与有效期
+                    </p>
                   </div>
-                  
+                  {availableTunnels.length === 0 && (
+                    <Chip size="sm" variant="flat" color="default" className="text-xs shrink-0">
+                      无可分配
+                    </Chip>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <Select
+                    label="隧道"
+                    size="sm"
+                    selectedKeys={tunnelForm.tunnelId ? [tunnelForm.tunnelId.toString()] : []}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      setTunnelForm(prev => ({ ...prev, tunnelId: Number(value) || null, speedId: null }));
+                    }}
+                    isDisabled={availableTunnels.length === 0}
+                    placeholder="选择隧道"
+                    classNames={{ trigger: "bg-content1" }}
+                  >
+                    {availableTunnels.map(tunnel => (
+                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
+                        {tunnel.name}
+                      </SelectItem>
+                    ))}
+                  </Select>
+
+                  <Select
+                    label="限速规则"
+                    size="sm"
+                    selectedKeys={tunnelForm.speedId ? [tunnelForm.speedId.toString()] : ["null"]}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      setTunnelForm(prev => ({ ...prev, speedId: value === "null" ? null : Number(value) }));
+                    }}
+                    isDisabled={!tunnelForm.tunnelId}
+                    classNames={{ trigger: "bg-content1" }}
+                  >
+                    {[
+                      <SelectItem key="null" textValue="不限速">不限速</SelectItem>,
+                      ...availableSpeedLimits.map(speedLimit => (
+                        <SelectItem key={speedLimit.id.toString()} textValue={speedLimit.name}>
+                          {speedLimit.name}
+                        </SelectItem>
+                      ))
+                    ]}
+                  </Select>
+
+                  <Input
+                    label="流量限制 (GB)"
+                    size="sm"
+                    type="number"
+                    value={tunnelForm.flow.toString()}
+                    onChange={(e) => {
+                      const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
+                      setTunnelForm(prev => ({ ...prev, flow: value }));
+                    }}
+                    min="1"
+                    max="99999"
+                    classNames={{ inputWrapper: "bg-content1" }}
+                  />
+
+                  <Input
+                    label="转发数量"
+                    size="sm"
+                    type="number"
+                    value={tunnelForm.num.toString()}
+                    onChange={(e) => {
+                      const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
+                      setTunnelForm(prev => ({ ...prev, num: value }));
+                    }}
+                    min="1"
+                    max="99999"
+                    classNames={{ inputWrapper: "bg-content1" }}
+                  />
+
+                  <Select
+                    label="流量重置"
+                    size="sm"
+                    selectedKeys={[tunnelForm.flowResetTime.toString()]}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      setTunnelForm(prev => ({ ...prev, flowResetTime: Number(value) }));
+                    }}
+                    classNames={{ trigger: "bg-content1" }}
+                  >
+                    <>
+                      <SelectItem key="0" textValue="不重置">不重置</SelectItem>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                        <SelectItem key={day.toString()} textValue={`每月${day}号（0点）`}>
+                          每月{day}号（0点）
+                        </SelectItem>
+                      ))}
+                    </>
+                  </Select>
+
+                  <DatePicker
+                    label="到期时间"
+                    size="sm"
+                    value={tunnelForm.expTime ? parseDate(tunnelForm.expTime.toISOString().split('T')[0]) as any : null}
+                    onChange={(date) => {
+                      if (date) {
+                        const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
+                        setTunnelForm(prev => ({ ...prev, expTime: jsDate }));
+                      } else {
+                        setTunnelForm(prev => ({ ...prev, expTime: null }));
+                      }
+                    }}
+                    showMonthAndYearPickers
+                    className="cursor-pointer"
+                    classNames={{ inputWrapper: "bg-content1" }}
+                  />
+                </div>
+
+                <div className="flex justify-end">
                   <Button
                     color="primary"
+                    size="sm"
                     onPress={handleAssignTunnel}
                     isLoading={assignLoading}
+                    isDisabled={availableTunnels.length === 0}
                   >
                     分配权限
                   </Button>
                 </div>
-              </div>
+              </section>
 
-              {/* 已有权限部分 */}
-              <div>
-                <h3 className="text-lg font-semibold mb-4">已有权限</h3>
-                <Table
-                  aria-label="用户隧道权限列表"
-                  classNames={{
-                    wrapper: "shadow-none",
-                    th: "bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium"
-                  }}
-                >
-                  <TableHeader>
-                    <TableColumn>隧道名称</TableColumn>
-                    <TableColumn>流量统计</TableColumn>
-                    <TableColumn>转发数量</TableColumn>
-                    <TableColumn>状态</TableColumn>
-                    <TableColumn>限速规则</TableColumn>
-                    <TableColumn>重置时间</TableColumn>
-                    <TableColumn>到期时间</TableColumn>
-                    <TableColumn>操作</TableColumn>
-                  </TableHeader>
-                  <TableBody
-                    items={userTunnels}
-                    isLoading={tunnelListLoading}
-                    loadingContent={<Spinner />}
-                    emptyContent="暂无隧道权限"
-                  >
-                    {(userTunnel) => (
-                      <TableRow key={userTunnel.id}>
-                        <TableCell>{userTunnel.tunnelName}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <div className="flex justify-between text-small">
-                              <span className="text-gray-600">限制:</span>
-                              <span className="font-medium">{formatFlow(userTunnel.flow, 'gb')}</span>
-                            </div>
-                            <div className="flex justify-between text-small">
-                              <span className="text-gray-600">已用:</span>
-                              <span className="font-medium text-danger">
-                                {formatFlow(calculateTunnelUsedFlow(userTunnel))}
-                              </span>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{userTunnel.num}</TableCell>
-                        <TableCell>
-                          <Chip
-                            color={userTunnel.status === 1 ? 'success' : 'danger'}
-                            size="sm"
-                            variant="flat"
-                          >
-                            {userTunnel.status === 1 ? '正常' : '禁用'}
-                          </Chip>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            color={userTunnel.speedLimitName ? 'warning' : 'success'}
-                            size="sm"
-                            variant="flat"
-                          >
-                            {userTunnel.speedLimitName || '不限速'}
-                          </Chip>
-                        </TableCell>
-                        <TableCell>{userTunnel.flowResetTime === 0 ? '不重置' : `每月${userTunnel.flowResetTime}号`}</TableCell>
-                        <TableCell>{formatDate(userTunnel.expTime)}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              color="primary"
-                              isIconOnly
-                              onClick={() => handleEditTunnel(userTunnel)}
-                            >
-                              <EditIcon className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              color="warning"
-                              isIconOnly
-                              onClick={() => handleResetTunnelFlow(userTunnel)}
-                              title="重置流量"
-                            >
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                              </svg>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              color="danger"
-                              isIconOnly
-                              onClick={() => handleRemoveTunnel(userTunnel)}
-                            >
-                              <DeleteIcon className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              <Divider className="opacity-60" />
+
+              {/* 已有权限列表 */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">已有权限</h3>
+                  {tunnelListLoading && (
+                    <div className="flex items-center gap-1.5 text-xs text-default-500">
+                      <Spinner size="sm" />
+                      加载中
+                    </div>
+                  )}
+                </div>
+
+                {tunnelListLoading && userTunnels.length === 0 ? (
+                  <div className="flex items-center justify-center h-32">
+                    <div className="flex items-center gap-2 text-sm text-default-500">
+                      <Spinner size="sm" />
+                      正在加载权限列表…
+                    </div>
+                  </div>
+                ) : userTunnels.length === 0 ? (
+                  <div className="text-center py-10 panel-card border border-divider bg-content1">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="empty-state-icon !w-12 !h-12">
+                        <SettingsIcon className="w-5 h-5" />
+                      </div>
+                      <p className="text-sm font-medium text-foreground">暂无隧道权限</p>
+                      <p className="text-xs text-default-500">在上方表单选择隧道并分配即可</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="panel-table-wrap">
+                    <table className="w-full text-sm min-w-[820px]" aria-label="用户隧道权限列表">
+                      <thead>
+                        <tr className="bg-default-50 text-default-600 font-medium text-xs">
+                          <th className="px-3 py-2.5 text-left">隧道</th>
+                          <th className="px-3 py-2.5 text-left min-w-[9rem]">流量</th>
+                          <th className="px-3 py-2.5 text-left">转发</th>
+                          <th className="px-3 py-2.5 text-left">状态</th>
+                          <th className="px-3 py-2.5 text-left">限速</th>
+                          <th className="px-3 py-2.5 text-left">重置</th>
+                          <th className="px-3 py-2.5 text-left">有效期</th>
+                          <th className="px-3 py-2.5 text-right">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-divider">
+                        {userTunnels.map((userTunnel) => {
+                          const usedFlow = calculateTunnelUsedFlow(userTunnel);
+                          const flowLimitBytes = (userTunnel.flow || 0) * 1024 * 1024 * 1024;
+                          const isUnlimited = userTunnel.flow === 99999;
+                          const flowPercent = !isUnlimited && flowLimitBytes > 0
+                            ? Math.min((usedFlow / flowLimitBytes) * 100, 100)
+                            : 0;
+                          const expStatus = userTunnel.expTime ? getExpireStatus(userTunnel.expTime) : null;
+
+                          return (
+                            <tr key={userTunnel.id} className="bg-content1 hover:bg-default-50/70 transition-colors">
+                              <td className={cellClass}>
+                                <div className="min-w-0">
+                                  <div className="font-medium text-foreground text-sm truncate">
+                                    {userTunnel.tunnelName}
+                                  </div>
+                                  <div className="text-[11px] text-default-400 font-mono">
+                                    #{userTunnel.tunnelId}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className={cellClass}>
+                                <div className="min-w-[8rem] max-w-[12rem]">
+                                  <div className="flex justify-between text-xs mb-1 gap-2">
+                                    <span className="text-default-500 truncate">
+                                      {isUnlimited ? '无限制' : formatFlow(userTunnel.flow, 'gb')}
+                                    </span>
+                                    <span className="font-mono text-danger whitespace-nowrap">
+                                      {formatFlow(usedFlow)}
+                                    </span>
+                                  </div>
+                                  <Progress
+                                    size="sm"
+                                    value={isUnlimited ? 0 : flowPercent}
+                                    color={flowPercent > 90 ? 'danger' : flowPercent > 70 ? 'warning' : 'success'}
+                                    aria-label={`${userTunnel.tunnelName} 流量 ${flowPercent.toFixed(1)}%`}
+                                  />
+                                </div>
+                              </td>
+                              <td className={cellClass}>
+                                <span className="text-xs font-medium">
+                                  {userTunnel.num === 99999 ? '无限制' : userTunnel.num}
+                                </span>
+                              </td>
+                              <td className={cellClass}>
+                                <Chip
+                                  color={userTunnel.status === 1 ? 'success' : 'danger'}
+                                  size="sm"
+                                  variant="flat"
+                                  className="text-xs"
+                                  startContent={
+                                    <span className={`inline-block w-1.5 h-1.5 rounded-full ml-1 ${userTunnel.status === 1 ? 'bg-success' : 'bg-danger'}`} />
+                                  }
+                                >
+                                  {userTunnel.status === 1 ? '正常' : '禁用'}
+                                </Chip>
+                              </td>
+                              <td className={cellClass}>
+                                <Chip
+                                  color={userTunnel.speedLimitName ? 'warning' : 'default'}
+                                  size="sm"
+                                  variant="flat"
+                                  className="text-xs"
+                                >
+                                  {userTunnel.speedLimitName || '不限速'}
+                                </Chip>
+                              </td>
+                              <td className={cellClass}>
+                                <span className="text-xs text-default-600 whitespace-nowrap">
+                                  {userTunnel.flowResetTime === 0 ? '不重置' : `每月${userTunnel.flowResetTime}号`}
+                                </span>
+                              </td>
+                              <td className={cellClass}>
+                                {userTunnel.expTime ? (
+                                  <div className="space-y-1">
+                                    <div className="text-xs text-default-600 whitespace-nowrap">
+                                      {formatDate(userTunnel.expTime)}
+                                    </div>
+                                    {expStatus && expStatus.color !== 'success' && (
+                                      <Chip color={expStatus.color} variant="flat" size="sm" className="text-xs">
+                                        {expStatus.text}
+                                      </Chip>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-default-400">永久</span>
+                                )}
+                              </td>
+                              <td className={cellClass}>
+                                <div className="flex items-center gap-1 justify-end flex-wrap">
+                                  <Button
+                                    size="sm"
+                                    variant="flat"
+                                    color="primary"
+                                    onPress={() => handleEditTunnel(userTunnel)}
+                                    className="min-w-unit-12"
+                                    startContent={<EditIcon className="w-3 h-3" />}
+                                  >
+                                    编辑
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="flat"
+                                    color="warning"
+                                    onPress={() => handleResetTunnelFlow(userTunnel)}
+                                    className="min-w-unit-12"
+                                  >
+                                    重置
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="flat"
+                                    color="danger"
+                                    onPress={() => handleRemoveTunnel(userTunnel)}
+                                    className="min-w-unit-12"
+                                    startContent={<DeleteIcon className="w-3 h-3" />}
+                                  >
+                                    删除
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button onPress={onTunnelModalClose}>
+            <Button variant="light" onPress={onTunnelModalClose}>
               关闭
             </Button>
           </ModalFooter>
@@ -1101,21 +1221,28 @@ export default function UserPage() {
         isOpen={isEditTunnelModalOpen}
         onClose={onEditTunnelModalClose}
         size="2xl"
-      scrollBehavior="outside"
-      backdrop="blur"
-      placement="center"
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center"
         isDismissable={false}
       >
         <ModalContent>
-          <ModalHeader>
-            编辑隧道权限 - {editTunnelForm?.tunnelName}
+          <ModalHeader className="flex flex-col items-start gap-1 pb-2">
+            <span className="text-lg font-semibold tracking-tight">编辑隧道权限</span>
+            {editTunnelForm && (
+              <p className="text-xs font-normal text-default-500">
+                {editTunnelForm.tunnelName}
+                <span className="text-default-400 font-mono ml-1">#{editTunnelForm.tunnelId}</span>
+              </p>
+            )}
           </ModalHeader>
           <ModalBody>
             {editTunnelForm && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Input
-                    label="流量限制(GB)"
+                    label="流量限制 (GB)"
+                    size="sm"
                     type="number"
                     value={editTunnelForm.flow.toString()}
                     onChange={(e) => {
@@ -1125,9 +1252,10 @@ export default function UserPage() {
                     min="1"
                     max="99999"
                   />
-                  
+
                   <Input
                     label="转发数量"
+                    size="sm"
                     type="number"
                     value={editTunnelForm.num.toString()}
                     onChange={(e) => {
@@ -1137,9 +1265,10 @@ export default function UserPage() {
                     min="1"
                     max="99999"
                   />
-                  
+
                   <Select
                     label="限速规则"
+                    size="sm"
                     selectedKeys={editTunnelForm.speedId ? [editTunnelForm.speedId.toString()] : ['null']}
                     onSelectionChange={(keys) => {
                       const value = Array.from(keys)[0] as string;
@@ -1155,9 +1284,10 @@ export default function UserPage() {
                       ))
                     ]}
                   </Select>
-                  
+
                   <Select
-                    label="流量重置日期"
+                    label="流量重置"
+                    size="sm"
                     selectedKeys={[editTunnelForm.flowResetTime.toString()]}
                     onSelectionChange={(keys) => {
                       const value = Array.from(keys)[0] as string;
@@ -1165,19 +1295,18 @@ export default function UserPage() {
                     }}
                   >
                     <>
-                      <SelectItem key="0" textValue="不重置">
-                        不重置
-                      </SelectItem>
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                      <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                        每月{day}号（0点重置）
-                      </SelectItem>
-                    ))}
+                      <SelectItem key="0" textValue="不重置">不重置</SelectItem>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                        <SelectItem key={day.toString()} textValue={`每月${day}号（0点）`}>
+                          每月{day}号（0点）
+                        </SelectItem>
+                      ))}
                     </>
                   </Select>
-                  
+
                   <DatePicker
                     label="到期时间"
+                    size="sm"
                     value={editTunnelForm.expTime ? parseDate(new Date(editTunnelForm.expTime).toISOString().split('T')[0]) as any : null}
                     onChange={(date) => {
                       if (date) {
@@ -1192,21 +1321,22 @@ export default function UserPage() {
                     isRequired
                   />
                 </div>
-                
+
                 <RadioGroup
                   label="状态"
                   value={editTunnelForm.status.toString()}
                   onValueChange={(value: string) => setEditTunnelForm(prev => prev ? { ...prev, status: Number(value) } : null)}
                   orientation="horizontal"
+                  size="sm"
                 >
                   <Radio value="1">正常</Radio>
                   <Radio value="0">禁用</Radio>
                 </RadioGroup>
-              </>
+              </div>
             )}
           </ModalBody>
           <ModalFooter>
-            <Button onPress={onEditTunnelModalClose}>
+            <Button variant="light" onPress={onEditTunnelModalClose}>
               取消
             </Button>
             <Button
@@ -1214,7 +1344,7 @@ export default function UserPage() {
               onPress={handleUpdateTunnel}
               isLoading={editTunnelLoading}
             >
-              确定
+              保存
             </Button>
           </ModalFooter>
         </ModalContent>

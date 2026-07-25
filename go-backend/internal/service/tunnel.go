@@ -792,24 +792,27 @@ func (s *TunnelService) Delete(id int64) error {
 		return fmt.Errorf("隧道不存在")
 	}
 
-	// 删转发（含 gost + forward_port）
-	forwards, err := s.Forward.ListByTunnelID(id)
+	// 禁止级联：有转发或用户权限时拒绝删除，需先手动清理
+	fwCount, err := s.Forward.CountByTunnelID(id)
 	if err != nil {
 		return err
 	}
-	fwSvc := NewForwardService(s.DB, s.Hub)
-	admin := CurrentUser{UserID: 0, RoleID: 0}
-	for _, fw := range forwards {
-		// 尽量完整删除；失败则强制清 DB
-		if err := fwSvc.Delete(admin, fw.ID); err != nil {
-			_ = s.Port.DeleteByForwardID(fw.ID)
-			_ = s.Forward.Delete(fw.ID)
-		}
+	utCount, err := s.UserTunn.CountByTunnelID(id)
+	if err != nil {
+		return err
 	}
-	_ = s.Forward.DeleteByTunnelID(id)
-	_ = s.UserTunn.DeleteByTunnelID(id)
+	if fwCount > 0 || utCount > 0 {
+		parts := make([]string, 0, 2)
+		if fwCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d 条转发", fwCount))
+		}
+		if utCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d 条用户权限", utCount))
+		}
+		return fmt.Errorf("无法删除隧道：仍有 %s，请先删除转发并取消用户隧道分配后再删隧道", strings.Join(parts, "、"))
+	}
 
-	// 清 gost 拓扑
+	// 无业务关联时，仅清 gost 拓扑 + chain_tunnel + tunnel
 	chainTunnels, _ := s.Chain.ListByTunnelID(id)
 	for _, ct := range chainTunnels {
 		switch repo.ChainTypeOf(ct) {

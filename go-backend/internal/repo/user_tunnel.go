@@ -138,3 +138,9 @@ func (r *UserTunnelRepo) DeleteByTunnelID(tunnelID int64) error {
 	_, err := r.DB.Exec(`DELETE FROM user_tunnel WHERE tunnel_id = ?`, tunnelID)
 	return err
 }
+
+func (r *UserTunnelRepo) CountByTunnelID(tunnelID int64) (int64, error) {
+	var n int64
+	err := r.DB.Get(&n, `SELECT COUNT(1) FROM user_tunnel WHERE tunnel_id = ?`, tunnelID)
+	return n, err
+}

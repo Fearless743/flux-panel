@@ -11,8 +11,6 @@ interface TabItem {
   adminOnly?: boolean;
 }
 
-
-
 export default function H5Layout({
   children,
 }: {
@@ -28,7 +26,7 @@ export default function H5Layout({
       path: '/dashboard',
       label: '首页',
       icon: (
-        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
         </svg>
       )
@@ -37,7 +35,7 @@ export default function H5Layout({
       path: '/forward',
       label: '转发',
       icon: (
-        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
         </svg>
       )
@@ -46,7 +44,7 @@ export default function H5Layout({
       path: '/tunnel',
       label: '隧道',
       icon: (
-        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
         </svg>
       ),
@@ -56,7 +54,7 @@ export default function H5Layout({
       path: '/node',
       label: '节点',
       icon: (
-        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
         </svg>
       ),
@@ -66,7 +64,7 @@ export default function H5Layout({
       path: '/profile',
       label: '我的',
       icon: (
-        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
         </svg>
       )
@@ -74,7 +72,6 @@ export default function H5Layout({
   ];
 
   useEffect(() => {
-
     // 兼容处理：如果没有admin字段，根据role_id判断（0为管理员）
     let adminFlag = localStorage.getItem('admin') === 'true';
     if (localStorage.getItem('admin') === null) {
@@ -83,7 +80,6 @@ export default function H5Layout({
       // 补充设置admin字段，避免下次再次判断
       localStorage.setItem('admin', adminFlag.toString());
     }
-    
 
     setIsAdmin(adminFlag);
   }, []);
@@ -94,7 +90,7 @@ export default function H5Layout({
   };
 
   // 过滤tab项（根据权限）
-  const filteredTabItems = tabItems.filter(item => 
+  const filteredTabItems = tabItems.filter(item =>
     !item.adminOnly || isAdmin
   );
 
@@ -110,28 +106,29 @@ export default function H5Layout({
   }, [location.pathname]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-black">
+    <div className="flex flex-col min-h-screen bg-background">
       {/* 顶部导航栏 */}
-      <header className="bg-white dark:bg-black shadow-sm border-b border-gray-200 dark:border-gray-600 h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
+      <header className="bg-content1/95 backdrop-blur-md border-b border-divider h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
         <div className="flex items-center gap-2">
-          <Logo size={20} />
-          <h1 className="text-sm font-bold text-foreground">{siteConfig.name}</h1>
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Logo size={16} />
+          </div>
+          <h1 className="text-sm font-semibold text-foreground tracking-tight">{siteConfig.name}</h1>
         </div>
 
-        <div className="flex items-center gap-2">
-        </div>
+        <div className="flex items-center gap-2" />
       </header>
 
       {/* 主内容区域 */}
-      <main className="flex-1 bg-gray-100 dark:bg-black">
+      <main className="flex-1 bg-background">
         {children}
       </main>
 
       {/* 用于给固定 Tabbar 腾出空间的占位元素 */}
       <div aria-hidden className="h-16 safe-bottom" />
 
-      {/* 底部Tabbar */}
-      <nav className="bg-white dark:bg-black border-t border-gray-200 dark:border-gray-600 h-16 safe-bottom flex-shrink-0 flex items-center justify-around px-2 fixed bottom-0 left-0 right-0 z-30">
+      {/* 底部 Tabbar */}
+      <nav className="bg-content1/95 backdrop-blur-md border-t border-divider h-16 safe-bottom flex-shrink-0 flex items-center justify-around px-2 fixed bottom-0 left-0 right-0 z-30">
         {filteredTabItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
@@ -139,23 +136,22 @@ export default function H5Layout({
               key={item.path}
               onClick={() => handleTabClick(item.path)}
               className={`
-                flex flex-col items-center justify-center flex-1 h-full
+                flex flex-col items-center justify-center flex-1 h-full gap-0.5
                 transition-colors duration-200 min-h-[44px]
-                ${isActive 
-                  ? 'text-primary-600 dark:text-primary-400' 
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                ${isActive
+                  ? 'tab-active'
+                  : 'text-default-400 hover:text-default-600'
                 }
               `}
             >
-              <div className="flex-shrink-0 mb-1">
+              <div className={`tab-icon-wrap flex-shrink-0 rounded-lg p-1 ${isActive ? '' : ''}`}>
                 {item.icon}
               </div>
-              <span className="text-xs font-medium">{item.label}</span>
+              <span className={`text-[11px] ${isActive ? 'font-semibold' : 'font-medium'}`}>{item.label}</span>
             </button>
           );
         })}
       </nav>
-
     </div>
   );
 }

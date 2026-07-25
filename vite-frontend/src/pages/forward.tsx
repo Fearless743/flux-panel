@@ -1421,7 +1421,7 @@ export default function ForwardPage() {
               items={getSortedForwards().map(f => f.id || 0).filter(id => id > 0)}
               strategy={verticalListSortingStrategy}
             >
-              <div className="overflow-x-auto rounded-lg border border-divider">
+              <div className="panel-table-wrap">
                 <table className="w-full text-sm" aria-label="转发列表">
                   <thead>
                     <tr className="bg-default-50 text-default-600 font-medium text-xs">

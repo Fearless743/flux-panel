@@ -25,21 +25,23 @@ export function Provider({ children }: ProvidersProps) {
       <HeroUIProvider navigate={navigate} useHref={useHref}>
         <ThemeProvider>
           {children}
-          <Toaster 
+          <Toaster
             position="top-center"
             toastOptions={{
               duration: 2000,
-              className: 'dark:bg-gray-800 dark:text-white',
+              className: 'text-sm font-medium shadow-panel',
               style: {
                 background: 'var(--toaster-bg, #ffffff)',
-                color: 'var(--toaster-color, #000000)',
-                border: '1px solid var(--toaster-border, #e5e7eb)',
+                color: 'var(--toaster-color, #0f172a)',
+                border: '1px solid var(--toaster-border, rgba(15, 23, 42, 0.1))',
+                borderRadius: '0.75rem',
               },
               success: {
                 duration: 2000,
                 style: {
-                  background: '#10b981',
+                  background: '#0d9488',
                   color: '#ffffff',
+                  border: 'none',
                 },
               },
               error: {
@@ -47,6 +49,7 @@ export function Provider({ children }: ProvidersProps) {
                 style: {
                   background: '#ef4444',
                   color: '#ffffff',
+                  border: 'none',
                 },
               },
             }}

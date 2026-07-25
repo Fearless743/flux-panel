@@ -121,6 +121,12 @@ func (r *ForwardRepo) ListByTunnelID(tunnelID int64) ([]model.Forward, error) {
 	return list, err
 }
 
+func (r *ForwardRepo) CountByTunnelID(tunnelID int64) (int64, error) {
+	var n int64
+	err := r.DB.Get(&n, `SELECT COUNT(1) FROM forward WHERE tunnel_id=?`, tunnelID)
+	return n, err
+}
+
 func (r *ForwardRepo) ListByUserAndTunnel(userID, tunnelID int) ([]model.Forward, error) {
 	var list []model.Forward
 	err := r.DB.Select(&list, `SELECT id, user_id, user_name, name, tunnel_id, remote_addr, strategy,

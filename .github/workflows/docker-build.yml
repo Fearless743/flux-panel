@@ -6,73 +6,80 @@ on:
     tags:
       - '[0-9]*'
 
+env:
+  # 统一 owner 小写，避免 GHCR 路径大小写问题
+  REGISTRY: ghcr.io
+
 jobs:
   build-gost:
     name: Build & Compress GOST Binary
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           # go-gost go.mod 要求 1.23+（toolchain go1.23.4）
           go-version: '1.23.4'
-
-      - name: Cache Go modules
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go-gost/**/go.sum', 'go-backend/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          cache-dependency-path: go-gost/go.sum
 
       - name: Install UPX
         run: |
-          wget https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
-          tar -xf upx-4.2.1-amd64_linux.tar.xz
-          sudo mv upx-4.2.1-amd64_linux/upx /usr/local/bin/
-          rm -rf upx-4.2.1-amd64_linux*
+          # 固定版本，apt 缓存更快；失败再回退到 release 包
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq upx-ucl || {
+            wget -q https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
+            tar -xf upx-4.2.4-amd64_linux.tar.xz
+            sudo mv upx-4.2.4-amd64_linux/upx /usr/local/bin/
+            rm -rf upx-4.2.4-amd64_linux*
+          }
+          upx --version
 
-      - name: Build GOST binary (AMD64)
+      # amd64 / arm64 并行编译，缩短 wall-clock
+      - name: Build GOST binaries (amd64 + arm64)
         working-directory: ./go-gost
         run: |
           VERSION="${{ github.ref_name }}"
+          LDFLAGS="-s -w -X main.version=${VERSION}"
+
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-            -ldflags="-s -w -X main.version=${VERSION}" \
-            -o gost-amd64
+            -ldflags="${LDFLAGS}" -o gost-amd64 &
+          pid_amd=$!
 
-      - name: Build GOST binary (ARM64)
-        working-directory: ./go-gost
-        run: |
-          VERSION="${{ github.ref_name }}"
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-            -ldflags="-s -w -X main.version=${VERSION}" \
-            -o gost-arm64
+            -ldflags="${LDFLAGS}" -o gost-arm64 &
+          pid_arm=$!
 
-      - name: Compress with UPX (AMD64)
+          wait $pid_amd
+          wait $pid_arm
+          ls -lh gost-amd64 gost-arm64
+
+      # -9 比 --best --lzma 快数倍，体积接近；并行压缩
+      - name: Compress with UPX
         working-directory: ./go-gost
         run: |
-          upx --best --lzma gost-amd64
-
-      - name: Compress with UPX (ARM64)
-        working-directory: ./go-gost
-        run: |
-          upx --best --lzma gost-arm64
+          upx -9 gost-amd64 &
+          pid_amd=$!
+          upx -9 gost-arm64 &
+          pid_arm=$!
+          wait $pid_amd
+          wait $pid_arm
+          ls -lh gost-amd64 gost-arm64
 
       - name: Upload GOST AMD64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: gost-binary-amd64
           path: ./go-gost/gost-amd64
+          if-no-files-found: error
 
       - name: Upload GOST ARM64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: gost-binary-arm64
           path: ./go-gost/gost-arm64
+          if-no-files-found: error
 
   build-panel:
     name: Build & Push All-in-One Panel (Caddy + Go + Frontend)
@@ -81,34 +88,57 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # GHCR 路径必须全小写
+      - name: Normalize owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # 唯一面板镜像 + 兼容别名 go-backend（同一镜像）
+          images: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/flux-panel
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/go-backend
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.title=flux-panel
+            org.opencontainers.image.description=All-in-one panel (Caddy + Go + Frontend)
+
+      # GHA 缓存跨 run 复用层；mode=max 缓存所有中间 stage（frontend/backend）
+      # 前端/后端 stage 已固定 BUILDPLATFORM，arm64 仅交叉编译 Go，避免 QEMU 跑 npm
       - name: Build and push panel image
-        run: |
-          VERSION="${{ github.ref_name }}"
-          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          # 唯一面板镜像；兼容别名便于旧文档/脚本过渡
-          # APP_VERSION 注入前端，管理后台显示与本次 tag 一致
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg APP_VERSION="${VERSION}" \
-            --push \
-            -t ghcr.io/${OWNER}/flux-panel:latest \
-            -t ghcr.io/${OWNER}/flux-panel:${VERSION} \
-            -t ghcr.io/${OWNER}/go-backend:latest \
-            -t ghcr.io/${OWNER}/go-backend:${VERSION} \
-            -f Dockerfile \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+          cache-from: type=gha,scope=panel
+          cache-to: type=gha,mode=max,scope=panel
+          provenance: false
 
   create-release:
     name: Create Release
@@ -117,7 +147,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download GOST AMD64 binary
         uses: actions/download-artifact@v4

@@ -129,7 +129,7 @@ export default function AdminLayout({
   useEffect(() => {
     // 获取用户信息
     const name = localStorage.getItem('name') || 'Admin';
-    
+
     // 兼容处理：如果没有admin字段，根据role_id判断（0为管理员）
     let adminFlag = localStorage.getItem('admin') === 'true';
     if (localStorage.getItem('admin') === null) {
@@ -138,7 +138,7 @@ export default function AdminLayout({
       // 补充设置admin字段，避免下次再次判断
       localStorage.setItem('admin', adminFlag.toString());
     }
-    
+
     setUsername(name);
     setIsAdmin(adminFlag);
 
@@ -237,84 +237,81 @@ export default function AdminLayout({
   };
 
   // 过滤菜单项（根据权限）
-  const filteredMenuItems = menuItems.filter(item => 
+  const filteredMenuItems = menuItems.filter(item =>
     !item.adminOnly || isAdmin
   );
 
   return (
-          <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-gray-100 dark:bg-black`}>
+    <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-background`}>
       {/* 移动端遮罩层 */}
       {isMobile && mobileMenuVisible && (
-        <div 
-          className="fixed inset-0 backdrop-blur-sm bg-white/50 dark:bg-black/30 z-40"
+        <div
+          className="fixed inset-0 backdrop-blur-sm bg-background/50 z-40"
           onClick={hideMobileMenu}
         />
       )}
 
       {/* 左侧菜单栏 */}
       <aside className={`
-        ${isMobile ? 'fixed' : 'relative'} 
+        ${isMobile ? 'fixed' : 'relative'}
         ${isMobile && !mobileMenuVisible ? '-translate-x-full' : 'translate-x-0'}
-        ${isMobile ? 'w-64' : 'w-72'} 
-        bg-white dark:bg-black 
-        shadow-lg 
-        border-r border-gray-200 dark:border-gray-600
-        z-50 
+        ${isMobile ? 'w-64' : 'w-[16.5rem]'}
+        bg-content1
+        border-r border-divider
+        z-50
         transition-transform duration-300 ease-in-out
         flex flex-col
-        ${isMobile ? 'h-screen' : 'h-full'}
+        ${isMobile ? 'h-screen shadow-panel-lg' : 'h-full'}
         ${isMobile ? 'top-0 left-0' : ''}
       `}>
-                 {/* Logo 区域 */}
-         <div className="px-3 py-3 h-14 flex items-center">
-           <div className="flex items-center gap-2 w-full">
-             <Logo size={24} />
-             <div className="flex-1 min-w-0">
-               <h1 className="text-sm font-bold text-foreground overflow-hidden whitespace-nowrap">{siteConfig.name}</h1>
-               <p className="text-xs text-default-500">v{siteConfig.version}</p>
-             </div>
-           </div>
-         </div>
+        {/* Logo 区域 */}
+        <div className="px-4 h-14 flex items-center border-b border-divider">
+          <div className="flex items-center gap-2.5 w-full">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Logo size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-sm font-semibold text-foreground truncate tracking-tight">{siteConfig.name}</h1>
+              <p className="text-[11px] text-default-400 font-mono">v{siteConfig.version}</p>
+            </div>
+          </div>
+        </div>
 
-                 {/* 菜单导航 */}
-         <nav className="flex-1 px-4 py-6 overflow-y-auto">
-           <ul className="space-y-1">
+        {/* 菜单导航 */}
+        <nav className="flex-1 px-3 py-4 overflow-y-auto">
+          <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-default-400">
+            导航
+          </p>
+          <ul className="space-y-1">
             {filteredMenuItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
                 <li key={item.path}>
-                                     <button
-                     onClick={() => handleMenuClick(item.path)}
-                     className={`
-                       w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left
-                       transition-colors duration-200 min-h-[44px]
-                       ${isActive 
-                         ? 'bg-primary-100 dark:bg-primary-600/20 text-primary-600 dark:text-primary-300' 
-                         : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900'
-                       }
-                     `}
-                   >
-                     <div className="flex-shrink-0">
-                       {item.icon}
-                     </div>
-                     <span className="font-medium text-sm">{item.label}</span>
-                   </button>
+                  <button
+                    onClick={() => handleMenuClick(item.path)}
+                    className={`nav-item ${isActive ? 'nav-item-active' : ''}`}
+                  >
+                    <div className="flex-shrink-0 opacity-90">
+                      {item.icon}
+                    </div>
+                    <span className="font-medium text-sm">{item.label}</span>
+                  </button>
                 </li>
               );
             })}
           </ul>
         </nav>
 
-                {/* 底部版权信息 */}
-        <div className="px-4 py-2 pb-4 mt-auto flex-shrink-0">
+        {/* 底部版权信息 */}
+        <div className="px-4 py-3 mt-auto flex-shrink-0 border-t border-divider">
           <div className="text-center">
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-[11px] text-default-400">
               Powered by{' '}
-              <a 
-                href="https://github.com/bqlpfy/flux-panel" 
-                target="_blank" 
+              <a
+                href="https://github.com/bqlpfy/flux-panel"
+                target="_blank"
                 rel="noopener noreferrer"
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                className="text-default-500 hover:text-primary transition-colors"
               >
                 flux-panel
               </a>
@@ -324,10 +321,10 @@ export default function AdminLayout({
       </aside>
 
       {/* 主内容区域 */}
-      <div className={`flex flex-col flex-1 ${isMobile ? 'min-h-0' : 'h-full overflow-hidden'}`}>
-                 {/* 顶部导航栏 */}
-         <header className="bg-white dark:bg-black shadow-md border-b border-gray-200 dark:border-gray-600 h-14 flex items-center justify-between px-4 lg:px-6 relative z-10">
-          <div className="flex items-center gap-4">
+      <div className={`flex flex-col flex-1 min-w-0 ${isMobile ? 'min-h-0' : 'h-full overflow-hidden'}`}>
+        {/* 顶部导航栏 */}
+        <header className="bg-content1/90 backdrop-blur-md border-b border-divider h-14 flex items-center justify-between px-4 lg:px-6 relative z-10">
+          <div className="flex items-center gap-3">
             {/* 移动端菜单按钮 */}
             {isMobile && (
               <Button
@@ -335,25 +332,35 @@ export default function AdminLayout({
                 variant="light"
                 onPress={toggleMobileMenu}
                 className="lg:hidden"
+                aria-label="打开菜单"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </Button>
             )}
+            <div className="hidden sm:block">
+              <p className="text-xs text-default-400">管理控制台</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* 用户菜单 */}
-             <Dropdown placement="bottom-end">
-               <DropdownTrigger>
-                 <Button variant="light" className="text-sm font-medium text-foreground">
-                   {username}
-                   <svg className="w-4 h-4 ml-1" fill="currentColor" viewBox="0 0 20 20">
-                     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                   </svg>
-                 </Button>
-               </DropdownTrigger>
+            <Dropdown placement="bottom-end">
+              <DropdownTrigger>
+                <Button
+                  variant="flat"
+                  className="h-9 px-3 bg-default-100/70 text-sm font-medium text-foreground"
+                >
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-semibold">
+                    {(username || 'A').slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="max-w-[8rem] truncate">{username}</span>
+                  <svg className="w-4 h-4 text-default-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </Button>
+              </DropdownTrigger>
               <DropdownMenu aria-label="用户菜单">
                 <DropdownItem
                   key="change-password"
@@ -385,14 +392,14 @@ export default function AdminLayout({
         </header>
 
         {/* 主内容 */}
-        <main className={`flex-1 bg-gray-100 dark:bg-black ${isMobile ? '' : 'overflow-y-auto'}`}>
+        <main className={`flex-1 bg-background ${isMobile ? '' : 'overflow-y-auto'}`}>
           {children}
         </main>
       </div>
 
       {/* 修改密码弹窗 */}
-      <Modal 
-        isOpen={isOpen} 
+      <Modal
+        isOpen={isOpen}
         onOpenChange={() => {
           onOpenChange();
           resetPasswordForm();
@@ -402,51 +409,51 @@ export default function AdminLayout({
         backdrop="blur"
         placement="center"
       >
-                 <ModalContent>
-           {(onClose: () => void) => (
+        <ModalContent>
+          {(onClose: () => void) => (
             <>
               <ModalHeader className="flex flex-col gap-1">修改密码</ModalHeader>
               <ModalBody>
-                                 <div className="space-y-4">
-                   <Input
-                     label="新用户名"
-                     placeholder="请输入新用户名（至少3位）"
-                     value={passwordForm.newUsername}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, newUsername: e.target.value }))}
-                     variant="bordered"
-                   />
-                   <Input
-                     label="当前密码"
-                     type="password"
-                     placeholder="请输入当前密码"
-                     value={passwordForm.currentPassword}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
-                     variant="bordered"
-                   />
-                   <Input
-                     label="新密码"
-                     type="password"
-                     placeholder="请输入新密码（至少6位）"
-                     value={passwordForm.newPassword}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                     variant="bordered"
-                   />
-                   <Input
-                     label="确认密码"
-                     type="password"
-                     placeholder="请再次输入新密码"
-                     value={passwordForm.confirmPassword}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                     variant="bordered"
-                   />
-                 </div>
+                <div className="space-y-4">
+                  <Input
+                    label="新用户名"
+                    placeholder="请输入新用户名（至少3位）"
+                    value={passwordForm.newUsername}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, newUsername: e.target.value }))}
+                    variant="bordered"
+                  />
+                  <Input
+                    label="当前密码"
+                    type="password"
+                    placeholder="请输入当前密码"
+                    value={passwordForm.currentPassword}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                    variant="bordered"
+                  />
+                  <Input
+                    label="新密码"
+                    type="password"
+                    placeholder="请输入新密码（至少6位）"
+                    value={passwordForm.newPassword}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                    variant="bordered"
+                  />
+                  <Input
+                    label="确认密码"
+                    type="password"
+                    placeholder="请再次输入新密码"
+                    value={passwordForm.confirmPassword}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    variant="bordered"
+                  />
+                </div>
               </ModalBody>
               <ModalFooter>
                 <Button color="default" variant="light" onPress={onClose}>
                   取消
                 </Button>
-                <Button 
-                  color="primary" 
+                <Button
+                  color="primary"
                   onPress={handlePasswordSubmit}
                   isLoading={passwordLoading}
                 >
@@ -459,4 +466,4 @@ export default function AdminLayout({
       </Modal>
     </div>
   );
-} 
+}

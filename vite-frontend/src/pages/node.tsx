@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
@@ -638,24 +637,43 @@ export default function NodePage() {
     setErrors({});
   };
 
+  const cellClass = "px-3 py-3 align-middle";
+  const isOnline = (node: Node) => node.connectionStatus === 'online';
+  const onlineCount = nodeList.filter((n) => n.connectionStatus === 'online').length;
+
   return (
-    
       <div className="px-3 lg:px-6 py-8">
         {/* 页面头部 */}
-        <div className="flex items-center justify-between mb-6">
-        <div className="flex-1">
-        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <div className="min-w-0">
+            <h1 className="page-title">节点监控</h1>
+            <p className="page-desc">
+              共 {nodeList.length} 个节点
+              {nodeList.length > 0 && (
+                <span className="text-default-400"> · 在线 {onlineCount} · 离线 {nodeList.length - onlineCount}</span>
+              )}
+            </p>
+          </div>
 
-        <Button
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              size="sm"
+              variant="flat"
+              color="default"
+              onPress={loadNodes}
+              isLoading={loading}
+            >
+              刷新
+            </Button>
+            <Button
               size="sm"
               variant="flat"
               color="primary"
               onPress={handleAdd}
-             
             >
               新增
             </Button>
-     
+          </div>
         </div>
 
         {/* 节点列表 */}
@@ -663,212 +681,173 @@ export default function NodePage() {
           <div className="flex items-center justify-center h-64">
             <div className="flex items-center gap-3">
               <Spinner size="sm" />
-              <span className="text-default-600">正在加载...</span>
+              <span className="text-default-500 text-sm">正在加载...</span>
             </div>
           </div>
         ) : nodeList.length === 0 ? (
-          <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-            <CardBody className="text-center py-16">
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12l4-4m-4 4l4 4" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">暂无节点配置</h3>
-                  <p className="text-default-500 text-sm mt-1">还没有创建任何节点配置，点击上方按钮开始创建</p>
-                </div>
+          <div className="text-center py-16 panel-card border border-divider shadow-panel bg-content1">
+            <div className="flex flex-col items-center gap-4">
+              <div className="empty-state-icon">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12l4-4m-4 4l4 4" />
+                </svg>
               </div>
-            </CardBody>
-          </Card>
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">暂无节点配置</h3>
+                <p className="text-default-500 text-sm mt-1">还没有创建任何节点配置，点击上方按钮开始创建</p>
+              </div>
+            </div>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-            {nodeList.map((node) => (
-              <Card 
-                key={node.id} 
-                className="shadow-sm border border-divider hover:shadow-md transition-shadow duration-200"
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start w-full">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-foreground truncate text-sm">{node.name}</h3>
-                    </div>
-                    <div className="flex items-center gap-1.5 ml-2">
-                      <Chip 
-                        color={node.connectionStatus === 'online' ? 'success' : 'danger'} 
-                        variant="flat" 
-                        size="sm"
-                        className="text-xs"
-                      >
-                        {node.connectionStatus === 'online' ? '在线' : '离线'}
-                      </Chip>
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardBody className="pt-0 pb-3">
-                  {/* 基础信息 */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between items-center text-sm min-w-0">
-                      <span className="text-default-600 flex-shrink-0">IP</span>
-                      <div className="text-right text-xs min-w-0 flex-1 ml-2">
-                      <span className="font-mono truncate block" title={node.serverIp.trim()}>
-                              {node.serverIp.trim()}
-                      </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-default-600">版本</span>
-                      <span className="text-xs">{node.version || '未知'}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-default-600">开机时间</span>
-                      <span className="text-xs">
-                        {node.connectionStatus === 'online' && node.systemInfo 
-                          ? formatUptime(node.systemInfo.uptime)
-                          : '-'
-                        }
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 系统监控 */}
-                  <div className="space-y-3 mb-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span>CPU</span>
-                          <span className="font-mono">
-                            {node.connectionStatus === 'online' && node.systemInfo 
-                              ? `${node.systemInfo.cpuUsage.toFixed(1)}%` 
-                              : '-'
-                            }
-                          </span>
+          <div className="panel-table-wrap">
+            <table className="w-full text-sm min-w-[960px]" aria-label="节点列表">
+              <thead>
+                <tr className="bg-default-50 text-default-600 font-medium text-xs">
+                  <th className="px-3 py-2.5 text-left">节点</th>
+                  <th className="px-3 py-2.5 text-left">状态</th>
+                  <th className="px-3 py-2.5 text-left min-w-[8rem]">CPU</th>
+                  <th className="px-3 py-2.5 text-left min-w-[8rem]">内存</th>
+                  <th className="px-3 py-2.5 text-left">网速</th>
+                  <th className="px-3 py-2.5 text-left">累计流量</th>
+                  <th className="px-3 py-2.5 text-left">运行时长</th>
+                  <th className="px-3 py-2.5 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-divider">
+                {nodeList.map((node) => {
+                  const online = isOnline(node);
+                  const info = online ? node.systemInfo : null;
+                  return (
+                    <tr key={node.id} className="bg-content1 hover:bg-default-50/70 transition-colors">
+                      <td className={cellClass}>
+                        <div className="min-w-0">
+                          <div className="font-medium text-foreground text-sm truncate">{node.name}</div>
+                          <div className="text-xs text-default-500 font-mono truncate" title={node.serverIp?.trim() || ''}>
+                            {node.serverIp?.trim() || '-'}
+                          </div>
+                          <div className="text-[11px] text-default-400 mt-0.5">
+                            版本 {node.version || '未知'}
+                          </div>
                         </div>
-                        <Progress
-                          value={node.connectionStatus === 'online' && node.systemInfo ? node.systemInfo.cpuUsage : 0}
-                          color={getProgressColor(
-                            node.connectionStatus === 'online' && node.systemInfo ? node.systemInfo.cpuUsage : 0,
-                            node.connectionStatus !== 'online'
-                          )}
+                      </td>
+                      <td className={cellClass}>
+                        <Chip
+                          color={online ? 'success' : 'danger'}
+                          variant="flat"
                           size="sm"
-                          aria-label="CPU使用率"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span>内存</span>
-                          <span className="font-mono">
-                            {node.connectionStatus === 'online' && node.systemInfo 
-                              ? `${node.systemInfo.memoryUsage.toFixed(1)}%` 
-                              : '-'
-                            }
-                          </span>
-                        </div>
-                        <Progress
-                          value={node.connectionStatus === 'online' && node.systemInfo ? node.systemInfo.memoryUsage : 0}
-                          color={getProgressColor(
-                            node.connectionStatus === 'online' && node.systemInfo ? node.systemInfo.memoryUsage : 0,
-                            node.connectionStatus !== 'online'
-                          )}
-                          size="sm"
-                          aria-label="内存使用率"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="text-center p-2 bg-default-50 dark:bg-default-100 rounded">
-                        <div className="text-default-600 mb-0.5">上传</div>
-                        <div className="font-mono">
-                          {node.connectionStatus === 'online' && node.systemInfo 
-                            ? formatSpeed(node.systemInfo.uploadSpeed) 
-                            : '-'
+                          className="text-xs"
+                          startContent={
+                            <span className={`inline-block w-1.5 h-1.5 rounded-full ml-1 ${online ? 'bg-success' : 'bg-danger'}`} />
                           }
+                        >
+                          {online ? '在线' : '离线'}
+                        </Chip>
+                      </td>
+                      <td className={cellClass}>
+                        <div className="min-w-[7rem] max-w-[10rem]">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-default-500">CPU</span>
+                            <span className="font-mono text-foreground">
+                              {info ? `${info.cpuUsage.toFixed(1)}%` : '-'}
+                            </span>
+                          </div>
+                          <Progress
+                            value={info ? info.cpuUsage : 0}
+                            color={getProgressColor(info ? info.cpuUsage : 0, !online)}
+                            size="sm"
+                            aria-label={`${node.name} CPU使用率`}
+                          />
                         </div>
-                      </div>
-                      <div className="text-center p-2 bg-default-50 dark:bg-default-100 rounded">
-                        <div className="text-default-600 mb-0.5">下载</div>
-                        <div className="font-mono">
-                          {node.connectionStatus === 'online' && node.systemInfo 
-                            ? formatSpeed(node.systemInfo.downloadSpeed) 
-                            : '-'
-                          }
+                      </td>
+                      <td className={cellClass}>
+                        <div className="min-w-[7rem] max-w-[10rem]">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-default-500">内存</span>
+                            <span className="font-mono text-foreground">
+                              {info ? `${info.memoryUsage.toFixed(1)}%` : '-'}
+                            </span>
+                          </div>
+                          <Progress
+                            value={info ? info.memoryUsage : 0}
+                            color={getProgressColor(info ? info.memoryUsage : 0, !online)}
+                            size="sm"
+                            aria-label={`${node.name} 内存使用率`}
+                          />
                         </div>
-                      </div>
-                    </div>
-
-                    {/* 流量统计 */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="text-center p-2 bg-primary-50 dark:bg-primary-100/20 rounded border border-primary-200 dark:border-primary-300/20">
-                        <div className="text-primary-600 dark:text-primary-400 mb-0.5">↑ 上行流量</div>
-                        <div className="font-mono text-primary-700 dark:text-primary-300">
-                          {node.connectionStatus === 'online' && node.systemInfo 
-                            ? formatTraffic(node.systemInfo.uploadTraffic) 
-                            : '-'
-                          }
+                      </td>
+                      <td className={cellClass}>
+                        <div className="text-xs space-y-0.5 font-mono">
+                          <div className="text-primary">
+                            ↑ {info ? formatSpeed(info.uploadSpeed) : '-'}
+                          </div>
+                          <div className="text-success">
+                            ↓ {info ? formatSpeed(info.downloadSpeed) : '-'}
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-center p-2 bg-success-50 dark:bg-success-100/20 rounded border border-success-200 dark:border-success-300/20">
-                        <div className="text-success-600 dark:text-success-400 mb-0.5">↓ 下行流量</div>
-                        <div className="font-mono text-success-700 dark:text-success-300">
-                          {node.connectionStatus === 'online' && node.systemInfo 
-                            ? formatTraffic(node.systemInfo.downloadTraffic) 
-                            : '-'
-                          }
+                      </td>
+                      <td className={cellClass}>
+                        <div className="text-xs space-y-0.5 font-mono">
+                          <div className="text-default-600">
+                            ↑ {info ? formatTraffic(info.uploadTraffic) : '-'}
+                          </div>
+                          <div className="text-default-600">
+                            ↓ {info ? formatTraffic(info.downloadTraffic) : '-'}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 操作按钮 */}
-                  <div className="space-y-1.5">
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="success"
-                        onPress={() => handleCopyInstallCommand(node)}
-                        isLoading={node.copyLoading}
-                        className="flex-1 min-h-8"
-                      >
-                        安装
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="secondary"
-                        onPress={() => handleUpgrade(node)}
-                        isLoading={node.upgradeLoading}
-                        isDisabled={node.connectionStatus !== 'online'}
-                        className="flex-1 min-h-8"
-                      >
-                        升级
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="primary"
-                        onPress={() => handleEdit(node)}
-                        className="flex-1 min-h-8"
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="danger"
-                        onPress={() => handleDelete(node)}
-                        className="flex-1 min-h-8"
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
+                      </td>
+                      <td className={cellClass}>
+                        <span className="text-xs text-default-600 whitespace-nowrap">
+                          {info ? formatUptime(info.uptime) : '-'}
+                        </span>
+                      </td>
+                      <td className={cellClass}>
+                        <div className="flex items-center gap-1 justify-end flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="success"
+                            onPress={() => handleCopyInstallCommand(node)}
+                            isLoading={node.copyLoading}
+                            className="min-w-unit-14"
+                          >
+                            安装
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="secondary"
+                            onPress={() => handleUpgrade(node)}
+                            isLoading={node.upgradeLoading}
+                            isDisabled={!online}
+                            className="min-w-unit-14"
+                          >
+                            升级
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="primary"
+                            onPress={() => handleEdit(node)}
+                            className="min-w-unit-14"
+                          >
+                            编辑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="danger"
+                            onPress={() => handleDelete(node)}
+                            className="min-w-unit-14"
+                          >
+                            删除
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 

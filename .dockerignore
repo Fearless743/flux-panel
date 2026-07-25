@@ -1,7 +1,13 @@
+# VCS / IDE / agent
 .git
 .github
 .claude
 .opencode
+.idea
+.vscode
+**/.DS_Store
+
+# 依赖与构建产物（镜像内会重新安装/编译）
 **/node_modules
 **/dist
 **/target
@@ -9,20 +15,32 @@
 **/logs
 **/*.md
 !README.md
+*.db
+*.sqlite
+*.log
+
+# 与面板镜像无关的子项目（减小 build context）
 go-gost
 gost-rs
 android-app
 ios-app
 springboot-backend
 doc
-*.db
-*.sqlite
+
+# 本地/脚本产物
 go-backend/data
 go-backend/logs
 go-backend/server
+go-backend/**/*_test.go
 vite-frontend/dist
 vite-frontend/node_modules
+vite-frontend/bun.lock
+vite-frontend/coverage
+vite-frontend/.env*
 panel_install.sh
 install.sh
 docker-compose*.yml
 LICENSE
+*.tar
+*.tar.gz
+*.zip

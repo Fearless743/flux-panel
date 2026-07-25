@@ -8,11 +8,11 @@ interface PageWrapperProps {
   className?: string;
 }
 
-export default function PageWrapper({ 
-  children, 
-  title, 
-  description, 
-  className = "container mx-auto max-w-7xl px-3 lg:px-6 py-8" 
+export default function PageWrapper({
+  children,
+  title,
+  description,
+  className = "container mx-auto max-w-7xl px-3 lg:px-6 py-6 lg:py-8",
 }: PageWrapperProps) {
   const [isReady, setIsReady] = useState(false);
 
@@ -28,11 +28,11 @@ export default function PageWrapper({
   if (!isReady) {
     return (
       <AdminLayout>
-        <div className="container mx-auto max-w-7xl px-3 lg:px-6 py-8">
+        <div className="container mx-auto max-w-7xl px-3 lg:px-6 py-6 lg:py-8">
           <div className="flex items-center justify-center h-64">
             <div className="flex items-center gap-3">
-              <div className="animate-spin h-5 w-5 border-2 border-gray-200 dark:border-gray-700 border-t-gray-600 dark:border-t-gray-300 rounded-full"></div>
-              <span className="text-default-600"></span>
+              <div className="spinner" />
+              <span className="text-default-500 text-sm">加载中...</span>
             </div>
           </div>
         </div>
@@ -44,13 +44,13 @@ export default function PageWrapper({
     <AdminLayout>
       <div className={className}>
         <div className="mb-6">
-          <h1 className="text-2xl font-bold mb-2 text-foreground">{title}</h1>
+          <h1 className="page-title">{title}</h1>
           {description && (
-            <p className="text-default-600">{description}</p>
+            <p className="page-desc">{description}</p>
           )}
         </div>
         {children}
       </div>
     </AdminLayout>
   );
-} 
+}

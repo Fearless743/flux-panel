@@ -253,12 +253,17 @@ export default function IndexPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 pb-20 min-h-[calc(100dvh-120px)] sm:min-h-[calc(100dvh-200px)]">
+      <section className="flex flex-col items-center justify-center gap-4 py-6 sm:py-10 md:py-12 pb-24 min-h-[calc(100dvh-120px)] sm:min-h-[calc(100dvh-200px)]">
         <div className="w-full max-w-md px-4 sm:px-0">
-          <Card className="w-full">
-            <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
-              <h1 className={title({ size: "sm" })}>登陆</h1>
-              <p className="text-small text-default-500 mt-2">请输入您的账号信息</p>
+          <Card className="w-full login-card shadow-panel-lg">
+            <CardHeader className="pb-0 pt-7 px-6 flex-col items-center gap-1">
+              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h1 className={title({ size: "sm", color: "foreground" })}>登录</h1>
+              <p className="text-small text-default-500 mt-1">请输入您的账号信息</p>
             </CardHeader>
             <CardBody className="px-6 py-6">
               <div className="flex flex-col gap-4">
@@ -273,7 +278,7 @@ export default function IndexPage() {
                   isInvalid={!!errors.username}
                   errorMessage={errors.username}
                 />
-                
+
                 <Input
                   label="密码"
                   placeholder="请输入密码"
@@ -284,16 +289,16 @@ export default function IndexPage() {
                   variant="bordered"
                   isDisabled={loading}
                   isInvalid={!!errors.password}
+                  errorMessage={errors.password}
                 />
 
-                
                 <Button
                   color="primary"
                   size="lg"
                   onClick={handleLogin}
                   isLoading={loading}
                   disabled={loading}
-                  className="mt-2"
+                  className="mt-2 font-semibold shadow-sm"
                 >
                   {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
                 </Button>
@@ -302,47 +307,41 @@ export default function IndexPage() {
           </Card>
         </div>
 
-
-      {/* 版权信息 - 固定在底部，不占据布局空间 */}
-      
-               <div className="fixed inset-x-0 bottom-4 text-center py-4">
-               <p className="text-xs text-gray-400 dark:text-gray-500">
-                 Powered by{' '}
-                 <a 
-                   href="https://github.com/bqlpfy/flux-panel" 
-                   target="_blank" 
-                   rel="noopener noreferrer"
-                   className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                 >
-                   flux-panel
-                 </a>
-               </p>
-               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                 v{ isWebView ? siteConfig.app_version : siteConfig.version}
-               </p>
-             </div>
-      
-   
+        {/* 版权信息 - 固定在底部，不占据布局空间 */}
+        <div className="fixed inset-x-0 bottom-4 text-center py-4 pointer-events-none">
+          <p className="text-xs text-default-400 pointer-events-auto">
+            Powered by{' '}
+            <a
+              href="https://github.com/bqlpfy/flux-panel"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-default-500 hover:text-primary transition-colors"
+            >
+              flux-panel
+            </a>
+          </p>
+          <p className="text-xs text-default-400 mt-1 font-mono">
+            v{isWebView ? siteConfig.app_version : siteConfig.version}
+          </p>
+        </div>
 
         {/* 验证码弹层 */}
         {showCaptcha && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            {/* 背景遮罩层 - 模糊效果，暗黑模式下更深 */}
             <div className="absolute inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm captcha-backdrop-enter" />
-           {/* 验证码容器 */}
-           <div className="mb-4">
-                <div 
-                  id="captcha-container" 
-                  ref={captchaContainerRef}
-                  className="w-full flex justify-center"
-                  style={{
-                    filter: document.documentElement.classList.contains('dark') || 
-                           document.documentElement.getAttribute('data-theme') === 'dark' ||
-                           window.matchMedia('(prefers-color-scheme: dark)').matches 
-                           ? 'brightness(0.8) contrast(0.9)' : 'none'
-                  }}
-                />
-              </div>
+            <div className="mb-4 relative z-10">
+              <div
+                id="captcha-container"
+                ref={captchaContainerRef}
+                className="w-full flex justify-center"
+                style={{
+                  filter: document.documentElement.classList.contains('dark') ||
+                         document.documentElement.getAttribute('data-theme') === 'dark' ||
+                         window.matchMedia('(prefers-color-scheme: dark)').matches
+                         ? 'brightness(0.8) contrast(0.9)' : 'none'
+                }}
+              />
+            </div>
           </div>
         )}
       </section>
