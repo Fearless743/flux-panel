@@ -162,13 +162,13 @@ export default function TunnelPage() {
     if (!form.inNodeId || form.inNodeId.length === 0) {
       newErrors.inNodeId = '请至少选择一个入口节点';
     } else {
-      // 验证所有选择的节点都在线
+      // 验证所有选择的节点都在线（已离线的请先取消勾选移除）
       const offlineNodes = form.inNodeId.filter(item => {
         const node = nodes.find(n => n.id === item.nodeId);
         return node && node.status !== 1;
       });
       if (offlineNodes.length > 0) {
-        newErrors.inNodeId = '所有入口节点必须在线';
+        newErrors.inNodeId = '存在离线入口节点，请先取消勾选移除后再保存';
       }
     }
     
@@ -181,15 +181,15 @@ export default function TunnelPage() {
       if (!form.outNodeId || form.outNodeId.length === 0) {
         newErrors.outNodeId = '请至少选择一个出口节点';
       } else {
-        // 验证所有选择的节点都在线
+        // 验证所有选择的节点都在线（已离线的请先取消勾选移除）
         const offlineNodes = form.outNodeId.filter(item => {
           const node = nodes.find(n => n.id === item.nodeId);
           return node && node.status !== 1;
         });
         if (offlineNodes.length > 0) {
-          newErrors.outNodeId = '所有出口节点必须在线';
+          newErrors.outNodeId = '存在离线出口节点，请先取消勾选移除后再保存';
         }
-        
+
         // 检查是否有重复节点
         const inNodeIds = form.inNodeId.map(item => item.nodeId);
         const outNodeIds = form.outNodeId.map(item => item.nodeId);
@@ -197,6 +197,17 @@ export default function TunnelPage() {
         if (overlap.length > 0) {
           newErrors.outNodeId = '隧道转发模式下，入口和出口不能有相同节点';
         }
+      }
+
+      const offlineChainNodes = (form.chainNodes || [])
+        .flat()
+        .filter(item => item.nodeId !== -1)
+        .filter(item => {
+          const node = nodes.find(n => n.id === item.nodeId);
+          return node && node.status !== 1;
+        });
+      if (offlineChainNodes.length > 0) {
+        newErrors.chainNodes = '存在离线转发链节点，请先取消勾选移除后再保存';
       }
     }
     
@@ -340,6 +351,12 @@ export default function TunnelPage() {
   const getSelectedChainNodeIds = (): number[] => {
     return (form.chainNodes || []).flatMap(group => group.map(node => node.nodeId));
   };
+
+  // 离线节点不可新选，但已选中的仍可取消勾选（编辑时剔除离线节点）
+  const offlineUnselectedKeys = (selectedIds: number[]): string[] =>
+    nodes
+      .filter(node => node.status !== 1 && !selectedIds.includes(node.id))
+      .map(node => node.id.toString());
 
   // 获取转发链分组（已经是二维数组）
   const getChainGroups = (): ChainTunnel[][] => {
@@ -747,7 +764,7 @@ export default function TunnelPage() {
                          selectionMode="multiple"
                          selectedKeys={form.inNodeId.map(ct => ct.nodeId.toString())}
                          disabledKeys={[
-                           ...nodes.filter(node => node.status !== 1).map(node => node.id.toString()),
+                           ...offlineUnselectedKeys(form.inNodeId.map(ct => ct.nodeId)),
                            ...(form.outNodeId || []).map(ct => ct.nodeId.toString()),
                            ...getSelectedChainNodeIds().map(id => id.toString())
                          ]}
@@ -860,7 +877,9 @@ export default function TunnelPage() {
                                         selectionMode="multiple"
                                         selectedKeys={groupNodes.filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId.toString())}
                                         disabledKeys={[
-                                          ...nodes.filter(node => node.status !== 1).map(node => node.id.toString()),
+                                          ...offlineUnselectedKeys(
+                                            groupNodes.filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId)
+                                          ),
                                           ...form.inNodeId.map(ct => ct.nodeId.toString()),
                                           ...(form.outNodeId || []).map(ct => ct.nodeId.toString()),
                                           // 排除其他跳数已选的节点
@@ -1009,7 +1028,9 @@ export default function TunnelPage() {
                               selectionMode="multiple"
                               selectedKeys={form.outNodeId ? form.outNodeId.filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId.toString()) : []}
                               disabledKeys={[
-                                ...nodes.filter(node => node.status !== 1).map(node => node.id.toString()),
+                                ...offlineUnselectedKeys(
+                                  (form.outNodeId || []).filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId)
+                                ),
                                 ...form.inNodeId.map(ct => ct.nodeId.toString()),
                                 ...getSelectedChainNodeIds().map(id => id.toString())
                               ]}
