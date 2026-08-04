@@ -944,7 +944,9 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 					results = append(results, r)
 				}
 			} else {
-				for _, out := range outs {
+				// 根据入口的 ExitNodeIDs 过滤出口节点
+				targetOuts := filterExitsByEntry(outs, inNode)
+				for _, out := range targetOuts {
 					to, _ := s.Node.GetByID(out.NodeID)
 					if to == nil {
 						continue
