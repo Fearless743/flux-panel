@@ -46,12 +46,44 @@ type ChainTunnelInput struct {
 	NodeID      int64   `json:"nodeId"`
 	Protocol    *string `json:"protocol"`
 	Strategy    *string `json:"strategy"`
-	ExitNodeIDs []int64 `json:"exitNodeIds"` // 入口节点使用的出口节点 ID 列表
+	ExitNodeIDs any     `json:"exitNodeIds"` // 入口节点使用的出口节点 ID 列表，支持数组或JSON字符串
 	// 兼容可能带的字段
 	ChainType any `json:"chainType"`
 	Port      any `json:"port"`
 	Inx       any `json:"inx"`
 	ID        any `json:"id"`
+}
+
+// GetExitNodeIDs 解析 exitNodeIds，支持数组和JSON字符串两种格式
+func (c *ChainTunnelInput) GetExitNodeIDs() []int64 {
+	if c.ExitNodeIDs == nil {
+		return nil
+	}
+	switch v := c.ExitNodeIDs.(type) {
+	case []interface{}:
+		// JSON 数组格式
+		ids := make([]int64, 0, len(v))
+		for _, item := range v {
+			switch id := item.(type) {
+			case float64:
+				ids = append(ids, int64(id))
+			case int64:
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	case string:
+		// JSON 字符串格式 "[4,5]"
+		if v == "" || v == "null" {
+			return nil
+		}
+		var ids []int64
+		if err := json.Unmarshal([]byte(v), &ids); err != nil {
+			return nil
+		}
+		return ids
+	}
+	return nil
 }
 
 type TunnelCreateReq struct {
@@ -138,8 +170,9 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 		nodes[n.ID] = n
 		// 将 ExitNodeIDs 转换为 JSON 字符串
 		var exitNodeIDs *string
-		if len(in.ExitNodeIDs) > 0 {
-			jsonBytes, err := json.Marshal(in.ExitNodeIDs)
+		exitIDs := in.GetExitNodeIDs()
+		if len(exitIDs) > 0 {
+			jsonBytes, err := json.Marshal(exitIDs)
 			if err != nil {
 				return fmt.Errorf("序列化出口节点 ID 失败: %w", err)
 			}
@@ -482,8 +515,9 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 		}
 		// 将 ExitNodeIDs 转换为 JSON 字符串
 		var exitNodeIDs *string
-		if len(in.ExitNodeIDs) > 0 {
-			jsonBytes, err := json.Marshal(in.ExitNodeIDs)
+		exitIDs := in.GetExitNodeIDs()
+		if len(exitIDs) > 0 {
+			jsonBytes, err := json.Marshal(exitIDs)
 			if err != nil {
 				return fmt.Errorf("序列化出口节点 ID 失败: %w", err)
 			}
