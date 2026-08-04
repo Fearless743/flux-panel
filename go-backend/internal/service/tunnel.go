@@ -1123,6 +1123,10 @@ func (s *TunnelService) addChains(nodeID int64, target []model.ChainTunnel, node
 		})
 	}
 	data := gost.BuildChainData(tunnelID, nodeID, iface, strategy, inputs)
+	// 节点未连接时跳过下发，仅保存数据库配置
+	if !s.Hub.IsNodeOnline(nodeID) {
+		return ws.GostResult{Msg: "OK"}
+	}
 	res := s.Hub.SendMsg(nodeID, data, "AddChains")
 	res.Msg = gost.NormalizeOK(res.Msg)
 	return res
@@ -1131,6 +1135,10 @@ func (s *TunnelService) addChains(nodeID int64, target []model.ChainTunnel, node
 func (s *TunnelService) addChainService(nodeID int64, ct model.ChainTunnel, nodes map[int64]*model.Node) ws.GostResult {
 	if s.Hub == nil {
 		return ws.GostResult{Msg: "节点不在线"}
+	}
+	// 节点未连接时跳过下发，仅保存数据库配置
+	if !s.Hub.IsNodeOnline(nodeID) {
+		return ws.GostResult{Msg: "OK"}
 	}
 	n := nodes[ct.NodeID]
 	if n == nil {

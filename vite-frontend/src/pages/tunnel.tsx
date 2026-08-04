@@ -840,9 +840,34 @@ export default function TunnelPage() {
                                   label="出口节点"
                                   placeholder="选择出口节点（可多选，不选则使用所有出口）"
                                   selectionMode="multiple"
-                                  selectedKeys={(entry.exitNodeIds || []).map(id => id.toString())}
+                                  selectedKeys={(() => {
+                                    // 处理 exitNodeIds 可能是字符串或数组的情况
+                                    let ids: number[] = [];
+                                    if (entry.exitNodeIds) {
+                                      if (typeof entry.exitNodeIds === 'string') {
+                                        try {
+                                          ids = JSON.parse(entry.exitNodeIds);
+                                        } catch {
+                                          ids = [];
+                                        }
+                                      } else if (Array.isArray(entry.exitNodeIds)) {
+                                        ids = entry.exitNodeIds;
+                                      }
+                                    }
+                                    return ids.map(id => id.toString());
+                                  })()}
                                   disabledKeys={[
-                                    ...offlineUnselectedKeys(entry.exitNodeIds || []),
+                                    ...offlineUnselectedKeys((() => {
+                                      if (!entry.exitNodeIds) return [];
+                                      if (typeof entry.exitNodeIds === 'string') {
+                                        try {
+                                          return JSON.parse(entry.exitNodeIds);
+                                        } catch {
+                                          return [];
+                                        }
+                                      }
+                                      return Array.isArray(entry.exitNodeIds) ? entry.exitNodeIds : [];
+                                    })()),
                                     ...form.inNodeId.map(ct => ct.nodeId.toString()),
                                     ...getSelectedChainNodeIds().map(id => id.toString())
                                   ]}
