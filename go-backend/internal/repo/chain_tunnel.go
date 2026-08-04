@@ -33,6 +33,17 @@ func (r *ChainTunnelRepo) ListByTunnelID(tunnelID int64) ([]model.ChainTunnel, e
 	return list, err
 }
 
+func (r *ChainTunnelRepo) ListEntriesByTunnelID(tunnelID int64) ([]model.ChainTunnel, error) {
+	var list []model.ChainTunnel
+	err := r.DB.Select(&list, `SELECT * FROM chain_tunnel WHERE tunnel_id = ? AND chain_type = '1' ORDER BY id`, tunnelID)
+	return list, err
+}
+
+func (r *ChainTunnelRepo) UpdateExitNodeIDs(id int64, exitNodeIDs *string) error {
+	_, err := r.DB.Exec(`UPDATE chain_tunnel SET exit_node_ids = ? WHERE id = ?`, exitNodeIDs, id)
+	return err
+}
+
 func (r *ChainTunnelRepo) ListByTunnelIDs(tunnelIDs []int64) ([]model.ChainTunnel, error) {
 	if len(tunnelIDs) == 0 {
 		return nil, nil
@@ -78,9 +89,9 @@ func (r *ChainTunnelRepo) InsertBatch(items []model.ChainTunnel) error {
 
 func insertChainTunnel(ext sqlx.Ext, ct *model.ChainTunnel) error {
 	res, err := ext.Exec(`
-		INSERT INTO chain_tunnel (tunnel_id, chain_type, node_id, port, strategy, inx, protocol)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		ct.TunnelID, ct.ChainType, ct.NodeID, ct.Port, ct.Strategy, ct.Inx, ct.Protocol,
+		INSERT INTO chain_tunnel (tunnel_id, chain_type, node_id, port, strategy, inx, protocol, exit_node_ids)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		ct.TunnelID, ct.ChainType, ct.NodeID, ct.Port, ct.Strategy, ct.Inx, ct.Protocol, ct.ExitNodeIDs,
 	)
 	if err != nil {
 		return err
@@ -131,6 +142,19 @@ func NewChainTunnel(tunnelID int64, chainType int, nodeID int64, port *int, stra
 		Strategy:  strategy,
 		Protocol:  protocol,
 		Inx:       inx,
+	}
+}
+
+func NewChainTunnelWithExitBinding(tunnelID int64, chainType int, nodeID int64, port *int, strategy, protocol *string, inx *int, exitNodeIDs *string) model.ChainTunnel {
+	return model.ChainTunnel{
+		TunnelID:    tunnelID,
+		ChainType:   chainTypeStr(chainType),
+		NodeID:      nodeID,
+		Port:        port,
+		Strategy:    strategy,
+		Protocol:    protocol,
+		Inx:         inx,
+		ExitNodeIDs: exitNodeIDs,
 	}
 }
 

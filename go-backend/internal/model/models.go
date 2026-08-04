@@ -50,14 +50,15 @@ type Tunnel struct {
 }
 
 type ChainTunnel struct {
-	ID        int64   `db:"id" json:"id"`
-	TunnelID  int64   `db:"tunnel_id" json:"tunnelId"`
-	ChainType string  `db:"chain_type" json:"chainType"` // schema 为 VARCHAR，业务中 1入口/2转发链/3出口
-	NodeID    int64   `db:"node_id" json:"nodeId"`
-	Port      *int    `db:"port" json:"port"`
-	Strategy  *string `db:"strategy" json:"strategy"`
-	Inx       *int    `db:"inx" json:"inx"`
-	Protocol  *string `db:"protocol" json:"protocol"`
+	ID          int64   `db:"id" json:"id"`
+	TunnelID    int64   `db:"tunnel_id" json:"tunnelId"`
+	ChainType   string  `db:"chain_type" json:"chainType"` // schema 为 VARCHAR，业务中 1入口/2转发链/3出口
+	NodeID      int64   `db:"node_id" json:"nodeId"`
+	Port        *int    `db:"port" json:"port"`
+	Strategy    *string `db:"strategy" json:"strategy"`
+	Inx         *int    `db:"inx" json:"inx"`
+	Protocol    *string `db:"protocol" json:"protocol"`
+	ExitNodeIDs *string `db:"exit_node_ids" json:"exitNodeIds"` // 入口节点使用的出口节点 ID 列表（JSON 数组）
 }
 
 type Forward struct {

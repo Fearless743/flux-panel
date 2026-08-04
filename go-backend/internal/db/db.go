@@ -42,6 +42,10 @@ func Open(path string) (*sqlx.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("data: %w", err)
 	}
+	if err := migrate(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	slog.Info("database ready", "path", path)
 	return db, nil
 }
@@ -89,4 +93,21 @@ func Checkpoint(db *sqlx.DB) {
 	if _, err := db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
 		slog.Warn("wal checkpoint failed", "err", err)
 	}
+}
+
+func migrate(db *sqlx.DB) error {
+	// 检查 chain_tunnel 表是否有 exit_node_ids 字段
+	var count int
+	err := db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('chain_tunnel') WHERE name='exit_node_ids'`)
+	if err != nil {
+		return fmt.Errorf("check exit_node_ids column: %w", err)
+	}
+	if count == 0 {
+		// 添加 exit_node_ids 字段
+		if _, err := db.Exec(`ALTER TABLE chain_tunnel ADD COLUMN exit_node_ids TEXT`); err != nil {
+			return fmt.Errorf("add exit_node_ids column: %w", err)
+		}
+		slog.Info("migrated: added exit_node_ids column to chain_tunnel")
+	}
+	return nil
 }

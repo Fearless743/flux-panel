@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -42,9 +43,10 @@ func NewTunnelService(db *sqlx.DB, hub *ws.Hub) *TunnelService {
 
 // ChainTunnelInput 前端传入的拓扑节点（不信任 id/port）
 type ChainTunnelInput struct {
-	NodeID   int64   `json:"nodeId"`
-	Protocol *string `json:"protocol"`
-	Strategy *string `json:"strategy"`
+	NodeID      int64   `json:"nodeId"`
+	Protocol    *string `json:"protocol"`
+	Strategy    *string `json:"strategy"`
+	ExitNodeIDs []int64 `json:"exitNodeIds"` // 入口节点使用的出口节点 ID 列表
 	// 兼容可能带的字段
 	ChainType any `json:"chainType"`
 	Port      any `json:"port"`
@@ -134,7 +136,17 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			return fmt.Errorf("节点不存在")
 		}
 		nodes[n.ID] = n
-		ct := repo.NewChainTunnel(0, 1, in.NodeID, nil, nil, nil, nil)
+		// 将 ExitNodeIDs 转换为 JSON 字符串
+		var exitNodeIDs *string
+		if len(in.ExitNodeIDs) > 0 {
+			jsonBytes, err := json.Marshal(in.ExitNodeIDs)
+			if err != nil {
+				return fmt.Errorf("序列化出口节点 ID 失败: %w", err)
+			}
+			s := string(jsonBytes)
+			exitNodeIDs = &s
+		}
+		ct := repo.NewChainTunnelWithExitBinding(0, 1, in.NodeID, nil, nil, nil, nil, exitNodeIDs)
 		chainTunnels = append(chainTunnels, ct)
 	}
 
@@ -292,7 +304,8 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 		for _, entry := range entries {
 			var target []model.ChainTunnel
 			if len(chainGroups) == 0 {
-				target = outNodes
+				// 无转发链时，根据入口的 ExitNodeIDs 过滤出口节点
+				target = filterExitsByEntry(outNodes, entry)
 			} else {
 				target = chainGroups[0]
 			}
@@ -467,7 +480,17 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 		if in.NodeID == 0 {
 			return fmt.Errorf("节点不存在")
 		}
-		newEntries = append(newEntries, repo.NewChainTunnel(tunnelID, 1, in.NodeID, nil, nil, nil, nil))
+		// 将 ExitNodeIDs 转换为 JSON 字符串
+		var exitNodeIDs *string
+		if len(in.ExitNodeIDs) > 0 {
+			jsonBytes, err := json.Marshal(in.ExitNodeIDs)
+			if err != nil {
+				return fmt.Errorf("序列化出口节点 ID 失败: %w", err)
+			}
+			s := string(jsonBytes)
+			exitNodeIDs = &s
+		}
+		newEntries = append(newEntries, repo.NewChainTunnelWithExitBinding(tunnelID, 1, in.NodeID, nil, nil, nil, nil, exitNodeIDs))
 		nodeIDs = append(nodeIDs, in.NodeID)
 	}
 	inx := 1
@@ -621,7 +644,8 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 		for _, entry := range newEntries {
 			var target []model.ChainTunnel
 			if len(newChains) == 0 {
-				target = newOuts
+				// 无转发链时，根据入口的 ExitNodeIDs 过滤出口节点
+				target = filterExitsByEntry(newOuts, entry)
 			} else {
 				target = newChains[0]
 			}
@@ -1174,4 +1198,40 @@ func nodeName(nodes map[int64]*model.Node, id int64) string {
 		return n.Name
 	}
 	return fmt.Sprintf("%d", id)
+}
+
+// filterExitsByEntry 根据入口节点的 ExitNodeIDs 过滤出口节点
+// 如果入口没有指定 ExitNodeIDs，则返回所有出口节点
+func filterExitsByEntry(outNodes []model.ChainTunnel, entry model.ChainTunnel) []model.ChainTunnel {
+	if entry.ExitNodeIDs == nil || *entry.ExitNodeIDs == "" {
+		// 没有指定出口绑定，返回所有出口节点
+		return outNodes
+	}
+
+	var exitIDs []int64
+	if err := json.Unmarshal([]byte(*entry.ExitNodeIDs), &exitIDs); err != nil || len(exitIDs) == 0 {
+		// 解析失败或为空，返回所有出口节点
+		return outNodes
+	}
+
+	// 构建 exitIDs 的查找集合
+	exitIDSet := make(map[int64]struct{}, len(exitIDs))
+	for _, id := range exitIDs {
+		exitIDSet[id] = struct{}{}
+	}
+
+	// 过滤出口节点
+	var filtered []model.ChainTunnel
+	for _, node := range outNodes {
+		if _, ok := exitIDSet[node.NodeID]; ok {
+			filtered = append(filtered, node)
+		}
+	}
+
+	// 如果过滤后为空，返回所有出口节点（防止配置错误导致无出口）
+	if len(filtered) == 0 {
+		return outNodes
+	}
+
+	return filtered
 }

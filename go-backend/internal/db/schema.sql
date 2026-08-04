@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS chain_tunnel (
     port INTEGER,
     strategy VARCHAR(10),
     inx  INTEGER,
-    protocol  VARCHAR(10)
+    protocol  VARCHAR(10),
+    exit_node_ids TEXT
 );
 
 

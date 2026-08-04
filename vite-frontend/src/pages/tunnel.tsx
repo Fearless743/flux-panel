@@ -26,6 +26,7 @@ interface ChainTunnel {
   strategy?: string; // 'fifo' | 'round' | 'rand' - 仅转发链需要
   chainType?: number; // 1: 入口, 2: 转发链, 3: 出口
   inx?: number; // 转发链序号
+  exitNodeIds?: number[]; // 入口节点使用的出口节点 ID 列表
 }
 
 interface Tunnel {
@@ -812,6 +813,81 @@ export default function TunnelPage() {
                         ))}
                       </Select>
                     </div>
+
+                    {/* 隧道转发时显示入口-出口绑定配置 */}
+                    {form.type === 2 && form.inNodeId.length > 0 && (
+                      <>
+                        <Divider />
+                        <h3 className="text-lg font-semibold">入口-出口绑定</h3>
+                        <p className="text-sm text-default-500 mb-3">
+                          为每个入口节点指定它应该使用的出口节点。如果不指定，则使用所有出口节点。
+                        </p>
+                        <div className="space-y-3">
+                          {form.inNodeId.map((entry, entryIndex) => {
+                            const entryNode = nodes.find(n => n.id === entry.nodeId);
+                            if (!entryNode) return null;
+                            return (
+                              <div key={entry.nodeId} className="border border-default-200 rounded-lg p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-medium text-default-600">
+                                    {entryNode.name}
+                                  </span>
+                                  <Chip color="primary" variant="flat" size="sm">
+                                    入口
+                                  </Chip>
+                                </div>
+                                <Select
+                                  label="出口节点"
+                                  placeholder="选择出口节点（可多选，不选则使用所有出口）"
+                                  selectionMode="multiple"
+                                  selectedKeys={(entry.exitNodeIds || []).map(id => id.toString())}
+                                  disabledKeys={[
+                                    ...offlineUnselectedKeys(entry.exitNodeIds || []),
+                                    ...form.inNodeId.map(ct => ct.nodeId.toString()),
+                                    ...getSelectedChainNodeIds().map(id => id.toString())
+                                  ]}
+                                  onSelectionChange={(keys) => {
+                                    const selectedIds = Array.from(keys).map(key => parseInt(key as string));
+                                    setForm(prev => {
+                                      const newInNodeId = [...prev.inNodeId];
+                                      newInNodeId[entryIndex] = {
+                                        ...newInNodeId[entryIndex],
+                                        exitNodeIds: selectedIds.length > 0 ? selectedIds : undefined
+                                      };
+                                      return { ...prev, inNodeId: newInNodeId };
+                                    });
+                                  }}
+                                  variant="bordered"
+                                  size="sm"
+                                >
+                                  {(form.outNodeId || []).map((outEntry) => {
+                                    const outNode = nodes.find(n => n.id === outEntry.nodeId);
+                                    if (!outNode) return null;
+                                    return (
+                                      <SelectItem
+                                        key={outEntry.nodeId}
+                                        textValue={outNode.name}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span>{outNode.name}</span>
+                                          <Chip
+                                            color={outNode.status === 1 ? 'success' : 'default'}
+                                            variant="flat"
+                                            size="sm"
+                                          >
+                                            {outNode.status === 1 ? '在线' : '离线'}
+                                          </Chip>
+                                        </div>
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </Select>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
 
                     {/* 隧道转发时显示转发链配置 */}
                     {form.type === 2 && (
