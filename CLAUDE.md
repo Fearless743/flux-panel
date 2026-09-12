@@ -13,7 +13,7 @@ flux-panel（转发面板）管理多节点 GOST 代理：面板下发隧道/转
 ## 仓库结构（大图）
 
 | 路径 | 角色 |
-|------|------|
+| ------ | ------ |
 | `go-backend/` | **面板业务后端**（Gin + sqlx + SQLite + gorilla/websocket） |
 | `vite-frontend/` | 管理后台（React 18 + Vite + HeroUI + Tailwind） |
 | `go-gost/` | **节点 agent**（基于 go-gost/x，含面板 WS 上报与指令执行） |
@@ -27,7 +27,7 @@ flux-panel（转发面板）管理多节点 GOST 代理：面板下发隧道/转
 
 ## 运行时架构
 
-```
+```text
 浏览器 / 移动端 ──► Caddy:80 ──► 静态 /srv
                       │
                       ├─ /api/*        ──► go-backend:6365
@@ -54,7 +54,9 @@ export PORT=6365 DB_PATH=./data/gost.db JWT_SECRET=your-secret
 go run ./cmd/server
 
 go build ./...                    # 改后端后必须通过
-go test ./...                     # 现有单测极少
+go vet ./...                      # 改后端后建议一并跑
+# 单测极少（crypto/names/ws 三个包），跑全部或指定：
+go test ./...                     
 go test ./internal/crypto/        # 跑单个包
 go test ./internal/crypto/ -run TestName
 ```
@@ -98,28 +100,42 @@ docker run -d -p 6366:80 -e JWT_SECRET=secret -v data:/app/data \
   ghcr.io/fearless743/flux-panel:dev
 ```
 
-CI（`.github/workflows/docker-build.yml`）：推送数字开头 tag（如 `2.0.9-beta`）→ 构建 multi-arch 面板镜像 + 压缩 gost 二进制并上传 Release。兼容镜像标签 `go-backend` 与 `flux-panel` 为**同一镜像**。
+CI（`.github/workflows/docker-build.yml`）：推送数字开头 tag（如 `2.0.9-beta`）→ 构建 multi-arch 面板镜像 + 压缩 gost 二进制并上传 Release。
 
-## go-backend 分层与契约
+## go-backend 分层、契约与约定
+
+### 分层结构（文本示意）
 
 ```
-cmd/server/main.go
+cmd/server/main.go          # 启动：加载配置 → 开 DB → 建 Hub → 注册路由 → 起 cron
 internal/
-  handler/     # Gin 路由与 HTTP 入口（routes.go 路径禁止改）
-  service/     # 业务（含 node_sync、tunnel_detach、forward 批量并发）
-  repo/        # SQL
-  model/       # 表结构
-  ws/hub.go    # 节点/管理端会话、SendMsg
-  gost/        # 服务命名 + 指令 payload（与节点对账，命名不可随意改）
-  auth/        # JWT、MD5 密码
-  crypto/      # AES-GCM（密钥 SHA-256(secret)，与节点兼容）
-  middleware/  # CORS、JWT、Admin
-  response/    # {code,msg,ts,data}，成功 code=0
-  task/        # cron：流量重置、统计、WAL checkpoint
-  db/          # schema embed、WAL
+  handler/                  # Gin 路由入口（App 结构体持有 DB/JWT/Hub/Config）
+  service/                  # 业务逻辑（每模块一个 .go，函数命名 PascalCase）
+  repo/                     # 数据访问（每表一个 *Repo 结构体 + NewXxxRepo(db) 构造函数）
+  model/                    # DB 表结构（struct tag：db:"column" json:"field"）
+  ws/hub.go                 # WebSocket 会话管理（节点+管理端双通道）
+  gost/                     # 服务命名规则 + 指令 payload 工具函数（与节点对账）
+  auth/                     # JWT 签发/验证、MD5 密码
+  crypto/                   # AES-GCM 加密（密钥 = SHA-256(secret)）
+  middleware/               # CORS、JWT、Admin；ctx key：CtxUserID/CtxRoleID/CtxName
+  response/                 # R{} 响应包（OK/Err/Unauthorized/ErrCode）
+  task/                     # cron 定时任务（流量重置/统计/WAL checkpoint）
+  db/                       # SQLite 初始化（embed schema.sql + data.sql）
 ```
 
-硬规则（详见 `go-backend/AGENTS_SPEC.md` 与 `SPEC_*.md`）：
+### Go 代码约定
+
+- **import 顺序**：标准库 → 第三方（按字母序）→ 项目内（`github.com/Fearless743/flux-panel/...`），组间空一行。
+- **错误处理**：统一 `fmt.Errorf("xxx: %w", err)` 包装；判断空行用 `errors.Is(err, sql.ErrNoRows)`。
+- **repo 模式**：每个表对应一个 `XxxRepo` 结构体，构造函数 `NewXxxRepo(db *sqlx.DB)`，方法直接操作 DB。
+- **service 模式**：构造函数签名 `NewXxxService(db *sqlx.DB, hub *ws.Hub)`，持有 `DB`、`Hub`、`Repo` 字段；业务函数 PascalCase（如 `CreateForward`）。批量推送节点时并发度固定为 `batchConcurrency = 8`。
+- **response 响应**：所有 HTTP 接口返回 `{code,msg,ts,data}`，成功 `code=0`，失败 `code=-1`，未登录 `code=401`，无权限 `code=403`。用 `response.OK/Err/Unauthorized/Forbidden(c, ...)` 辅助函数，勿手动构造 `gin.Context.JSON`。
+- **model 标签**：struct tag 同时含 `db:"column"` 和 `json:"field"`（驼峰），如 `db:"id" json:"id"`。
+- **DB 连接**：`modernc.org/sqlite`（纯 Go，无 CGO）；WAL 模式，`MaxOpenConns=1`（写串行防竞争）。
+- **配置嵌入**：`//go:embed schema.sql data.sql` 在启动时自动执行，无需外部迁移工具。
+- **日志**：标准库 `log/slog`，Info 级别输出到 stdout；无结构化 JSON 日志。
+
+### 硬规则
 
 1. **禁止改 API 路径**（`handler/routes.go` 与 Java 1:1）。
 2. JWT Header：`Authorization: <token>`（**无** `Bearer` 前缀）。
@@ -133,14 +149,19 @@ internal/
    - 链：`chains_{tunnelId}`
 8. 改后端后至少 `cd go-backend && go build ./...`。
 
-领域规格（实现前先读对应 SPEC）：
+---
 
-- `SPEC_NODE_WS.md` — 节点 CRUD、WS 注册、安装命令
-- `SPEC_TUNNEL.md` — 隧道拓扑、detach、UserTunnel
-- `SPEC_FORWARD.md` — 转发增删改、批量、pause/resume
-- `SPEC_FLOW_TASK.md` — 流量上报/清理、cron
-- `SPEC_SPEED.md` — 限速器
-- `SPEC_USER.md` — 用户/验证码/配置/OpenAPI 订阅
+## 前端约定（`vite-frontend/`）
+
+- **TypeScript 严格模式**：`strict: true`、`noUnusedLocals`、`noUnusedParameters`、`noFallthroughCasesInSwitch` 均开启，编译时必须干净。
+- **ESLint**：用 flat config（`eslint.config.mjs`），`npm run lint` 已带 `--fix`；import 顺序有分组约束（type → builtin → external → internal → parent → sibling → index）。
+- **路径别名**：`@/*` → `src/*`（tsconfig + vite 均配置）。
+- **API 客户端**：`src/api/network.ts` 用 axios，拦截器处理 401（清 localStorage → 跳首页）；生产环境走同源 `/api/v1/`（Caddy 反代）。
+- **构建**：Docker 中跳过 `tsc`（只跑 `vite build`），类型检查留给本地或 CI；开发环境 Vite :3000，`VITE_API_BASE` 指向后端地址。
+- **UI 组件库**：统一用 **HeroUI**（`@heroui/*`），页面内按需引入（`Button`、`Input`、`Modal`、`Chip`、`Select`、`RadioGroup`、`DatePicker`、`Spinner`、`Progress`、`Divider` 等），勿自行写基础控件。
+- **Toast**：用 `react-hot-toast`，操作反馈调用 `toast.success()/toast.error()`。
+- **类型定义**：前端业务类型集中在 `src/types/index.ts`，后端请求/响应结构体也需在此补充对应 interface，避免散落在页面文件中。
+- **页面结构**：`src/pages/` 下每模块一个 `.tsx`，组件以 function component + hooks 为主；图标放 `src/components/icons.tsx`。
 
 ## 节点 agent 要点（`go-gost/`）
 
@@ -148,12 +169,6 @@ internal/
 - WS 指令类型：`AddService`/`UpdateService`/`DeleteService`/`PauseService`/`ResumeService`、`AddChains`/`UpdateChains`/`DeleteChains`、`AddLimiters`/`UpdateLimiters`/`DeleteLimiters`、`TcpPing`、`SetProtocol`、`Upgrade`。
 - 远程升级：`Upgrade` 异步下载校验、备份替换；`upgrade-apply.sh` 健康检查失败回滚。节点必须先具备带 Upgrade 的二进制后，才能用面板一键升。
 - Release 产物名：`gost-amd64` / `gost-arm64`。
-
-## 前端要点（`vite-frontend/`）
-
-- 入口：`src/main.tsx`、`src/App.tsx`；API：`src/api/network.ts`（axios + `Authorization` token）、`src/api/index.ts`。
-- 页面：`dashboard` / `forward` / `tunnel` / `node` / `user` / `limit` / `config` / `profile` / `settings`；H5 与桌面双布局。
-- 路径别名：`@` → `src`。
 
 ## 开发时注意
 

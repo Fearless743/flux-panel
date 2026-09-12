@@ -112,10 +112,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          # 唯一面板镜像 + 兼容别名 go-backend（同一镜像）
+          # 唯一面板镜像（Caddy + Go + Frontend）
           images: |
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/flux-panel
-            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/go-backend
           tags: |
             type=raw,value=latest
             type=raw,value=${{ github.ref_name }}
@@ -187,8 +186,7 @@ jobs:
           - **Commit**: [\`${GITHUB_SHA:0:7}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
 
           ## 📦 Images
-          - \`ghcr.io/${OWNER}/flux-panel:${VERSION}\` — **唯一面板镜像**（Caddy + Go 后端 + 前端）
-          - 兼容标签：\`go-backend:${VERSION}\`（同一镜像）
+          - \`ghcr.io/${OWNER}/flux-panel:${VERSION}\` — 面板镜像（Caddy + Go 后端 + 前端）
           - 对外端口 **80**（compose 映射 \`PANEL_PORT\`，默认 6366）
           - 节点请将面板地址配到该端口；\`/api\` \`/flow\` \`/system-info\` 由 Caddy 反代" \
               --repo ${{ github.repository }}

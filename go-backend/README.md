@@ -36,7 +36,7 @@ docker run -d -p 6366:80 -e JWT_SECRET=secret -v data:/app/data ghcr.io/fearless
 ```
 
 - 对外 **80**（Caddy）：静态前端 + 反代 `/api/*`、`/flow/*`、`/system-info*` → 本进程 `127.0.0.1:6365`
-- CI tag 推送：`flux-panel` + 兼容标签 `go-backend`（同一镜像）
+- CI tag 推送：`flux-panel`（唯一镜像）
 
 ### 仅后端镜像（开发/对照）
 
