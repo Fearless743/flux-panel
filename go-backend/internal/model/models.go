@@ -28,6 +28,8 @@ type Node struct {
 	AutoDetectIP bool `db:"auto_detect_ip" json:"autoDetectIP"`
 	// DetectedIP 节点上线时自动捕获的真实 IP
 	DetectedIP    string  `db:"detected_ip" json:"detectedIp"`
+	// NodeIPs 节点的所有 IP 地址列表（JSON 数组）
+	NodeIPs       string  `db:"node_ips" json:"nodeIps"`
 	Port          string  `db:"port" json:"port"`
 	InterfaceName *string `db:"interface_name" json:"interfaceName"`
 	Version       *string `db:"version" json:"version"`
