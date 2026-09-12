@@ -64,6 +64,23 @@ func (r *ChainTunnelRepo) ListByNodeID(nodeID int64) ([]model.ChainTunnel, error
 	return list, err
 }
 
+// ListByNodeIDs 批量查询多个节点的链隧道（N+1 优化）
+func (r *ChainTunnelRepo) ListByNodeIDs(nodeIDs []int64) ([]model.ChainTunnel, error) {
+	if len(nodeIDs) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT * FROM chain_tunnel WHERE node_id IN (?)`, nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.ChainTunnel
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *ChainTunnelRepo) ListByNodeIDWithPort(nodeID int64) ([]model.ChainTunnel, error) {
 	var list []model.ChainTunnel
 	err := r.DB.Select(&list, `SELECT * FROM chain_tunnel WHERE node_id = ? AND port IS NOT NULL`, nodeID)

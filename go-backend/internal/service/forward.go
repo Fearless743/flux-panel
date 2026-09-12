@@ -113,26 +113,88 @@ func (s *ForwardService) List(user CurrentUser) ([]repo.ForwardWithTunnel, error
 	if list == nil {
 		list = []repo.ForwardWithTunnel{}
 	}
-
-	for i := range list {
-		s.fillInIP(&list[i])
+	if len(list) > 0 {
+		if err := s.FillInIPBatch(list); err != nil {
+			return nil, err
+		}
 	}
 	return list, nil
 }
 
-func (s *ForwardService) fillInIP(f *repo.ForwardWithTunnel) {
-	tunnel, err := s.Repo.GetTunnel(int64(f.TunnelID))
-	if err != nil || tunnel == nil {
-		return
+// FillInIPBatch 批量填充转发列表的 inIp / inPort 字段（单次 N+1 优化）
+// 一次查询取所有 tunnel、所有 forward_port、所有 node，构建内存 map 后 O(1) 查找
+func (s *ForwardService) FillInIPBatch(list []repo.ForwardWithTunnel) error {
+	// 收集所有唯一的 tunnel_id 和 node_id
+	tunnelIDs := make(map[int64]struct{})
+	nodeIDs := make(map[int64]struct{})
+	forwardIDs := make([]int64, 0, len(list))
+	for _, f := range list {
+		forwardIDs = append(forwardIDs, f.ID)
+		tunnelIDs[int64(f.TunnelID)] = struct{}{}
 	}
-	ports, err := s.Port.ListByForwardID(f.ID)
-	if err != nil || len(ports) == 0 {
+	// 先查 forward_port 获取 node_id 集合
+	portsMap, err := s.Port.ListByForwardIDs(forwardIDs)
+	if err != nil {
+		return err
+	}
+	for _, fps := range portsMap {
+		for _, fp := range fps {
+			nodeIDs[fp.NodeID] = struct{}{}
+		}
+	}
+	// 批量查 tunnel
+	tunnelSlice := make([]int64, 0, len(tunnelIDs))
+	for id := range tunnelIDs {
+		tunnelSlice = append(tunnelSlice, id)
+	}
+	tunnels, err := s.Repo.ListTunnelsByIDs(tunnelSlice)
+	if err != nil {
+		return err
+	}
+	tunnelMap := make(map[int64]*model.Tunnel, len(tunnels))
+	for i := range tunnels {
+		tunnelMap[tunnels[i].ID] = &tunnels[i]
+	}
+	// 批量查 node
+	nodeSlice := make([]int64, 0, len(nodeIDs))
+	for id := range nodeIDs {
+		nodeSlice = append(nodeSlice, id)
+	}
+	nodes, err := s.Repo.ListNodesByIDs(nodeSlice)
+	if err != nil {
+		return err
+	}
+	nodeMap := make(map[int64]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	// 填充每条转发
+	for i := range list {
+		s.fillInIPLocal(&list[i], tunnelMap, portsMap, nodeMap)
+	}
+	return nil
+}
+
+func (s *ForwardService) fillInIPLocal(f *repo.ForwardWithTunnel,
+	tunnelMap map[int64]*model.Tunnel,
+	portsMap map[int64][]model.ForwardPort,
+	nodeMap map[int64]*model.Node,
+) {
+	tunnel := tunnelMap[int64(f.TunnelID)]
+	ports := portsMap[f.ID]
+	if tunnel == nil || len(ports) == 0 {
 		return
 	}
 
 	useTunnelInIP := tunnel.InIP != nil && strings.TrimSpace(*tunnel.InIP) != ""
 	ipPortSet := make([]string, 0)
 	seen := make(map[string]struct{})
+	add := func(s string) {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			ipPortSet = append(ipPortSet, s)
+		}
+	}
 
 	if useTunnelInIP {
 		ipList := make([]string, 0)
@@ -142,16 +204,11 @@ func (s *ForwardService) fillInIP(f *repo.ForwardWithTunnel) {
 				ipList = append(ipList, ip)
 			}
 		}
-		// distinct ips
 		uniqIP := uniqueStrings(ipList)
 		uniqPorts := uniqueInts(portsToInts(ports))
 		for _, ip := range uniqIP {
 			for _, p := range uniqPorts {
-				key := fmt.Sprintf("%s:%d", ip, p)
-				if _, ok := seen[key]; !ok {
-					seen[key] = struct{}{}
-					ipPortSet = append(ipPortSet, key)
-				}
+				add(fmt.Sprintf("%s:%d", ip, p))
 			}
 		}
 		if len(uniqPorts) > 0 {
@@ -160,15 +217,11 @@ func (s *ForwardService) fillInIP(f *repo.ForwardWithTunnel) {
 		}
 	} else {
 		for _, fp := range ports {
-			node, err := s.Repo.GetNode(fp.NodeID)
-			if err != nil || node == nil || node.GetEffectiveIP() == "" {
+			n := nodeMap[fp.NodeID]
+			if n == nil || n.GetEffectiveIP() == "" {
 				continue
 			}
-			key := fmt.Sprintf("%s:%d", node.GetEffectiveIP(), fp.Port)
-			if _, ok := seen[key]; !ok {
-				seen[key] = struct{}{}
-				ipPortSet = append(ipPortSet, key)
-			}
+			add(fmt.Sprintf("%s:%d", n.GetEffectiveIP(), fp.Port))
 		}
 		if len(ports) > 0 {
 			p := ports[0].Port

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/gost"
@@ -273,6 +274,18 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 		}
 	}
 
+	// 批量预取节点（入口节点已在上面逐个获取，此处补全 type2 的批量路径以减少后续重复）
+	// 注意：GetNodePort 需要串行以保证端口不冲突，此处仅做节点信息的批量验证
+	if len(nodeIDs) > 0 {
+		batchNodes, err := s.Node.ListByIDs(nodeIDs)
+		if err != nil {
+			return err
+		}
+		for i := range batchNodes {
+			nodes[batchNodes[i].ID] = &batchNodes[i]
+		}
+	}
+
 	// 节点不重复
 	set := make(map[int64]struct{})
 	for _, id := range nodeIDs {
@@ -355,32 +368,22 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 
 	// type2 下发
 	if tunnel.Type == 2 {
-		type successRef struct {
-			nodeID int64
-			kind   string // chain / service
-			name   string
-		}
 		var success []successRef
 		rollback := func() {
 			_ = s.Tunnel.Delete(tunnel.ID)
 			_ = s.Chain.DeleteByTunnelID(tunnel.ID)
-			for _, r := range success {
-				if r.kind == "chain" {
-					deleteChains(s.Hub, r.nodeID, r.name)
-				} else {
-					deleteService(s.Hub, r.nodeID, []string{r.name})
-				}
-			}
+			parallelDeleteChains(s.Hub, collectDeleteChainTasks(success))
+			parallelDeleteServices(s.Hub, collectDeleteServiceTasks(success, "service"))
 		}
 
-		// 入口 → 第一跳 / 出口
+		// 入口 → 第一跳 / 出口（并行）
+		entryTasks := make([]chainSendTask, 0, len(entries))
+		entrySuccessNodes := make([]int64, 0, len(entries))
 		for _, entry := range entries {
 			var target []model.ChainTunnel
 			if len(chainGroups) == 0 {
-				// 无转发链时，根据入口的 ExitNodeIDs 过滤出口节点
 				target = filterExitsByEntry(outNodes, entry)
 			} else if groups, ok := entryChainGroupsMap[entry.NodeID]; ok {
-				// 有绑定链组：按指定索引选择目标链组
 				target = make([]model.ChainTunnel, 0, len(chainGroups))
 				for _, gi := range groups {
 					if gi >= 0 && gi < len(chainGroups) {
@@ -393,20 +396,31 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			} else {
 				target = chainGroups[0]
 			}
-			res := s.addChains(entry.NodeID, target, nodes)
-			if !gost.IsOK(res.Msg) {
-				// 无转发链时 Java isError 为空，这里仍按失败回滚更安全
-				if len(chainGroups) == 0 {
-					// 对齐 Java isError 空实现：忽略
-					continue
-				}
+			entryTasks = append(entryTasks, chainSendTask{nodeID: entry.NodeID, target: target})
+			entrySuccessNodes = append(entrySuccessNodes, entry.NodeID)
+		}
+		entryFailures := parallelSendChains(s.Hub, entryTasks, nodes)
+		for _, name := range entryFailures {
+			// 无转发链时忽略失败（对齐 Java isError 空实现）
+			if len(chainGroups) > 0 {
 				rollback()
-				return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
+				return fmt.Errorf("入口[%s]链下发失败", name)
 			}
-			success = append(success, successRef{nodeID: entry.NodeID, kind: "chain", name: gost.ChainName(tunnel.ID)})
+		}
+		for _, nodeID := range entrySuccessNodes {
+			hasFail := false
+			for _, fn := range entryFailures {
+				if fn == nodeName(nodes, nodeID) {
+					hasFail = true
+					break
+				}
+			}
+			if !hasFail {
+				success = append(success, successRef{nodeID: nodeID, kind: "chain", name: gost.ChainName(tunnel.ID)})
+			}
 		}
 
-		// 转发链
+		// 转发链（chain + service 并行下发，失败则回滚）
 		for i := range chainGroups {
 			var target []model.ChainTunnel
 			if i+1 < len(chainGroups) {
@@ -414,30 +428,41 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			} else {
 				target = outNodes
 			}
+			groupChainTasks := make([]chainSendTask, 0, len(chainGroups[i]))
+			groupServiceTasks := make([]serviceSendTask, 0, len(chainGroups[i]))
 			for _, ct := range chainGroups[i] {
-				res := s.addChains(ct.NodeID, target, nodes)
-				if !gost.IsOK(res.Msg) {
-					rollback()
-					return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
-				}
+				groupChainTasks = append(groupChainTasks, chainSendTask{nodeID: ct.NodeID, target: target})
+				groupServiceTasks = append(groupServiceTasks, serviceSendTask{nodeID: ct.NodeID, ct: ct})
+			}
+			chainFailures := parallelSendChains(s.Hub, groupChainTasks, nodes)
+			if len(chainFailures) > 0 {
+				rollback()
+				return fmt.Errorf("%s", gost.NormalizeOK("转发链链下发失败: "+strings.Join(chainFailures, ", ")))
+			}
+			for _, ct := range chainGroups[i] {
 				success = append(success, successRef{nodeID: ct.NodeID, kind: "chain", name: gost.ChainName(tunnel.ID)})
-
-				res = s.addChainService(ct.NodeID, ct, nodes)
-				if !gost.IsOK(res.Msg) {
-					rollback()
-					return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
-				}
+			}
+			serviceFailures := parallelSendServices(s.Hub, groupServiceTasks, nodes)
+			if len(serviceFailures) > 0 {
+				rollback()
+				return fmt.Errorf("%s", gost.NormalizeOK("转发链服务下发失败: "+strings.Join(serviceFailures, ", ")))
+			}
+			for _, ct := range chainGroups[i] {
 				success = append(success, successRef{nodeID: ct.NodeID, kind: "service", name: gost.TunnelTLS(tunnel.ID)})
 			}
 		}
 
-		// 出口
+		// 出口（并行）
+		outServiceTasks := make([]serviceSendTask, 0, len(outNodes))
 		for _, ct := range outNodes {
-			res := s.addChainService(ct.NodeID, ct, nodes)
-			if !gost.IsOK(res.Msg) {
-				rollback()
-				return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
-			}
+			outServiceTasks = append(outServiceTasks, serviceSendTask{nodeID: ct.NodeID, ct: ct})
+		}
+		outFailures := parallelSendServices(s.Hub, outServiceTasks, nodes)
+		if len(outFailures) > 0 {
+			rollback()
+			return fmt.Errorf("%s", gost.NormalizeOK("出口服务下发失败: "+strings.Join(outFailures, ", ")))
+		}
+		for _, ct := range outNodes {
 			success = append(success, successRef{nodeID: ct.NodeID, kind: "service", name: gost.TunnelTLS(tunnel.ID)})
 		}
 	}
@@ -645,7 +670,27 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 		}
 	}
 
-	// 端口沿用
+	// 端口沿用：批量预取新端口（需新端口的节点一次查询）
+	newPortNodeIDs := make([]int64, 0)
+	for gi := range newChains {
+		for i := range newChains[gi] {
+			ct := &newChains[gi][i]
+			if _, ok := oldPorts[ct.NodeID]; !ok {
+				newPortNodeIDs = append(newPortNodeIDs, ct.NodeID)
+			}
+		}
+	}
+	for i := range newOuts {
+		ct := &newOuts[i]
+		if _, ok := oldPorts[ct.NodeID]; !ok {
+			newPortNodeIDs = append(newPortNodeIDs, ct.NodeID)
+		}
+	}
+	batchPorts, err := s.GetAvailablePortsBatch(newPortNodeIDs)
+	if err != nil {
+		return err
+	}
+	// 分配端口
 	for gi := range newChains {
 		for i := range newChains[gi] {
 			ct := &newChains[gi][i]
@@ -653,31 +698,33 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 				pp := p
 				ct.Port = &pp
 			} else {
-				port, err := s.GetNodePort(ct.NodeID)
-				if err != nil {
-					return err
+				avail := batchPorts[ct.NodeID]
+				if len(avail) == 0 {
+					return fmt.Errorf("节点 %s 端口已满，无可用端口", nodeName(nodes, ct.NodeID))
 				}
-				ct.Port = &port
+				p := avail[0]
+				ct.Port = &p
 			}
 		}
 	}
 	for i := range newOuts {
 		ct := &newOuts[i]
 		if p, ok := oldPorts[ct.NodeID]; ok {
-			pp := p
-			ct.Port = &pp
+			p := p
+			ct.Port = &p
 		} else {
-			port, err := s.GetNodePort(ct.NodeID)
-			if err != nil {
-				return err
+			avail := batchPorts[ct.NodeID]
+			if len(avail) == 0 {
+				return fmt.Errorf("节点 %s 端口已满，无可用端口", nodeName(nodes, ct.NodeID))
 			}
-			ct.Port = &port
+			p := avail[0]
+			ct.Port = &p
 		}
 	}
 
 	var failures []string
 
-	// 清理旧 gost
+	// 清理旧 gost（并行）
 	if isTunnelForward {
 		chainNeeded := make(map[int64]struct{})
 		serviceNeeded := make(map[int64]struct{})
@@ -693,29 +740,25 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 		for _, ct := range newOuts {
 			serviceNeeded[ct.NodeID] = struct{}{}
 		}
-		chainCleaned := make(map[int64]struct{})
-		serviceCleaned := make(map[int64]struct{})
+		var chainCleanTasks []deleteChainTask
+		var serviceCleanTasks []deleteServiceTask
 		for _, old := range oldRecords {
 			ct := repo.ChainTypeOf(old)
 			hadChain := ct == 1 || ct == 2
 			hadService := ct == 2 || ct == 3
 			if hadChain {
 				if _, need := chainNeeded[old.NodeID]; !need {
-					if _, done := chainCleaned[old.NodeID]; !done {
-						deleteChains(s.Hub, old.NodeID, gost.ChainName(tunnelID))
-						chainCleaned[old.NodeID] = struct{}{}
-					}
+					chainCleanTasks = append(chainCleanTasks, deleteChainTask{nodeID: old.NodeID, name: gost.ChainName(tunnelID)})
 				}
 			}
 			if hadService {
 				if _, need := serviceNeeded[old.NodeID]; !need {
-					if _, done := serviceCleaned[old.NodeID]; !done {
-						deleteService(s.Hub, old.NodeID, []string{gost.TunnelTLS(tunnelID)})
-						serviceCleaned[old.NodeID] = struct{}{}
-					}
+					serviceCleanTasks = append(serviceCleanTasks, deleteServiceTask{nodeID: old.NodeID, names: []string{gost.TunnelTLS(tunnelID)}})
 				}
 			}
 		}
+		parallelDeleteChains(s.Hub, chainCleanTasks)
+		parallelDeleteServices(s.Hub, serviceCleanTasks)
 	}
 
 	// DB 替换
@@ -837,9 +880,22 @@ func (s *TunnelService) migrateForwardServices(
 	}
 	fwSvc := NewForwardService(s.DB, s.Hub)
 
+	// 批量预取：forward_port、user_tunnel、可用端口
+	var fwdIDs []int64
+	for i := range forwards {
+		fwdIDs = append(fwdIDs, forwards[i].ID)
+	}
+	portsMap, _ := s.Port.ListByForwardIDs(fwdIDs)
+	utMap, _ := s.getUserTunnelMap(forwards, tunnel.ID)
+	addedNodeIDs := make([]int64, 0, len(added))
+	for id := range added {
+		addedNodeIDs = append(addedNodeIDs, id)
+	}
+	batchPorts, _ := s.GetAvailablePortsBatch(addedNodeIDs)
+
 	for i := range forwards {
 		fw := &forwards[i]
-		ut, _ := s.UserTunn.GetByUserAndTunnel(fw.UserID, int(tunnel.ID))
+		ut := utMap[fw.ID]
 		utID := int64(0)
 		var limiter *int
 		if ut != nil {
@@ -850,7 +906,7 @@ func (s *TunnelService) migrateForwardServices(
 
 		// preferred port
 		var preferredPort *int
-		existingPorts, _ := s.Port.ListByForwardID(fw.ID)
+		existingPorts := portsMap[fw.ID]
 		for _, fp := range existingPorts {
 			p := fp.Port
 			if preferredPort == nil {
@@ -862,11 +918,20 @@ func (s *TunnelService) migrateForwardServices(
 			}
 		}
 
+		// 并行删除旧服务
+		var delTasks []deleteServiceTask
 		for nodeID := range removed {
-			deleteService(s.Hub, nodeID, []string{base + "_tcp", base + "_udp"})
+			delTasks = append(delTasks, deleteServiceTask{nodeID: nodeID, names: []string{base + "_tcp", base + "_udp"}})
 			_ = s.Port.DeleteByForwardAndNode(fw.ID, nodeID)
 		}
+		parallelDeleteServices(s.Hub, delTasks)
 
+		// 并行添加新服务
+		var addTasks []struct {
+			nodeID int64
+			fp     *model.ForwardPort
+			n      *model.Node
+		}
 		for nodeID := range added {
 			n := nodes[nodeID]
 			if n == nil {
@@ -877,11 +942,7 @@ func (s *TunnelService) migrateForwardServices(
 				*failures = append(*failures, fmt.Sprintf("转发[%s]节点不存在", fw.Name))
 				continue
 			}
-			available, err := s.GetAvailablePorts(nodeID)
-			if err != nil {
-				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]分配端口失败: %s", fw.Name, n.Name, err.Error()))
-				continue
-			}
+			available := batchPorts[nodeID]
 			if len(available) == 0 {
 				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]分配端口失败: 节点端口已满，无可用端口", fw.Name, n.Name))
 				continue
@@ -900,14 +961,53 @@ func (s *TunnelService) migrateForwardServices(
 				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]保存端口失败: %s", fw.Name, n.Name, err.Error()))
 				continue
 			}
-			msg := fwSvc.addOrUpdateService(base, limiter, n, fw, fp, tunnel, "AddService")
+			addTasks = append(addTasks, struct {
+				nodeID int64
+				fp     *model.ForwardPort
+				n      *model.Node
+			}{nodeID: nodeID, fp: fp, n: n})
+		}
+		// 并行下发 AddService
+		for _, t := range addTasks {
+			msg := fwSvc.addOrUpdateService(base, limiter, t.n, fw, t.fp, tunnel, "AddService")
 			if !gost.IsOK(msg) {
-				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]创建失败: %s", fw.Name, n.Name, gost.NormalizeOK(msg)))
+				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]创建失败: %s", fw.Name, t.n.Name, gost.NormalizeOK(msg)))
 			} else if fw.Status == 0 {
-				_ = s.Hub.SendMsg(nodeID, gost.PauseResumePayload(base), "PauseService")
+				_ = s.Hub.SendMsg(t.nodeID, gost.PauseResumePayload(base), "PauseService")
 			}
 		}
 	}
+}
+
+// getUserTunnelMap 批量查询多条转发的 user_tunnel，构建 forwardID -> user_tunnel 映射
+func (s *TunnelService) getUserTunnelMap(forwards []model.Forward, tunnelID int64) (map[int64]*model.UserTunnel, error) {
+	userIDs := make(map[int]struct{})
+	for _, fw := range forwards {
+		userIDs[fw.UserID] = struct{}{}
+	}
+	userTunnelMap := make(map[int64]int64) // userID -> userTunnelID
+	for userID := range userIDs {
+		ut, err := s.UserTunn.GetByUserAndTunnel(userID, int(tunnelID))
+		if err != nil {
+			continue
+		}
+		if ut != nil {
+			userTunnelMap[int64(userID)] = int64(ut.ID)
+		}
+	}
+	result := make(map[int64]*model.UserTunnel, len(forwards))
+	for _, fw := range forwards {
+		utID := userTunnelMap[int64(fw.UserID)]
+		if utID == 0 {
+			continue
+		}
+		ut, err := s.UserTunn.GetByID(int(utID))
+		if err != nil || ut == nil {
+			continue
+		}
+		result[fw.ID] = ut
+	}
+	return result, nil
 }
 
 // ---- delete ----
@@ -1319,8 +1419,230 @@ func nodeName(nodes map[int64]*model.Node, id int64) string {
 	return fmt.Sprintf("%d", id)
 }
 
+// ---- 并行发送辅助 ----
+
+// parallelSendChains 并行向多个节点下发 AddChains，返回失败节点名列表
+func parallelSendChains(hub *ws.Hub, tasks []chainSendTask, nodes map[int64]*model.Node) []string {
+	if len(tasks) == 0 {
+		return nil
+	}
+	if len(tasks) == 1 {
+		res := pushChains(hub, tasks[0].nodeID, tasks[0].target, nodes)
+		if !gost.IsOK(res.Msg) {
+			return []string{nodeName(nodes, tasks[0].nodeID)}
+		}
+		return nil
+	}
+	errCh := make(chan string, len(tasks))
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		t := t
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res := pushChains(hub, t.nodeID, t.target, nodes)
+			if !gost.IsOK(res.Msg) {
+				errCh <- nodeName(nodes, t.nodeID)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	failures := make([]string, 0, len(errCh))
+	for f := range errCh {
+		failures = append(failures, f)
+	}
+	return failures
+}
+
+// successRef 记录已成功下发的节点操作（用于回滚）
+type successRef struct {
+	nodeID int64
+	kind   string // chain / service
+	name   string
+}
+
+type chainSendTask struct {
+	nodeID int64
+	target []model.ChainTunnel
+}
+
+// parallelSendServices 并行向多个节点下发 AddService，返回失败节点名列表
+func parallelSendServices(hub *ws.Hub, tasks []serviceSendTask, nodes map[int64]*model.Node) []string {
+	if len(tasks) == 0 {
+		return nil
+	}
+	if len(tasks) == 1 {
+		res := pushChainService(hub, tasks[0].nodeID, tasks[0].ct, nodes)
+		if !gost.IsOK(res.Msg) {
+			return []string{nodeName(nodes, tasks[0].nodeID)}
+		}
+		return nil
+	}
+	errCh := make(chan string, len(tasks))
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		t := t
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res := pushChainService(hub, t.nodeID, t.ct, nodes)
+			if !gost.IsOK(res.Msg) {
+				errCh <- nodeName(nodes, t.nodeID)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	failures := make([]string, 0, len(errCh))
+	for f := range errCh {
+		failures = append(failures, f)
+	}
+	return failures
+}
+
+type serviceSendTask struct {
+	nodeID int64
+	ct     model.ChainTunnel
+}
+
+// parallelDeleteServices 并行向多个节点删除服务，用于清理孤立配置
+func parallelDeleteServices(hub *ws.Hub, tasks []deleteServiceTask) {
+	if len(tasks) == 0 {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		t := t
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deleteService(hub, t.nodeID, t.names)
+		}()
+	}
+	wg.Wait()
+}
+
+type deleteServiceTask struct {
+	nodeID int64
+	names  []string
+}
+
+// parallelDeleteChains 并行向多个节点删除链，用于清理孤立配置
+func parallelDeleteChains(hub *ws.Hub, tasks []deleteChainTask) {
+	if len(tasks) == 0 {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		t := t
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deleteChains(hub, t.nodeID, t.name)
+		}()
+	}
+	wg.Wait()
+}
+
+type deleteChainTask struct {
+	nodeID int64
+	name   string
+}
+
+// GetAvailablePortsBatch 批量获取多个节点的可用端口，避免逐节点 N+1 查询
+func (s *TunnelService) GetAvailablePortsBatch(nodeIDs []int64) (map[int64][]int, error) {
+	if len(nodeIDs) == 0 {
+		return map[int64][]int{}, nil
+	}
+	// 批量查节点
+	nodes, err := s.Node.ListByIDs(nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	nodeMap := make(map[int64]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	// 批量查 chain_tunnel 占用端口
+	cts, err := s.Chain.ListByNodeIDs(nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	usedByChain := make(map[int64]map[int]struct{})
+	for _, ct := range cts {
+		if ct.Port == nil {
+			continue
+		}
+		if usedByChain[ct.NodeID] == nil {
+			usedByChain[ct.NodeID] = make(map[int]struct{})
+		}
+		usedByChain[ct.NodeID][*ct.Port] = struct{}{}
+	}
+	// 批量查 forward_port 占用端口
+	fps, err := s.Port.ListByNodeIDs(nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	usedByForward := make(map[int64]map[int]struct{})
+	for _, fp := range fps {
+		if usedByForward[fp.NodeID] == nil {
+			usedByForward[fp.NodeID] = make(map[int]struct{})
+		}
+		usedByForward[fp.NodeID][fp.Port] = struct{}{}
+	}
+	// 组装结果
+	result := make(map[int64][]int, len(nodeIDs))
+	for _, id := range nodeIDs {
+		n := nodeMap[id]
+		if n == nil {
+			continue
+		}
+		parsed, err := repo.ParsePorts(n.Port)
+		if err != nil {
+			continue
+		}
+		used := make(map[int]struct{})
+		for p := range usedByChain[id] {
+			used[p] = struct{}{}
+		}
+		for p := range usedByForward[id] {
+			used[p] = struct{}{}
+		}
+		out := make([]int, 0)
+		for _, p := range parsed {
+			if _, ok := used[p]; !ok {
+				out = append(out, p)
+			}
+		}
+		result[id] = out
+	}
+	return result, nil
+}
+
 // filterExitsByEntry 根据入口节点的 ExitNodeIDs 过滤出口节点
 // 如果入口没有指定 ExitNodeIDs，则返回所有出口节点
+func collectDeleteChainTasks(success []successRef) []deleteChainTask {
+	tasks := make([]deleteChainTask, 0)
+	for _, r := range success {
+		if r.kind == "chain" {
+			tasks = append(tasks, deleteChainTask{nodeID: r.nodeID, name: r.name})
+		}
+	}
+	return tasks
+}
+
+// collectDeleteServiceTasks 将 success 列表中 kind==service 的条目转换为并行清理任务
+func collectDeleteServiceTasks(success []successRef, kind string) []deleteServiceTask {
+	tasks := make([]deleteServiceTask, 0)
+	for _, r := range success {
+		if r.kind == kind {
+			tasks = append(tasks, deleteServiceTask{nodeID: r.nodeID, names: []string{r.name}})
+		}
+	}
+	return tasks
+}
+
 func filterExitsByEntry(outNodes []model.ChainTunnel, entry model.ChainTunnel) []model.ChainTunnel {
 	if entry.ExitNodeIDs == nil || *entry.ExitNodeIDs == "" {
 		// 没有指定出口绑定，返回所有出口节点

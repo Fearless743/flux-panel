@@ -188,6 +188,24 @@ func (r *ForwardRepo) GetTunnel(id int64) (*model.Tunnel, error) {
 	return &t, nil
 }
 
+// ListTunnelsByIDs 批量查询隧道（用于 N+1 优化）
+func (r *ForwardRepo) ListTunnelsByIDs(ids []int64) ([]model.Tunnel, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT id, name, traffic_ratio, type, protocol, flow,
+		created_time, updated_time, status, in_ip FROM tunnel WHERE id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.Tunnel
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *ForwardRepo) GetNode(id int64) (*model.Node, error) {
 	var n model.Node
 	err := r.DB.Get(&n, `SELECT id, name, secret, server_ip, port, interface_name, version,
@@ -200,6 +218,25 @@ func (r *ForwardRepo) GetNode(id int64) (*model.Node, error) {
 		return nil, err
 	}
 	return &n, nil
+}
+
+// ListNodesByIDs 批量查询节点（用于 N+1 优化）
+func (r *ForwardRepo) ListNodesByIDs(ids []int64) ([]model.Node, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT id, name, secret, server_ip, port, interface_name, version,
+		http, tls, socks, created_time, updated_time, status, tcp_listen_addr, udp_listen_addr
+		FROM node WHERE id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.Node
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 func (r *ForwardRepo) GetUser(id int64) (*model.User, error) {

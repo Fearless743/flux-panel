@@ -21,6 +21,27 @@ func (r *ForwardPortRepo) ListByForwardID(forwardID int64) ([]model.ForwardPort,
 	return list, err
 }
 
+// ListByForwardIDs 批量查询多条转发的端口记录（N+1 优化）
+func (r *ForwardPortRepo) ListByForwardIDs(forwardIDs []int64) (map[int64][]model.ForwardPort, error) {
+	if len(forwardIDs) == 0 {
+		return map[int64][]model.ForwardPort{}, nil
+	}
+	q, args, err := sqlx.In(`SELECT id, forward_id, node_id, port FROM forward_port WHERE forward_id IN (?) ORDER BY id`, forwardIDs)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.ForwardPort
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	byFwd := make(map[int64][]model.ForwardPort, len(forwardIDs))
+	for _, fp := range list {
+		byFwd[fp.ForwardID] = append(byFwd[fp.ForwardID], fp)
+	}
+	return byFwd, nil
+}
+
 func (r *ForwardPortRepo) GetByForwardAndNode(forwardID, nodeID int64) (*model.ForwardPort, error) {
 	var fp model.ForwardPort
 	err := r.DB.Get(&fp, `SELECT id, forward_id, node_id, port FROM forward_port WHERE forward_id=? AND node_id=?`,
@@ -64,6 +85,23 @@ func (r *ForwardPortRepo) ListByNodeID(nodeID int64) ([]model.ForwardPort, error
 	var list []model.ForwardPort
 	err := r.DB.Select(&list, `SELECT id, forward_id, node_id, port FROM forward_port WHERE node_id=?`, nodeID)
 	return list, err
+}
+
+// ListByNodeIDs 批量查询多个节点的转发端口（N+1 优化）
+func (r *ForwardPortRepo) ListByNodeIDs(nodeIDs []int64) ([]model.ForwardPort, error) {
+	if len(nodeIDs) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT id, forward_id, node_id, port FROM forward_port WHERE node_id IN (?)`, nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.ForwardPort
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 func (r *ForwardPortRepo) UsedPortsOnNode(nodeID int64) ([]int, error) {

@@ -157,5 +157,26 @@ func migrate(db *sqlx.DB) error {
 		}
 		slog.Info("migrated: added brutal column to chain_tunnel")
 	}
+
+	// 批量创建缺失的索引（幂等，不影响已有数据）
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_forward_tunnel_id ON forward(tunnel_id)",
+		"CREATE INDEX IF NOT EXISTS idx_forward_user_id ON forward(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_forward_status ON forward(status)",
+		"CREATE INDEX IF NOT EXISTS idx_forward_port_forward ON forward_port(forward_id)",
+		"CREATE INDEX IF NOT EXISTS idx_forward_port_node ON forward_port(node_id)",
+		"CREATE INDEX IF NOT EXISTS idx_node_secret ON node(secret)",
+		"CREATE INDEX IF NOT EXISTS idx_node_status ON node(status)",
+		"CREATE INDEX IF NOT EXISTS idx_chain_tunnel_tunnel_id ON chain_tunnel(tunnel_id)",
+		"CREATE INDEX IF NOT EXISTS idx_chain_tunnel_node_id ON chain_tunnel(node_id)",
+		"CREATE INDEX IF NOT EXISTS idx_user_tunnel_user_tun ON user_tunnel(user_id, tunnel_id)",
+		"CREATE INDEX IF NOT EXISTS idx_statistics_flow_user ON statistics_flow(user_id, created_time)",
+	}
+	for _, sql := range indexes {
+		if _, err := db.Exec(sql); err != nil {
+			slog.Warn("创建索引失败（可能已存在）", "sql", truncate(sql, 60), "err", err)
+		}
+	}
+	slog.Info("索引检查完成")
 	return nil
 }

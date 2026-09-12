@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS forward (
   status INTEGER NOT NULL,
   inx INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_forward_tunnel_id ON forward(tunnel_id);
+CREATE INDEX IF NOT EXISTS idx_forward_user_id ON forward(user_id);
+CREATE INDEX IF NOT EXISTS idx_forward_status ON forward(status);
 
 CREATE TABLE IF NOT EXISTS forward_port (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,6 +26,8 @@ CREATE TABLE IF NOT EXISTS forward_port (
   node_id INTEGER NOT NULL,
   port INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_forward_port_forward ON forward_port(forward_id);
+CREATE INDEX IF NOT EXISTS idx_forward_port_node ON forward_port(node_id);
 
 CREATE TABLE IF NOT EXISTS node (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +48,8 @@ CREATE TABLE IF NOT EXISTS node (
   auto_detect_ip INTEGER NOT NULL DEFAULT 0,
   detected_ip VARCHAR(100) NOT NULL DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS idx_node_secret ON node(secret);
+CREATE INDEX IF NOT EXISTS idx_node_status ON node(status);
 
 CREATE TABLE IF NOT EXISTS speed_limit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +70,7 @@ CREATE TABLE IF NOT EXISTS statistics_flow (
   time VARCHAR(100) NOT NULL,
   created_time INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_statistics_flow_user ON statistics_flow(user_id, created_time);
 
 CREATE TABLE IF NOT EXISTS tunnel (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +97,8 @@ CREATE TABLE IF NOT EXISTS chain_tunnel (
     brutal    INTEGER NOT NULL DEFAULT 0,
     exit_node_ids TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_chain_tunnel_tunnel_id ON chain_tunnel(tunnel_id);
+CREATE INDEX IF NOT EXISTS idx_chain_tunnel_node_id ON chain_tunnel(node_id);
 
 
 CREATE TABLE IF NOT EXISTS user (
@@ -120,6 +130,7 @@ CREATE TABLE IF NOT EXISTS user_tunnel (
   exp_time INTEGER NOT NULL,
   status INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_user_tunnel_user_tun ON user_tunnel(user_id, tunnel_id);
 
 CREATE TABLE IF NOT EXISTS vite_config (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
