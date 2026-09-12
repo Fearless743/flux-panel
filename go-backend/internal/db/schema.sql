@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS node (
   updated_time INTEGER,
   status INTEGER NOT NULL,
   tcp_listen_addr VARCHAR(100) NOT NULL DEFAULT '[::]',
-  udp_listen_addr VARCHAR(100) NOT NULL DEFAULT '[::]'
+  udp_listen_addr VARCHAR(100) NOT NULL DEFAULT '[::]',
+  auto_detect_ip INTEGER NOT NULL DEFAULT 0,
+  detected_ip VARCHAR(100) NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS speed_limit (
@@ -84,6 +86,7 @@ CREATE TABLE IF NOT EXISTS chain_tunnel (
     strategy VARCHAR(10),
     inx  INTEGER,
     protocol  VARCHAR(10),
+    brutal    INTEGER NOT NULL DEFAULT 0,
     exit_node_ids TEXT
 );
 

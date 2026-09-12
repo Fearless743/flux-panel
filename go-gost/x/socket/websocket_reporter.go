@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -26,11 +28,12 @@ import (
 
 // SystemInfo 系统信息结构体
 type SystemInfo struct {
-	Uptime           uint64  `json:"uptime"`            // 开机时间	（秒）
-	BytesReceived    uint64  `json:"bytes_received"`    // 接收字节数
-	BytesTransmitted uint64  `json:"bytes_transmitted"` // 发送字节数
-	CPUUsage         float64 `json:"cpu_usage"`         // CPU使用率（百分比）
-	MemoryUsage      float64 `json:"memory_usage"`      // 内存使用率（百分比）
+	Uptime           uint64  `json:"uptime"`              // 开机时间（秒）
+	BytesReceived    uint64  `json:"bytes_received"`      // 接收字节数
+	BytesTransmitted uint64  `json:"bytes_transmitted"`   // 发送字节数
+	CPUUsage         float64 `json:"cpu_usage"`           // CPU使用率（百分比）
+	MemoryUsage      float64 `json:"memory_usage"`        // 内存使用率（百分比）
+	PublicIP         string  `json:"public_ip,omitempty"` // 节点公网 IP（通过外部服务获取）
 }
 
 // NetworkStats 网络统计信息
@@ -101,6 +104,7 @@ type WebSocketReporter struct {
 	connecting     bool              // 新增：正在连接状态
 	connMutex      sync.Mutex        // 新增：连接状态锁
 	aesCrypto      *crypto.AESCrypto // 新增：AES加密器
+	publicIP       string            // 节点公网 IP（通过外部服务获取）
 }
 
 // NewWebSocketReporter 创建一个新的WebSocket报告器
@@ -224,6 +228,8 @@ func (w *WebSocketReporter) connect() error {
 	currentURL := scheme + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
 		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
 
+	// 不再在连接时主动获取公网 IP，改为心跳时按需获取
+
 	u, err := url.Parse(currentURL)
 	if err != nil {
 		return fmt.Errorf("解析URL失败: %v", err)
@@ -256,6 +262,34 @@ func (w *WebSocketReporter) connect() error {
 
 	fmt.Printf("✅ WebSocket连接建立成功 (http=%d, tls=%d, socks=%d)\n", cfg.Http, cfg.Tls, cfg.Socks)
 	return nil
+}
+
+// fetchPublicIP 通过访问外部服务获取节点公网 IP
+func fetchPublicIP() string {
+	// 依次尝试多个源，提高成功率
+	urls := []string{
+		"https://ip.sb/ip",
+		"https://api.ipify.org",
+		"https://api.my-ip.io/v2/ip",
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, u := range urls {
+		resp, err := client.Get(u)
+		if err != nil {
+			continue
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		ip := strings.TrimSpace(string(body))
+		// 简单验证是否是合法 IP
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	return ""
 }
 
 // handleConnection 处理WebSocket连接
@@ -308,12 +342,18 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 	cpuInfo := getCPUInfo()
 	memoryInfo := getMemoryInfo()
 
+	// 按需获取公网 IP（首次调用时获取，避免每次心跳都发起网络请求）
+	if w.publicIP == "" {
+		w.publicIP = fetchPublicIP()
+	}
+
 	return SystemInfo{
 		Uptime:           getUptime(),
 		BytesReceived:    networkStats.BytesReceived,
 		BytesTransmitted: networkStats.BytesTransmitted,
 		CPUUsage:         cpuInfo.Usage,
 		MemoryUsage:      memoryInfo.Usage,
+		PublicIP:         w.publicIP,
 	}
 }
 

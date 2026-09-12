@@ -42,6 +42,7 @@ type ChainNodeInput struct {
 	Protocol string
 	ServerIP string
 	Port     int
+	Brutal   bool // 是否启用 TCP Brutal 拥塞控制
 }
 
 func BuildChainData(tunnelID, sourceNodeID int64, interfaceName string, strategy string, nodes []ChainNodeInput) map[string]any {
@@ -54,7 +55,12 @@ func BuildChainData(tunnelID, sourceNodeID int64, interfaceName string, strategy
 				"type": "relay",
 			},
 			"dialer": map[string]any{
-				"type": n.Protocol,
+				"type": func() string {
+					if n.Brutal {
+						return "tcpbrutal"
+					}
+					return n.Protocol
+				}(),
 			},
 		})
 	}

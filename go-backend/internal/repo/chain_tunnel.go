@@ -89,9 +89,9 @@ func (r *ChainTunnelRepo) InsertBatch(items []model.ChainTunnel) error {
 
 func insertChainTunnel(ext sqlx.Ext, ct *model.ChainTunnel) error {
 	res, err := ext.Exec(`
-		INSERT INTO chain_tunnel (tunnel_id, chain_type, node_id, port, strategy, inx, protocol, exit_node_ids)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		ct.TunnelID, ct.ChainType, ct.NodeID, ct.Port, ct.Strategy, ct.Inx, ct.Protocol, ct.ExitNodeIDs,
+		INSERT INTO chain_tunnel (tunnel_id, chain_type, node_id, port, strategy, inx, protocol, brutal, exit_node_ids)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ct.TunnelID, ct.ChainType, ct.NodeID, ct.Port, ct.Strategy, ct.Inx, ct.Protocol, boolToInt(ct.Brutal), ct.ExitNodeIDs,
 	)
 	if err != nil {
 		return err
@@ -133,7 +133,7 @@ func EnsureChainType(ct *model.ChainTunnel, typ int) {
 	ct.ChainType = chainTypeStr(typ)
 }
 
-func NewChainTunnel(tunnelID int64, chainType int, nodeID int64, port *int, strategy, protocol *string, inx *int) model.ChainTunnel {
+func NewChainTunnel(tunnelID int64, chainType int, nodeID int64, port *int, strategy, protocol *string, inx *int, brutal bool) model.ChainTunnel {
 	return model.ChainTunnel{
 		TunnelID:  tunnelID,
 		ChainType: chainTypeStr(chainType),
@@ -145,7 +145,7 @@ func NewChainTunnel(tunnelID int64, chainType int, nodeID int64, port *int, stra
 	}
 }
 
-func NewChainTunnelWithExitBinding(tunnelID int64, chainType int, nodeID int64, port *int, strategy, protocol *string, inx *int, exitNodeIDs *string) model.ChainTunnel {
+func NewChainTunnelWithExitBinding(tunnelID int64, chainType int, nodeID int64, port *int, strategy, protocol *string, inx *int, brutal bool, exitNodeIDs *string) model.ChainTunnel {
 	return model.ChainTunnel{
 		TunnelID:    tunnelID,
 		ChainType:   chainTypeStr(chainType),

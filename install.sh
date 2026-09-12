@@ -2,30 +2,30 @@
 
 # 获取系统架构
 get_architecture() {
-    ARCH=$(uname -m)
-    case $ARCH in
-        x86_64)
-            echo "amd64"
-            ;;
-        aarch64|arm64)
-            echo "arm64"
-            ;;
-        *)
-            echo "amd64"
-            ;;
-    esac
+  ARCH=$(uname -m)
+  case $ARCH in
+  x86_64)
+    echo "amd64"
+    ;;
+  aarch64 | arm64)
+    echo "arm64"
+    ;;
+  *)
+    echo "amd64"
+    ;;
+  esac
 }
 
 build_download_url() {
-    local ARCH=$(get_architecture)
-    echo "https://github.com/Fearless743/flux-panel/releases/latest/download/gost-${ARCH}"
+  local ARCH=$(get_architecture)
+  echo "https://github.com/Fearless743/flux-panel/releases/latest/download/gost-${ARCH}"
 }
 
 DOWNLOAD_URL=$(build_download_url)
 INSTALL_DIR="/etc/flux_agent"
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
-    DOWNLOAD_URL="https://ghfast.top/${DOWNLOAD_URL}"
+  DOWNLOAD_URL="https://ghfast.top/${DOWNLOAD_URL}"
 fi
 
 show_menu() {
@@ -34,7 +34,7 @@ show_menu() {
   echo "==============================================="
   echo "请选择操作："
   echo "1. 安装"
-  echo "2. 更新"  
+  echo "2. 更新"
   echo "3. 卸载"
   echo "4. 退出"
   echo "==============================================="
@@ -49,25 +49,25 @@ delete_self() {
 }
 
 check_and_install_tcpkill() {
-  if command -v tcpkill &> /dev/null; then
+  if command -v tcpkill &>/dev/null; then
     return 0
   fi
-  
+
   OS_TYPE=$(uname -s)
-  
+
   if [[ $EUID -ne 0 ]]; then
     SUDO_CMD="sudo"
   else
     SUDO_CMD=""
   fi
-  
+
   if [[ "$OS_TYPE" == "Darwin" ]]; then
-    if command -v brew &> /dev/null; then
-      brew install dsniff &> /dev/null
+    if command -v brew &>/dev/null; then
+      brew install dsniff &>/dev/null
     fi
     return 0
   fi
-  
+
   if [ -f /etc/os-release ]; then
     . /etc/os-release
     DISTRO=$ID
@@ -78,51 +78,51 @@ check_and_install_tcpkill() {
   else
     return 0
   fi
-  
+
   case $DISTRO in
-    ubuntu|debian)
-      $SUDO_CMD apt update &> /dev/null
-      $SUDO_CMD apt install -y dsniff &> /dev/null
-      ;;
-    centos|rhel|fedora)
-      if command -v dnf &> /dev/null; then
-        $SUDO_CMD dnf install -y dsniff &> /dev/null
-      elif command -v yum &> /dev/null; then
-        $SUDO_CMD yum install -y dsniff &> /dev/null
-      fi
-      ;;
-    alpine)
-      $SUDO_CMD apk add --no-cache dsniff &> /dev/null
-      ;;
-    arch|manjaro)
-      $SUDO_CMD pacman -S --noconfirm dsniff &> /dev/null
-      ;;
-    opensuse*|sles)
-      $SUDO_CMD zypper install -y dsniff &> /dev/null
-      ;;
-    gentoo)
-      $SUDO_CMD emerge --ask=n net-analyzer/dsniff &> /dev/null
-      ;;
-    void)
-      $SUDO_CMD xbps-install -Sy dsniff &> /dev/null
-      ;;
+  ubuntu | debian)
+    $SUDO_CMD apt update &>/dev/null
+    $SUDO_CMD apt install -y dsniff &>/dev/null
+    ;;
+  centos | rhel | fedora)
+    if command -v dnf &>/dev/null; then
+      $SUDO_CMD dnf install -y dsniff &>/dev/null
+    elif command -v yum &>/dev/null; then
+      $SUDO_CMD yum install -y dsniff &>/dev/null
+    fi
+    ;;
+  alpine)
+    $SUDO_CMD apk add --no-cache dsniff &>/dev/null
+    ;;
+  arch | manjaro)
+    $SUDO_CMD pacman -S --noconfirm dsniff &>/dev/null
+    ;;
+  opensuse* | sles)
+    $SUDO_CMD zypper install -y dsniff &>/dev/null
+    ;;
+  gentoo)
+    $SUDO_CMD emerge --ask=n net-analyzer/dsniff &>/dev/null
+    ;;
+  void)
+    $SUDO_CMD xbps-install -Sy dsniff &>/dev/null
+    ;;
   esac
-  
+
   return 0
 }
 
 get_config_params() {
   if [[ -z "$SERVER_ADDR" || -z "$SECRET" ]]; then
     echo "请输入配置参数："
-    
+
     if [[ -z "$SERVER_ADDR" ]]; then
       read -p "服务器地址: " SERVER_ADDR
     fi
-    
+
     if [[ -z "$SECRET" ]]; then
       read -p "密钥: " SECRET
     fi
-    
+
     if [[ -z "$SERVER_ADDR" || -z "$SECRET" ]]; then
       echo "❌ 参数不完整，操作取消。"
       exit 1
@@ -132,11 +132,14 @@ get_config_params() {
 
 while getopts "a:s:lu" opt; do
   case $opt in
-    a) SERVER_ADDR="$OPTARG" ;;
-    s) SECRET="$OPTARG" ;;
-    l) SSL_ENABLED="true" ;;
-    u) DO_UPDATE="true" ;;
-    *) echo "❌ 无效参数（支持 -a 地址 -s 密钥 -l SSL -u 一键更新）"; exit 1 ;;
+  a) SERVER_ADDR="$OPTARG" ;;
+  s) SECRET="$OPTARG" ;;
+  l) SSL_ENABLED="true" ;;
+  u) DO_UPDATE="true" ;;
+  *)
+    echo "❌ 无效参数（支持 -a 地址 -s 密钥 -l SSL -u 一键更新）"
+    exit 1
+    ;;
   esac
 done
 # 支持：./install.sh update | upgrade（无菜单一键更新）
@@ -173,7 +176,7 @@ install_flux_agent() {
 
   CONFIG_FILE="$INSTALL_DIR/config.json"
   echo "📄 创建新配置: config.json"
-  cat > "$CONFIG_FILE" <<EOF
+  cat >"$CONFIG_FILE" <<EOF
 {
   "addr": "$SERVER_ADDR",
   "secret": "$SECRET",
@@ -190,7 +193,7 @@ EOF
   chmod 600 "$CONFIG_FILE"
 
   SERVICE_FILE="/etc/systemd/system/flux_agent.service"
-  cat > "$SERVICE_FILE" <<EOF
+  cat >"$SERVICE_FILE" <<EOF
 [Unit]
 Description=Flux_agent Proxy Service
 After=network.target
@@ -221,16 +224,16 @@ EOF
 
 update_flux_agent() {
   echo "🔄 开始更新 flux_agent..."
-  
+
   if [[ ! -d "$INSTALL_DIR" ]]; then
     echo "❌ flux_agent 未安装，请先选择安装。"
     return 1
   fi
-  
+
   echo "📥 使用下载地址: $DOWNLOAD_URL"
-  
+
   check_and_install_tcpkill
-  
+
   echo "⬇️ 下载最新版本..."
   curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/flux_agent.new"
   if [[ ! -f "$INSTALL_DIR/flux_agent.new" || ! -s "$INSTALL_DIR/flux_agent.new" ]]; then
@@ -245,7 +248,7 @@ update_flux_agent() {
 
   mv "$INSTALL_DIR/flux_agent.new" "$INSTALL_DIR/flux_agent"
   chmod +x "$INSTALL_DIR/flux_agent"
-  
+
   echo "🔎 新版本：$($INSTALL_DIR/flux_agent -V)"
 
   if [[ -f "$INSTALL_DIR/gost.json" ]]; then
@@ -255,13 +258,13 @@ update_flux_agent() {
 
   echo "🔄 重启服务..."
   systemctl start flux_agent
-  
+
   echo "✅ 更新完成，服务已重新启动。"
 }
 
 uninstall_flux_agent() {
   echo "🗑️ 开始卸载 flux_agent..."
-  
+
   read -p "确认卸载 flux_agent 吗？此操作将删除所有相关文件 (y/N): " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "❌ 取消卸载"
@@ -308,30 +311,30 @@ main() {
     read -p "请输入选项 (1-4): " choice
 
     case $choice in
-      1)
-        install_flux_agent
-        delete_self
-        exit 0
-        ;;
-      2)
-        update_flux_agent
-        delete_self
-        exit 0
-        ;;
-      3)
-        uninstall_flux_agent
-        delete_self
-        exit 0
-        ;;
-      4)
-        echo "👋 退出脚本"
-        delete_self
-        exit 0
-        ;;
-      *)
-        echo "❌ 无效选项，请输入 1-4"
-        echo ""
-        ;;
+    1)
+      install_flux_agent
+      delete_self
+      exit 0
+      ;;
+    2)
+      update_flux_agent
+      delete_self
+      exit 0
+      ;;
+    3)
+      uninstall_flux_agent
+      delete_self
+      exit 0
+      ;;
+    4)
+      echo "👋 退出脚本"
+      delete_self
+      exit 0
+      ;;
+    *)
+      echo "❌ 无效选项，请输入 1-4"
+      echo ""
+      ;;
     esac
   done
 }

@@ -43,21 +43,21 @@ type CurrentUser struct {
 }
 
 type ForwardCreateReq struct {
-	Name       string  `json:"name"`
-	TunnelID   int     `json:"tunnelId"`
-	RemoteAddr string  `json:"remoteAddr"`
-	Strategy   string  `json:"strategy"`
-	InPort     *int    `json:"inPort"`
+	Name       string `json:"name"`
+	TunnelID   int    `json:"tunnelId"`
+	RemoteAddr string `json:"remoteAddr"`
+	Strategy   string `json:"strategy"`
+	InPort     *int   `json:"inPort"`
 }
 
 type ForwardUpdateReq struct {
-	ID         int64   `json:"id"`
-	UserID     int     `json:"userId"`
-	Name       string  `json:"name"`
-	TunnelID   *int    `json:"tunnelId"`
-	RemoteAddr string  `json:"remoteAddr"`
-	Strategy   string  `json:"strategy"`
-	InPort     *int    `json:"inPort"`
+	ID         int64  `json:"id"`
+	UserID     int    `json:"userId"`
+	Name       string `json:"name"`
+	TunnelID   *int   `json:"tunnelId"`
+	RemoteAddr string `json:"remoteAddr"`
+	Strategy   string `json:"strategy"`
+	InPort     *int   `json:"inPort"`
 }
 
 type BatchForwardReq struct {
@@ -81,20 +81,20 @@ type userPermissionResult struct {
 }
 
 type DiagnosisResult struct {
-	NodeID        int64    `json:"nodeId"`
-	NodeName      string   `json:"nodeName"`
-	TargetIP      string   `json:"targetIp"`
-	TargetPort    int      `json:"targetPort"`
-	Description   string   `json:"description"`
-	Success       bool     `json:"success"`
-	Message       string   `json:"message"`
-	AverageTime   float64  `json:"averageTime"`
-	PacketLoss    float64  `json:"packetLoss"`
-	Timestamp     int64    `json:"timestamp"`
-	FromChainType *int     `json:"fromChainType,omitempty"`
-	FromInx       *int     `json:"fromInx,omitempty"`
-	ToChainType   *int     `json:"toChainType,omitempty"`
-	ToInx         *int     `json:"toInx,omitempty"`
+	NodeID        int64   `json:"nodeId"`
+	NodeName      string  `json:"nodeName"`
+	TargetIP      string  `json:"targetIp"`
+	TargetPort    int     `json:"targetPort"`
+	Description   string  `json:"description"`
+	Success       bool    `json:"success"`
+	Message       string  `json:"message"`
+	AverageTime   float64 `json:"averageTime"`
+	PacketLoss    float64 `json:"packetLoss"`
+	Timestamp     int64   `json:"timestamp"`
+	FromChainType *int    `json:"fromChainType,omitempty"`
+	FromInx       *int    `json:"fromInx,omitempty"`
+	ToChainType   *int    `json:"toChainType,omitempty"`
+	ToInx         *int    `json:"toInx,omitempty"`
 }
 
 // ---- list ----
@@ -161,10 +161,10 @@ func (s *ForwardService) fillInIP(f *repo.ForwardWithTunnel) {
 	} else {
 		for _, fp := range ports {
 			node, err := s.Repo.GetNode(fp.NodeID)
-			if err != nil || node == nil || node.ServerIP == "" {
+			if err != nil || node == nil || node.GetEffectiveIP() == "" {
 				continue
 			}
-			key := fmt.Sprintf("%s:%d", node.ServerIP, fp.Port)
+			key := fmt.Sprintf("%s:%d", node.GetEffectiveIP(), fp.Port)
 			if _, ok := seen[key]; !ok {
 				seen[key] = struct{}{}
 				ipPortSet = append(ipPortSet, key)

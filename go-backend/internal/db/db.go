@@ -109,5 +109,53 @@ func migrate(db *sqlx.DB) error {
 		}
 		slog.Info("migrated: added exit_node_ids column to chain_tunnel")
 	}
+
+	// 检查 node 表是否有 node_ips 字段
+	err = db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('node') WHERE name='node_ips'`)
+	if err != nil {
+		return fmt.Errorf("check node_ips column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE node ADD COLUMN node_ips TEXT DEFAULT ''`); err != nil {
+			return fmt.Errorf("add node_ips column: %w", err)
+		}
+		slog.Info("migrated: added node_ips column to node")
+	}
+
+	// 检查 node 表是否有 auto_detect_ip 字段
+	err = db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('node') WHERE name='auto_detect_ip'`)
+	if err != nil {
+		return fmt.Errorf("check auto_detect_ip column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE node ADD COLUMN auto_detect_ip INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add auto_detect_ip column: %w", err)
+		}
+		slog.Info("migrated: added auto_detect_ip column to node")
+	}
+
+	// 检查 node 表是否有 detected_ip 字段
+	err = db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('node') WHERE name='detected_ip'`)
+	if err != nil {
+		return fmt.Errorf("check detected_ip column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE node ADD COLUMN detected_ip VARCHAR(100) NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add detected_ip column: %w", err)
+		}
+		slog.Info("migrated: added detected_ip column to node")
+	}
+
+	// 检查 chain_tunnel 表是否有 brutal 字段
+	err = db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('chain_tunnel') WHERE name='brutal'`)
+	if err != nil {
+		return fmt.Errorf("check brutal column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE chain_tunnel ADD COLUMN brutal INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add brutal column: %w", err)
+		}
+		slog.Info("migrated: added brutal column to chain_tunnel")
+	}
 	return nil
 }

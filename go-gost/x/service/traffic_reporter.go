@@ -112,7 +112,6 @@ func sendBatchTrafficReport(ctx context.Context, reportItems []TrafficReportItem
 	}
 }
 
-
 // sendConfigReport 发送配置报告到HTTP接口
 func sendConfigReport(ctx context.Context) (bool, error) {
 	if configReportURL == "" {

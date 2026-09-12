@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -32,6 +33,7 @@ func NewNodeService(db *sqlx.DB, hub *ws.Hub) *NodeService {
 type NodeCreateReq struct {
 	Name          string  `json:"name"`
 	ServerIP      string  `json:"serverIp"`
+	AutoDetectIP  bool    `json:"autoDetectIP"`
 	Port          string  `json:"port"`
 	InterfaceName *string `json:"interfaceName"`
 	TCPListenAddr string  `json:"tcpListenAddr"`
@@ -42,6 +44,7 @@ type NodeUpdateReq struct {
 	ID            int64   `json:"id"`
 	Name          string  `json:"name"`
 	ServerIP      string  `json:"serverIp"`
+	AutoDetectIP  bool    `json:"autoDetectIP"`
 	Port          string  `json:"port"`
 	InterfaceName *string `json:"interfaceName"`
 	HTTP          *int    `json:"http"`
@@ -68,6 +71,7 @@ func (s *NodeService) Create(req NodeCreateReq) error {
 		Name:          req.Name,
 		Secret:        strings.ReplaceAll(uuid.NewString(), "-", ""),
 		ServerIP:      req.ServerIP,
+		AutoDetectIP:  req.AutoDetectIP,
 		Port:          req.Port,
 		InterfaceName: req.InterfaceName,
 		Status:        0,
@@ -141,6 +145,7 @@ func (s *NodeService) Update(req NodeUpdateReq) error {
 		ID:            req.ID,
 		Name:          req.Name,
 		ServerIP:      req.ServerIP,
+		AutoDetectIP:  req.AutoDetectIP,
 		Port:          req.Port,
 		InterfaceName: req.InterfaceName,
 		TCPListenAddr: req.TCPListenAddr,
@@ -275,7 +280,7 @@ func (s *NodeService) GetBySecret(secret string) (*model.Node, error) {
 	return s.Repo.GetBySecret(secret)
 }
 
-func (s *NodeService) MarkOnline(id int64, version string, http, tls, socks string) error {
+func (s *NodeService) MarkOnline(id int64, version string, http, tls, socks string, clientIP string) error {
 	var v *string
 	if version != "" {
 		v = &version
@@ -296,11 +301,26 @@ func (s *NodeService) MarkOnline(id int64, version string, http, tls, socks stri
 			so = &n
 		}
 	}
-	return s.Repo.UpdateOnline(id, v, h, t, so)
+	if err := s.Repo.UpdateOnline(id, v, h, t, so); err != nil {
+		return err
+	}
+	// 自动检测节点 IP：如果开启了 auto_detect_ip，记录本次连接的客户端 IP
+	node, err := s.Repo.GetByID(id)
+	if err == nil && node != nil && node.AutoDetectIP && clientIP != "" {
+		if err := s.Repo.UpdateDetectedIP(id, clientIP); err != nil {
+			slog.Warn("更新检测IP失败", "nodeId", id, "err", err)
+		}
+	}
+	return nil
 }
 
 func (s *NodeService) MarkOffline(id int64) error {
 	return s.Repo.UpdateStatus(id, 0)
+}
+
+// UpdateDetectedIP 直接更新节点的 detected_ip（由心跳中携带的 public_ip 触发）
+func (s *NodeService) UpdateDetectedIP(id int64, detectedIP string) error {
+	return s.Repo.UpdateDetectedIP(id, detectedIP)
 }
 
 // ValidatePortRange 对齐 Java validatePortRange

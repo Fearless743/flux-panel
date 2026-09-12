@@ -46,12 +46,14 @@ type ChainTunnelInput struct {
 	NodeID      int64   `json:"nodeId"`
 	Protocol    *string `json:"protocol"`
 	Strategy    *string `json:"strategy"`
+	Brutal      bool    `json:"brutal"`      // 是否启用 TCP Brutal
 	ExitNodeIDs any     `json:"exitNodeIds"` // 入口节点使用的出口节点 ID 列表，支持数组或JSON字符串
 	// 兼容可能带的字段
-	ChainType any `json:"chainType"`
-	Port      any `json:"port"`
-	Inx       any `json:"inx"`
-	ID        any `json:"id"`
+	ChainType        any `json:"chainType"`
+	Port             any `json:"port"`
+	Inx              any `json:"inx"`
+	ID               any `json:"id"`
+	EntryChainGroups any `json:"entryChainGroups"` // 入口节点绑定的转发链组索引列表（0-based），支持数组或JSON字符串
 }
 
 // GetExitNodeIDs 解析 exitNodeIds，支持数组和JSON字符串两种格式
@@ -86,6 +88,36 @@ func (c *ChainTunnelInput) GetExitNodeIDs() []int64 {
 	return nil
 }
 
+// GetEntryChainGroups 解析 entryChainGroups，支持数组和JSON字符串两种格式
+func (c *ChainTunnelInput) GetEntryChainGroups() []int {
+	if c.EntryChainGroups == nil {
+		return nil
+	}
+	switch v := c.EntryChainGroups.(type) {
+	case []interface{}:
+		ids := make([]int, 0, len(v))
+		for _, item := range v {
+			switch id := item.(type) {
+			case float64:
+				ids = append(ids, int(id))
+			case int:
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	case string:
+		if v == "" || v == "null" {
+			return nil
+		}
+		var ids []int
+		if err := json.Unmarshal([]byte(v), &ids); err != nil {
+			return nil
+		}
+		return ids
+	}
+	return nil
+}
+
 type TunnelCreateReq struct {
 	Name         string               `json:"name"`
 	Type         int                  `json:"type"`
@@ -109,18 +141,18 @@ type TunnelUpdateReq struct {
 }
 
 type TunnelDetailDto struct {
-	ID           int64               `json:"id"`
-	Name         string              `json:"name"`
-	Type         int                 `json:"type"`
-	Flow         int                 `json:"flow"`
-	TrafficRatio float64             `json:"trafficRatio"`
-	Status       int                 `json:"status"`
-	CreatedTime  int64               `json:"createdTime"`
-	UpdatedTime  int64               `json:"updatedTime"`
-	InIP         *string             `json:"inIp"`
-	InNodeID     []model.ChainTunnel `json:"inNodeId"`
+	ID           int64                 `json:"id"`
+	Name         string                `json:"name"`
+	Type         int                   `json:"type"`
+	Flow         int                   `json:"flow"`
+	TrafficRatio float64               `json:"trafficRatio"`
+	Status       int                   `json:"status"`
+	CreatedTime  int64                 `json:"createdTime"`
+	UpdatedTime  int64                 `json:"updatedTime"`
+	InIP         *string               `json:"inIp"`
+	InNodeID     []model.ChainTunnel   `json:"inNodeId"`
 	ChainNodes   [][]model.ChainTunnel `json:"chainNodes"`
-	OutNodeID    []model.ChainTunnel `json:"outNodeId"`
+	OutNodeID    []model.ChainTunnel   `json:"outNodeId"`
 }
 
 // ---- create ----
@@ -179,7 +211,7 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			s := string(jsonBytes)
 			exitNodeIDs = &s
 		}
-		ct := repo.NewChainTunnelWithExitBinding(0, 1, in.NodeID, nil, nil, nil, nil, exitNodeIDs)
+		ct := repo.NewChainTunnelWithExitBinding(0, 1, in.NodeID, nil, nil, nil, nil, false, exitNodeIDs)
 		chainTunnels = append(chainTunnels, ct)
 	}
 
@@ -208,7 +240,7 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 					return err
 				}
 				p := port
-				ct := repo.NewChainTunnel(0, 2, c.NodeID, &p, c.Strategy, c.Protocol, repo.IntPtr(inx))
+				ct := repo.NewChainTunnel(0, 2, c.NodeID, &p, c.Strategy, c.Protocol, repo.IntPtr(inx), c.Brutal)
 				newGroup = append(newGroup, ct)
 				chainTunnels = append(chainTunnels, ct)
 			}
@@ -235,7 +267,7 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 				return err
 			}
 			p := port
-			ct := repo.NewChainTunnel(0, 3, out.NodeID, &p, out.Strategy, out.Protocol, nil)
+			ct := repo.NewChainTunnel(0, 3, out.NodeID, &p, out.Strategy, out.Protocol, nil, out.Brutal)
 			outNodes = append(outNodes, ct)
 			chainTunnels = append(chainTunnels, ct)
 		}
@@ -266,8 +298,8 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 		var parts []string
 		for _, in := range req.InNodeID {
 			n := nodes[in.NodeID]
-			if n != nil && n.ServerIP != "" {
-				parts = append(parts, n.ServerIP)
+			if n != nil && n.GetEffectiveIP() != "" {
+				parts = append(parts, n.GetEffectiveIP())
 			}
 		}
 		inIP = strings.Join(parts, ",")
@@ -307,6 +339,14 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			entries = append(entries, chainTunnels[i])
 		}
 	}
+	// 构建入口→链组绑定的映射，供下发时使用
+	entryChainGroupsMap := make(map[int64][]int)
+	for _, in := range req.InNodeID {
+		groups := in.GetEntryChainGroups()
+		if len(groups) > 0 {
+			entryChainGroupsMap[in.NodeID] = groups
+		}
+	}
 
 	if err := s.Chain.InsertBatch(chainTunnels); err != nil {
 		_ = s.Tunnel.Delete(tunnel.ID)
@@ -339,6 +379,17 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			if len(chainGroups) == 0 {
 				// 无转发链时，根据入口的 ExitNodeIDs 过滤出口节点
 				target = filterExitsByEntry(outNodes, entry)
+			} else if groups, ok := entryChainGroupsMap[entry.NodeID]; ok {
+				// 有绑定链组：按指定索引选择目标链组
+				target = make([]model.ChainTunnel, 0, len(chainGroups))
+				for _, gi := range groups {
+					if gi >= 0 && gi < len(chainGroups) {
+						target = append(target, chainGroups[gi]...)
+					}
+				}
+				if len(target) == 0 {
+					target = chainGroups[0]
+				}
 			} else {
 				target = chainGroups[0]
 			}
@@ -483,7 +534,7 @@ func (s *TunnelService) Update(req TunnelUpdateReq) error {
 			if n == nil {
 				return fmt.Errorf("隧道节点数据错误，部分节点不存在")
 			}
-			parts = append(parts, n.ServerIP)
+			parts = append(parts, n.GetEffectiveIP())
 		}
 		inIP = strings.Join(parts, ",")
 	}
@@ -524,8 +575,16 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 			s := string(jsonBytes)
 			exitNodeIDs = &s
 		}
-		newEntries = append(newEntries, repo.NewChainTunnelWithExitBinding(tunnelID, 1, in.NodeID, nil, nil, nil, nil, exitNodeIDs))
+		newEntries = append(newEntries, repo.NewChainTunnelWithExitBinding(tunnelID, 1, in.NodeID, nil, nil, nil, nil, false, exitNodeIDs))
 		nodeIDs = append(nodeIDs, in.NodeID)
+	}
+	// 构建入口→链组绑定的映射，供下发时使用
+	entryChainGroupsMap := make(map[int64][]int)
+	for _, in := range dto.InNodeID {
+		groups := in.GetEntryChainGroups()
+		if len(groups) > 0 {
+			entryChainGroupsMap[in.NodeID] = groups
+		}
 	}
 	inx := 1
 	for _, group := range chainGroupsReq {
@@ -534,7 +593,7 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 			if c.NodeID == 0 {
 				return fmt.Errorf("节点不存在")
 			}
-			ct := repo.NewChainTunnel(tunnelID, 2, c.NodeID, nil, c.Strategy, c.Protocol, repo.IntPtr(inx))
+			ct := repo.NewChainTunnel(tunnelID, 2, c.NodeID, nil, c.Strategy, c.Protocol, repo.IntPtr(inx), c.Brutal)
 			newGroup = append(newGroup, ct)
 			nodeIDs = append(nodeIDs, c.NodeID)
 		}
@@ -547,7 +606,7 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 		if out.NodeID == 0 {
 			return fmt.Errorf("节点不存在")
 		}
-		ct := repo.NewChainTunnel(tunnelID, 3, out.NodeID, nil, out.Strategy, out.Protocol, nil)
+		ct := repo.NewChainTunnel(tunnelID, 3, out.NodeID, nil, out.Strategy, out.Protocol, nil, out.Brutal)
 		newOuts = append(newOuts, ct)
 		nodeIDs = append(nodeIDs, out.NodeID)
 	}
@@ -681,7 +740,20 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 				// 无转发链时，根据入口的 ExitNodeIDs 过滤出口节点
 				target = filterExitsByEntry(newOuts, entry)
 			} else {
-				target = newChains[0]
+				// 检查入口是否绑定了特定链组
+				if groups, ok := entryChainGroupsMap[entry.NodeID]; ok {
+					target = make([]model.ChainTunnel, 0, len(newChains))
+					for _, gi := range groups {
+						if gi >= 0 && gi < len(newChains) {
+							target = append(target, newChains[gi]...)
+						}
+					}
+					if len(target) == 0 {
+						target = newChains[0]
+					}
+				} else {
+					target = newChains[0]
+				}
 			}
 			res := pushChains(s.Hub, entry.NodeID, target, nodes)
 			if !gost.IsOK(res.Msg) {
@@ -694,6 +766,8 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 			if i+1 < len(newChains) {
 				target = newChains[i+1]
 			} else {
+				// 有转发链时，最后一跳统一连接到所有出口节点
+				// （exit binding 仅对无转发链的直连场景生效）
 				target = newOuts
 			}
 			for _, ct := range newChains[i] {
@@ -969,7 +1043,7 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 					if first.Port != nil {
 						port = *first.Port
 					}
-					r := fwSvc.performTcpPing(from, to.ServerIP, port,
+					r := fwSvc.performTcpPing(from, to.GetEffectiveIP(), port,
 						fmt.Sprintf("入口(%s)->第1跳(%s)", from.Name, to.Name))
 					ft, tt := 1, 2
 					r.FromChainType = &ft
@@ -989,7 +1063,7 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 					if out.Port != nil {
 						port = *out.Port
 					}
-					r := fwSvc.performTcpPing(from, to.ServerIP, port,
+					r := fwSvc.performTcpPing(from, to.GetEffectiveIP(), port,
 						fmt.Sprintf("入口(%s)->出口(%s)", from.Name, to.Name))
 					ft, tt := 1, 3
 					r.FromChainType = &ft
@@ -1015,7 +1089,7 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 						if next.Port != nil {
 							port = *next.Port
 						}
-						r := fwSvc.performTcpPing(from, to.ServerIP, port,
+						r := fwSvc.performTcpPing(from, to.GetEffectiveIP(), port,
 							fmt.Sprintf("第%d跳(%s)->第%d跳(%s)", i+1, from.Name, i+2, to.Name))
 						ft, tt := 2, 2
 						r.FromChainType = &ft
@@ -1034,7 +1108,7 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 						if out.Port != nil {
 							port = *out.Port
 						}
-						r := fwSvc.performTcpPing(from, to.ServerIP, port,
+						r := fwSvc.performTcpPing(from, to.GetEffectiveIP(), port,
 							fmt.Sprintf("第%d跳(%s)->出口(%s)", i+1, from.Name, to.Name))
 						ft, tt := 2, 3
 						r.FromChainType = &ft
@@ -1154,8 +1228,9 @@ func (s *TunnelService) addChains(nodeID int64, target []model.ChainTunnel, node
 		}
 		inputs = append(inputs, gost.ChainNodeInput{
 			Protocol: proto,
-			ServerIP: n.ServerIP,
+			ServerIP: n.GetEffectiveIP(),
 			Port:     port,
+			Brutal:   ct.Brutal,
 		})
 	}
 	data := gost.BuildChainData(tunnelID, nodeID, iface, strategy, inputs)

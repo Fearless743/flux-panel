@@ -25,15 +25,22 @@ func nullListen(s string) string {
 	return s
 }
 
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 func (r *NodeRepo) Create(n *model.Node) error {
 	now := time.Now().UnixMilli()
 	n.CreatedTime = now
 	n.UpdatedTime = &now
 	res, err := r.DB.Exec(`
-		INSERT INTO node (name, secret, server_ip, port, interface_name, version, http, tls, socks,
+		INSERT INTO node (name, secret, server_ip, auto_detect_ip, detected_ip, port, interface_name, version, http, tls, socks,
 			created_time, updated_time, status, tcp_listen_addr, udp_listen_addr)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		n.Name, n.Secret, n.ServerIP, n.Port, n.InterfaceName, n.Version,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.Name, n.Secret, n.ServerIP, boolToInt(n.AutoDetectIP), n.DetectedIP, n.Port, n.InterfaceName, n.Version,
 		n.HTTP, n.TLS, n.Socks, n.CreatedTime, n.UpdatedTime, n.Status,
 		nullListen(n.TCPListenAddr), nullListen(n.UDPListenAddr),
 	)
@@ -114,10 +121,10 @@ func (r *NodeRepo) Update(n *model.Node) error {
 	now := time.Now().UnixMilli()
 	n.UpdatedTime = &now
 	_, err := r.DB.Exec(`
-		UPDATE node SET name=?, server_ip=?, port=?, interface_name=?,
+		UPDATE node SET name=?, server_ip=?, auto_detect_ip=?, detected_ip=?, port=?, interface_name=?,
 			http=?, tls=?, socks=?, updated_time=?, tcp_listen_addr=?, udp_listen_addr=?
 		WHERE id=?`,
-		n.Name, n.ServerIP, n.Port, n.InterfaceName,
+		n.Name, n.ServerIP, boolToInt(n.AutoDetectIP), n.DetectedIP, n.Port, n.InterfaceName,
 		n.HTTP, n.TLS, n.Socks, n.UpdatedTime,
 		nullListen(n.TCPListenAddr), nullListen(n.UDPListenAddr), n.ID,
 	)
@@ -181,4 +188,14 @@ func (r *NodeRepo) GetViteConfig(name string) (string, error) {
 		return "", err
 	}
 	return value, nil
+}
+
+// UpdateDetectedIP 更新节点的自动检测 IP（节点上线时调用）
+func (r *NodeRepo) UpdateDetectedIP(id int64, detectedIP string) error {
+	now := time.Now().UnixMilli()
+	_, err := r.DB.Exec(`
+		UPDATE node SET detected_ip = ?, updated_time = ? WHERE id = ?`,
+		detectedIP, now, id,
+	)
+	return err
 }

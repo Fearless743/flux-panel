@@ -334,10 +334,10 @@ func refreshTunnelInIP(db *sqlx.DB, tunnel *model.Tunnel, entries []model.ChainT
 	for _, entry := range entries {
 		var n model.Node
 		err := db.Get(&n, `SELECT * FROM node WHERE id = ?`, entry.NodeID)
-		if err != nil || n.ServerIP == "" {
+		if err != nil || n.GetEffectiveIP() == "" {
 			continue
 		}
-		parts = append(parts, n.ServerIP)
+		parts = append(parts, n.GetEffectiveIP())
 	}
 	inIP := strings.Join(parts, ",")
 	now := time.Now().UnixMilli()
@@ -374,7 +374,7 @@ func pushChains(hub *ws.Hub, nodeID int64, target []model.ChainTunnel, nodes map
 		}
 		inputs = append(inputs, gost.ChainNodeInput{
 			Protocol: proto,
-			ServerIP: n.ServerIP,
+			ServerIP: n.GetEffectiveIP(),
 			Port:     port,
 		})
 	}

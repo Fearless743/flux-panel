@@ -1,32 +1,47 @@
 import { useState, useEffect } from "react";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@heroui/table";
 import { Button } from "@heroui/button";
 import { Input, Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
+import {
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+} from "@heroui/modal";
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import { Divider } from "@heroui/divider";
 import { Alert } from "@heroui/alert";
-import toast from 'react-hot-toast';
+import { Switch } from "@heroui/switch";
+import toast from "react-hot-toast";
 
-
-import { 
-  createTunnel, 
+import {
+  createTunnel,
   getTunnelList,
-  updateTunnel, 
+  updateTunnel,
   deleteTunnel,
   getNodeList,
-  diagnoseTunnel
+  diagnoseTunnel,
 } from "@/api";
 
 interface ChainTunnel {
   nodeId: number;
+  brutal?: boolean; // 是否启用 TCP Brutal
   protocol?: string; // 'tls' | 'wss' | 'tcp' | 'mtls' | 'mwss' | 'mtcp' - 转发链协议
   strategy?: string; // 'fifo' | 'round' | 'rand' - 仅转发链需要
   chainType?: number; // 1: 入口, 2: 转发链, 3: 出口
   inx?: number; // 转发链序号
   exitNodeIds?: number[]; // 入口节点使用的出口节点 ID 列表
+  entryChainGroups?: number[]; // 入口节点绑定的转发链组索引列表（0-based）
 }
 
 interface Tunnel {
@@ -89,7 +104,7 @@ export default function TunnelPage() {
   const [loading, setLoading] = useState(true);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
-  
+
   // 模态框状态
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -99,24 +114,26 @@ export default function TunnelPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [tunnelToDelete, setTunnelToDelete] = useState<Tunnel | null>(null);
-  const [currentDiagnosisTunnel, setCurrentDiagnosisTunnel] = useState<Tunnel | null>(null);
-  const [diagnosisResult, setDiagnosisResult] = useState<DiagnosisResult | null>(null);
-  
+  const [currentDiagnosisTunnel, setCurrentDiagnosisTunnel] =
+    useState<Tunnel | null>(null);
+  const [diagnosisResult, setDiagnosisResult] =
+    useState<DiagnosisResult | null>(null);
+
   // 表单状态
   const [form, setForm] = useState<TunnelForm>({
-    name: '',
+    name: "",
     type: 1,
     inNodeId: [],
     outNodeId: [],
     chainNodes: [],
     flow: 1,
     trafficRatio: 1.0,
-    inIp: '',
-    status: 1
+    inIp: "",
+    status: 1,
   });
-  
+
   // 表单验证错误
-  const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     loadData();
@@ -128,23 +145,23 @@ export default function TunnelPage() {
     try {
       const [tunnelsRes, nodesRes] = await Promise.all([
         getTunnelList(),
-        getNodeList()
+        getNodeList(),
       ]);
-      
+
       if (tunnelsRes.code === 0) {
         setTunnels(tunnelsRes.data || []);
       } else {
-        toast.error(tunnelsRes.msg || '获取隧道列表失败');
+        toast.error(tunnelsRes.msg || "获取隧道列表失败");
       }
-      
+
       if (nodesRes.code === 0) {
         setNodes(nodesRes.data || []);
       } else {
-        console.warn('获取节点列表失败:', nodesRes.msg);
+        console.warn("获取节点列表失败:", nodesRes.msg);
       }
     } catch (error) {
-      console.error('加载数据失败:', error);
-      toast.error('加载数据失败');
+      console.error("加载数据失败:", error);
+      toast.error("加载数据失败");
     } finally {
       setLoading(false);
     }
@@ -152,67 +169,75 @@ export default function TunnelPage() {
 
   // 表单验证
   const validateForm = (): boolean => {
-    const newErrors: {[key: string]: string} = {};
-    
+    const newErrors: { [key: string]: string } = {};
+
     if (!form.name.trim()) {
-      newErrors.name = '请输入隧道名称';
+      newErrors.name = "请输入隧道名称";
     } else if (form.name.length < 2 || form.name.length > 50) {
-      newErrors.name = '隧道名称长度应在2-50个字符之间';
+      newErrors.name = "隧道名称长度应在2-50个字符之间";
     }
-    
+
     if (!form.inNodeId || form.inNodeId.length === 0) {
-      newErrors.inNodeId = '请至少选择一个入口节点';
+      newErrors.inNodeId = "请至少选择一个入口节点";
     } else {
       // 验证所有选择的节点都在线（已离线的请先取消勾选移除）
-      const offlineNodes = form.inNodeId.filter(item => {
-        const node = nodes.find(n => n.id === item.nodeId);
+      const offlineNodes = form.inNodeId.filter((item) => {
+        const node = nodes.find((n) => n.id === item.nodeId);
+
         return node && node.status !== 1;
       });
+
       if (offlineNodes.length > 0) {
-        newErrors.inNodeId = '存在离线入口节点，请先取消勾选移除后再保存';
+        newErrors.inNodeId = "存在离线入口节点，请先取消勾选移除后再保存";
       }
     }
-    
+
     if (form.trafficRatio < 0.0 || form.trafficRatio > 100.0) {
-      newErrors.trafficRatio = '流量倍率必须在0.0-100.0之间';
+      newErrors.trafficRatio = "流量倍率必须在0.0-100.0之间";
     }
-    
+
     // 隧道转发时的验证
     if (form.type === 2) {
       if (!form.outNodeId || form.outNodeId.length === 0) {
-        newErrors.outNodeId = '请至少选择一个出口节点';
+        newErrors.outNodeId = "请至少选择一个出口节点";
       } else {
         // 验证所有选择的节点都在线（已离线的请先取消勾选移除）
-        const offlineNodes = form.outNodeId.filter(item => {
-          const node = nodes.find(n => n.id === item.nodeId);
+        const offlineNodes = form.outNodeId.filter((item) => {
+          const node = nodes.find((n) => n.id === item.nodeId);
+
           return node && node.status !== 1;
         });
+
         if (offlineNodes.length > 0) {
-          newErrors.outNodeId = '存在离线出口节点，请先取消勾选移除后再保存';
+          newErrors.outNodeId = "存在离线出口节点，请先取消勾选移除后再保存";
         }
 
         // 检查是否有重复节点
-        const inNodeIds = form.inNodeId.map(item => item.nodeId);
-        const outNodeIds = form.outNodeId.map(item => item.nodeId);
-        const overlap = inNodeIds.filter(id => outNodeIds.includes(id));
+        const inNodeIds = form.inNodeId.map((item) => item.nodeId);
+        const outNodeIds = form.outNodeId.map((item) => item.nodeId);
+        const overlap = inNodeIds.filter((id) => outNodeIds.includes(id));
+
         if (overlap.length > 0) {
-          newErrors.outNodeId = '隧道转发模式下，入口和出口不能有相同节点';
+          newErrors.outNodeId = "隧道转发模式下，入口和出口不能有相同节点";
         }
       }
 
       const offlineChainNodes = (form.chainNodes || [])
         .flat()
-        .filter(item => item.nodeId !== -1)
-        .filter(item => {
-          const node = nodes.find(n => n.id === item.nodeId);
+        .filter((item) => item.nodeId !== -1)
+        .filter((item) => {
+          const node = nodes.find((n) => n.id === item.nodeId);
+
           return node && node.status !== 1;
         });
+
       if (offlineChainNodes.length > 0) {
-        newErrors.chainNodes = '存在离线转发链节点，请先取消勾选移除后再保存';
+        newErrors.chainNodes = "存在离线转发链节点，请先取消勾选移除后再保存";
       }
     }
-    
+
     setErrors(newErrors);
+
     return Object.keys(newErrors).length === 0;
   };
 
@@ -220,15 +245,15 @@ export default function TunnelPage() {
   const handleAdd = () => {
     setIsEdit(false);
     setForm({
-      name: '',
+      name: "",
       type: 1,
       inNodeId: [],
       outNodeId: [],
       chainNodes: [],
       flow: 1,
       trafficRatio: 1.0,
-      inIp: '',
-      status: 1
+      inIp: "",
+      status: 1,
     });
     setErrors({});
     setModalOpen(true);
@@ -237,7 +262,7 @@ export default function TunnelPage() {
   // 编辑隧道 - 只能修改部分字段
   const handleEdit = (tunnel: Tunnel) => {
     setIsEdit(true);
-    
+
     // 直接使用列表数据，getAllTunnels 已经包含完整的节点信息
     setForm({
       id: tunnel.id,
@@ -248,8 +273,13 @@ export default function TunnelPage() {
       chainNodes: tunnel.chainNodes || [],
       flow: tunnel.flow,
       trafficRatio: tunnel.trafficRatio,
-      inIp: tunnel.inIp ? tunnel.inIp.split(',').map(ip => ip.trim()).join('\n') : '',
-      status: tunnel.status
+      inIp: tunnel.inIp
+        ? tunnel.inIp
+            .split(",")
+            .map((ip) => ip.trim())
+            .join("\n")
+        : "",
+      status: tunnel.status,
     });
     setErrors({});
     setModalOpen(true);
@@ -263,21 +293,22 @@ export default function TunnelPage() {
 
   const confirmDelete = async () => {
     if (!tunnelToDelete) return;
-    
+
     setDeleteLoading(true);
     try {
       const response = await deleteTunnel(tunnelToDelete.id);
+
       if (response.code === 0) {
-        toast.success('删除成功');
+        toast.success("删除成功");
         setDeleteModalOpen(false);
         setTunnelToDelete(null);
         loadData();
       } else {
-        toast.error(response.msg || '删除失败');
+        toast.error(response.msg || "删除失败");
       }
     } catch (error) {
-      console.error('删除失败:', error);
-      toast.error('删除失败');
+      console.error("删除失败:", error);
+      toast.error("删除失败");
     } finally {
       setDeleteLoading(false);
     }
@@ -285,79 +316,111 @@ export default function TunnelPage() {
 
   // 隧道类型改变时的处理
   const handleTypeChange = (type: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       type,
       outNodeId: type === 1 ? [] : prev.outNodeId,
-      chainNodes: type === 1 ? [] : prev.chainNodes
+      chainNodes: type === 1 ? [] : prev.chainNodes,
     }));
   };
 
   // 删除转发链中的某一跳（删除整个分组）
   const removeChainNode = (groupIndex: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      chainNodes: (prev.chainNodes || []).filter((_, index) => index !== groupIndex)
+      chainNodes: (prev.chainNodes || []).filter(
+        (_, index) => index !== groupIndex,
+      ),
     }));
   };
 
   // 添加节点到指定的转发链跳数
   const addNodeToChain = (groupIndex: number, nodeId: number) => {
-    setForm(prev => {
+    setForm((prev) => {
       const chainNodes = [...(prev.chainNodes || [])];
       const group = chainNodes[groupIndex] || [];
-      
+
       // 获取当前组的策略和协议
-      const strategy = group.length > 0 ? group[0].strategy : 'round';
-      const protocol = group.length > 0 ? group[0].protocol : 'tls';
-      
+      const strategy = group.length > 0 ? group[0].strategy : "round";
+      const protocol = group.length > 0 ? group[0].protocol : "tls";
+
       // 添加节点到该组
       chainNodes[groupIndex] = [
         ...group,
-        { nodeId, chainType: 2, protocol, strategy }
+        { nodeId, chainType: 2, protocol, strategy },
       ];
-      
+
       return { ...prev, chainNodes };
     });
   };
 
   // 从某一跳删除指定节点
   const removeNodeFromChain = (groupIndex: number, nodeId: number) => {
-    setForm(prev => {
+    setForm((prev) => {
       const chainNodes = [...(prev.chainNodes || [])];
-      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).filter(node => node.nodeId !== nodeId);
+
+      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).filter(
+        (node) => node.nodeId !== nodeId,
+      );
+
       return { ...prev, chainNodes };
     });
   };
 
   // 更新某一跳的所有节点的协议
   const updateChainProtocol = (groupIndex: number, protocol: string) => {
-    setForm(prev => {
+    setForm((prev) => {
       const chainNodes = [...(prev.chainNodes || [])];
-      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map(node => ({ ...node, protocol }));
+
+      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map((node) => ({
+        ...node,
+        protocol,
+      }));
+
       return { ...prev, chainNodes };
     });
   };
 
   // 更新某一跳的所有节点的策略
   const updateChainStrategy = (groupIndex: number, strategy: string) => {
-    setForm(prev => {
+    setForm((prev) => {
       const chainNodes = [...(prev.chainNodes || [])];
-      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map(node => ({ ...node, strategy }));
+
+      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map((node) => ({
+        ...node,
+        strategy,
+      }));
+
+      return { ...prev, chainNodes };
+    });
+  };
+
+  // 更新某一跳的所有节点的 Brutal 开关
+  const updateChainBrutal = (groupIndex: number, brutal: boolean) => {
+    setForm((prev) => {
+      const chainNodes = [...(prev.chainNodes || [])];
+
+      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map((node) => ({
+        ...node,
+        brutal,
+      }));
+
       return { ...prev, chainNodes };
     });
   };
 
   // 获取所有转发链中已选择的节点ID列表
   const getSelectedChainNodeIds = (): number[] => {
-    return (form.chainNodes || []).flatMap(group => group.map(node => node.nodeId));
+    return (form.chainNodes || []).flatMap((group) =>
+      group.map((node) => node.nodeId),
+    );
   };
 
   // 离线节点不可新选，但已选中的仍可取消勾选（编辑时剔除离线节点）
   const offlineUnselectedKeys = (selectedIds: number[]): string[] =>
     nodes
-      .filter(node => node.status !== 1 && !selectedIds.includes(node.id))
-      .map(node => node.id.toString());
+      .filter((node) => node.status !== 1 && !selectedIds.includes(node.id))
+      .map((node) => node.id.toString());
 
   // 获取转发链分组（已经是二维数组）
   const getChainGroups = (): ChainTunnel[][] => {
@@ -367,45 +430,47 @@ export default function TunnelPage() {
   // 提交表单
   const handleSubmit = async () => {
     if (!validateForm()) return;
-    
+
     setSubmitLoading(true);
     try {
       // 过滤掉占位节点（nodeId === -1 的节点）
       const cleanedChainNodes = (form.chainNodes || [])
-        .map(group => group.filter(node => node.nodeId !== -1))
-        .filter(group => group.length > 0); // 移除空组
-      
+        .map((group) => group.filter((node) => node.nodeId !== -1))
+        .filter((group) => group.length > 0); // 移除空组
+
       // 过滤掉出口节点中的占位节点
-      const cleanedOutNodeId = (form.outNodeId || []).filter(node => node.nodeId !== -1);
-      
+      const cleanedOutNodeId = (form.outNodeId || []).filter(
+        (node) => node.nodeId !== -1,
+      );
+
       // 将换行符分隔的IP转换为逗号分隔
       const inIpString = form.inIp
-        .split('\n')
-        .map(ip => ip.trim())
-        .filter(ip => ip)
-        .join(',');
-      
-      const data = { 
+        .split("\n")
+        .map((ip) => ip.trim())
+        .filter((ip) => ip)
+        .join(",");
+
+      const data = {
         ...form,
         inIp: inIpString,
         outNodeId: cleanedOutNodeId,
-        chainNodes: cleanedChainNodes
+        chainNodes: cleanedChainNodes,
       };
-      
-      const response = isEdit 
+
+      const response = isEdit
         ? await updateTunnel(data)
         : await createTunnel(data);
-        
+
       if (response.code === 0) {
-        toast.success(isEdit ? '更新成功' : '创建成功');
+        toast.success(isEdit ? "更新成功" : "创建成功");
         setModalOpen(false);
         loadData();
       } else {
-        toast.error(response.msg || (isEdit ? '更新失败' : '创建失败'));
+        toast.error(response.msg || (isEdit ? "更新失败" : "创建失败"));
       }
     } catch (error) {
-      console.error('提交失败:', error);
-      toast.error('网络错误，请重试');
+      console.error("提交失败:", error);
+      toast.error("网络错误，请重试");
     } finally {
       setSubmitLoading(false);
     }
@@ -420,57 +485,61 @@ export default function TunnelPage() {
 
     try {
       const response = await diagnoseTunnel(tunnel.id);
+
       if (response.code === 0) {
         setDiagnosisResult(response.data);
       } else {
-        toast.error(response.msg || '诊断失败');
+        toast.error(response.msg || "诊断失败");
         setDiagnosisResult({
           tunnelName: tunnel.name,
-          tunnelType: tunnel.type === 1 ? '端口转发' : '隧道转发',
+          tunnelType: tunnel.type === 1 ? "端口转发" : "隧道转发",
           timestamp: Date.now(),
-          results: [{
-            success: false,
-            description: '诊断失败',
-            nodeName: '-',
-            nodeId: '-',
-            targetIp: '-',
-            targetPort: 443,
-            message: response.msg || '诊断过程中发生错误'
-          }]
+          results: [
+            {
+              success: false,
+              description: "诊断失败",
+              nodeName: "-",
+              nodeId: "-",
+              targetIp: "-",
+              targetPort: 443,
+              message: response.msg || "诊断过程中发生错误",
+            },
+          ],
         });
       }
     } catch (error) {
-      console.error('诊断失败:', error);
-      toast.error('网络错误，请重试');
+      console.error("诊断失败:", error);
+      toast.error("网络错误，请重试");
       setDiagnosisResult({
         tunnelName: tunnel.name,
-        tunnelType: tunnel.type === 1 ? '端口转发' : '隧道转发',
+        tunnelType: tunnel.type === 1 ? "端口转发" : "隧道转发",
         timestamp: Date.now(),
-        results: [{
-          success: false,
-          description: '网络错误',
-          nodeName: '-',
-          nodeId: '-',
-          targetIp: '-',
-          targetPort: 443,
-          message: '无法连接到服务器'
-        }]
+        results: [
+          {
+            success: false,
+            description: "网络错误",
+            nodeName: "-",
+            nodeId: "-",
+            targetIp: "-",
+            targetPort: 443,
+            message: "无法连接到服务器",
+          },
+        ],
       });
     } finally {
       setDiagnosisLoading(false);
     }
   };
 
-
   // 获取类型显示
   const getTypeDisplay = (type: number) => {
     switch (type) {
       case 1:
-        return { text: '端口转发', color: 'primary' };
+        return { text: "端口转发", color: "primary" };
       case 2:
-        return { text: '隧道转发', color: 'secondary' };
+        return { text: "隧道转发", color: "secondary" };
       default:
-        return { text: '未知', color: 'default' };
+        return { text: "未知", color: "default" };
     }
   };
 
@@ -478,344 +547,432 @@ export default function TunnelPage() {
   const getFlowDisplay = (flow: number) => {
     switch (flow) {
       case 1:
-        return '单向计算';
+        return "单向计算";
       case 2:
-        return '双向计算';
+        return "双向计算";
       default:
-        return '未知';
+        return "未知";
     }
   };
-
 
   // 获取连接质量
   const getQualityDisplay = (averageTime?: number, packetLoss?: number) => {
     if (averageTime === undefined || packetLoss === undefined) return null;
-    
-    if (averageTime < 30 && packetLoss === 0) return { text: '🚀 优秀', color: 'success' };
-    if (averageTime < 50 && packetLoss === 0) return { text: '✨ 很好', color: 'success' };
-    if (averageTime < 100 && packetLoss < 1) return { text: '👍 良好', color: 'primary' };
-    if (averageTime < 150 && packetLoss < 2) return { text: '😐 一般', color: 'warning' };
-    if (averageTime < 200 && packetLoss < 5) return { text: '😟 较差', color: 'warning' };
-    return { text: '😵 很差', color: 'danger' };
+
+    if (averageTime < 30 && packetLoss === 0)
+      return { text: "🚀 优秀", color: "success" };
+    if (averageTime < 50 && packetLoss === 0)
+      return { text: "✨ 很好", color: "success" };
+    if (averageTime < 100 && packetLoss < 1)
+      return { text: "👍 良好", color: "primary" };
+    if (averageTime < 150 && packetLoss < 2)
+      return { text: "😐 一般", color: "warning" };
+    if (averageTime < 200 && packetLoss < 5)
+      return { text: "😟 较差", color: "warning" };
+
+    return { text: "😵 很差", color: "danger" };
   };
 
   if (loading) {
     return (
-      
-        <div className="flex items-center justify-center h-64">
-          <div className="flex items-center gap-3">
-            <Spinner size="sm" />
-            <span className="text-default-600">正在加载...</span>
-          </div>
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center gap-3">
+          <Spinner size="sm" />
+          <span className="text-default-600">正在加载...</span>
         </div>
-      
+      </div>
     );
   }
 
   return (
-    
-      <div className="px-3 lg:px-6 py-8">
-        {/* 页面头部 */}
-        <div className="flex items-center justify-between mb-6">
-        <div className="flex-1">
-        </div>
+    <div className="px-3 lg:px-6 py-8">
+      {/* 页面头部 */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex-1" />
 
-        <Button
-              size="sm"
-              variant="flat"
-              color="primary"
-              onPress={handleAdd}
-             
-            >
-              新增
-            </Button>
-     
-        </div>
+        <Button color="primary" size="sm" variant="flat" onPress={handleAdd}>
+          新增
+        </Button>
+      </div>
 
-        {/* 隧道列表 */}
-        <Table
-          aria-label="隧道列表"
-          classNames={{
-            wrapper: "shadow-none p-0",
-            th: "bg-default-50 text-default-600 font-medium text-xs",
-          }}
-        >
-          <TableHeader>
-            <TableColumn>名称</TableColumn>
-            <TableColumn>拓扑结构</TableColumn>
-            <TableColumn>流量配置</TableColumn>
-            <TableColumn align="end">操作</TableColumn>
-          </TableHeader>
-          <TableBody
-            items={tunnels}
-            emptyContent={
-              <div className="text-center py-16">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                    <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">暂无隧道配置</h3>
-                    <p className="text-default-500 text-sm mt-1">还没有创建任何隧道配置，点击上方按钮开始创建</p>
-                  </div>
+      {/* 隧道列表 */}
+      <Table
+        aria-label="隧道列表"
+        classNames={{
+          wrapper: "shadow-none p-0",
+          th: "bg-default-50 text-default-600 font-medium text-xs",
+        }}
+      >
+        <TableHeader>
+          <TableColumn>名称</TableColumn>
+          <TableColumn>拓扑结构</TableColumn>
+          <TableColumn>流量配置</TableColumn>
+          <TableColumn align="end">操作</TableColumn>
+        </TableHeader>
+        <TableBody
+          emptyContent={
+            <div className="text-center py-16">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
+                  <svg
+                    className="w-8 h-8 text-default-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">
+                    暂无隧道配置
+                  </h3>
+                  <p className="text-default-500 text-sm mt-1">
+                    还没有创建任何隧道配置，点击上方按钮开始创建
+                  </p>
                 </div>
               </div>
-            }
-          >
-            {(tunnel) => (
-              <TableRow key={tunnel.id}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-foreground text-sm">{tunnel.name}</span>
-                    <Chip
-                      color={getTypeDisplay(tunnel.type).color as any}
-                      variant="flat"
-                      size="sm"
-                      className="text-xs"
-                    >
-                      {getTypeDisplay(tunnel.type).text}
-                    </Chip>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5 text-xs flex-wrap">
-                    <span className="px-2 py-1 bg-primary-50 dark:bg-primary-100/20 rounded border border-primary-200 dark:border-primary-300/20 text-primary-700 dark:text-primary-400 font-medium whitespace-nowrap">
-                      {tunnel.inNodeId?.length || 0}入口
-                    </span>
-                    <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    <span className="px-2 py-1 bg-secondary-50 dark:bg-secondary-100/20 rounded border border-secondary-200 dark:border-secondary-300/20 text-secondary-700 dark:text-secondary-400 font-medium whitespace-nowrap">
-                      {tunnel.type === 2 ? (tunnel.chainNodes?.length || 0) : 0}跳
-                    </span>
-                    <svg className="w-3 h-3 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    <span className="px-2 py-1 bg-success-50 dark:bg-success-100/20 rounded border border-success-200 dark:border-success-300/20 text-success-700 dark:text-success-400 font-medium whitespace-nowrap">
-                      {tunnel.type === 2 ? (tunnel.outNodeId?.length || 0) : (tunnel.inNodeId?.length || 0)}出口
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <Chip variant="flat" size="sm" className="text-xs">
-                      {getFlowDisplay(tunnel.flow)}
-                    </Chip>
-                    <Chip variant="flat" size="sm" className="text-xs">
-                      {tunnel.trafficRatio}x
-                    </Chip>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1 justify-end">
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      color="primary"
-                      isIconOnly
-                      onPress={() => handleEdit(tunnel)}
-                    >
-                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                      </svg>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      color="warning"
-                      isIconOnly
-                      onPress={() => handleDiagnose(tunnel)}
-                    >
-                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      color="danger"
-                      isIconOnly
-                      onPress={() => handleDelete(tunnel)}
-                    >
-                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clipRule="evenodd" />
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z" clipRule="evenodd" />
-                      </svg>
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-
-        {/* 新增/编辑模态框 */}
-        <Modal 
-          isOpen={modalOpen}
-          onOpenChange={setModalOpen}
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="blur"
-        placement="center"
+            </div>
+          }
+          items={tunnels}
         >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold">
-                    {isEdit ? '编辑隧道' : '新增隧道'}
-                  </h2>
-                  <p className="text-small text-default-500">
-                    {isEdit ? '修改配置后将实时下发到相关节点（隧道类型不可修改）' : '创建新的隧道配置'}
-                  </p>
-                </ModalHeader>
-                <ModalBody>
-                  <div className="space-y-4">
-                    <Input
-                      label="隧道名称"
-                      placeholder="请输入隧道名称"
-                      value={form.name}
-                      onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
-                      isInvalid={!!errors.name}
-                      errorMessage={errors.name}
-                      variant="bordered"
+          {(tunnel) => (
+            <TableRow key={tunnel.id}>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-foreground text-sm">
+                    {tunnel.name}
+                  </span>
+                  <Chip
+                    className="text-xs"
+                    color={getTypeDisplay(tunnel.type).color as any}
+                    size="sm"
+                    variant="flat"
+                  >
+                    {getTypeDisplay(tunnel.type).text}
+                  </Chip>
+                </div>
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                  <span className="px-2 py-1 bg-primary-50 dark:bg-primary-100/20 rounded border border-primary-200 dark:border-primary-300/20 text-primary-700 dark:text-primary-400 font-medium whitespace-nowrap">
+                    {tunnel.inNodeId?.length || 0}入口
+                  </span>
+                  <svg
+                    className="w-3 h-3 text-default-400 flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M9 5l7 7-7 7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
                     />
-                    
+                  </svg>
+                  <span className="px-2 py-1 bg-secondary-50 dark:bg-secondary-100/20 rounded border border-secondary-200 dark:border-secondary-300/20 text-secondary-700 dark:text-secondary-400 font-medium whitespace-nowrap">
+                    {tunnel.type === 2 ? tunnel.chainNodes?.length || 0 : 0}跳
+                  </span>
+                  <svg
+                    className="w-3 h-3 text-default-400 flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M9 5l7 7-7 7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                    />
+                  </svg>
+                  <span className="px-2 py-1 bg-success-50 dark:bg-success-100/20 rounded border border-success-200 dark:border-success-300/20 text-success-700 dark:text-success-400 font-medium whitespace-nowrap">
+                    {tunnel.type === 2
+                      ? tunnel.outNodeId?.length || 0
+                      : tunnel.inNodeId?.length || 0}
+                    出口
+                  </span>
+                </div>
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1.5">
+                  <Chip className="text-xs" size="sm" variant="flat">
+                    {getFlowDisplay(tunnel.flow)}
+                  </Chip>
+                  <Chip className="text-xs" size="sm" variant="flat">
+                    {tunnel.trafficRatio}x
+                  </Chip>
+                </div>
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1 justify-end">
+                  <Button
+                    isIconOnly
+                    color="primary"
+                    size="sm"
+                    variant="flat"
+                    onPress={() => handleEdit(tunnel)}
+                  >
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                    </svg>
+                  </Button>
+                  <Button
+                    isIconOnly
+                    color="warning"
+                    size="sm"
+                    variant="flat"
+                    onPress={() => handleDiagnose(tunnel)}
+                  >
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        clipRule="evenodd"
+                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                        fillRule="evenodd"
+                      />
+                    </svg>
+                  </Button>
+                  <Button
+                    isIconOnly
+                    color="danger"
+                    size="sm"
+                    variant="flat"
+                    onPress={() => handleDelete(tunnel)}
+                  >
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        clipRule="evenodd"
+                        d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"
+                        fillRule="evenodd"
+                      />
+                      <path
+                        clipRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z"
+                        fillRule="evenodd"
+                      />
+                    </svg>
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+
+      {/* 新增/编辑模态框 */}
+      <Modal
+        backdrop="blur"
+        isOpen={modalOpen}
+        placement="center"
+        scrollBehavior="outside"
+        size="2xl"
+        onOpenChange={setModalOpen}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold">
+                  {isEdit ? "编辑隧道" : "新增隧道"}
+                </h2>
+                <p className="text-small text-default-500">
+                  {isEdit
+                    ? "修改配置后将实时下发到相关节点（隧道类型不可修改）"
+                    : "创建新的隧道配置"}
+                </p>
+              </ModalHeader>
+              <ModalBody>
+                <div className="space-y-4">
+                  <Input
+                    errorMessage={errors.name}
+                    isInvalid={!!errors.name}
+                    label="隧道名称"
+                    placeholder="请输入隧道名称"
+                    value={form.name}
+                    variant="bordered"
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                  />
+
+                  <Select
+                    description={isEdit ? "编辑时无法修改隧道类型" : undefined}
+                    errorMessage={errors.type}
+                    isDisabled={isEdit}
+                    isInvalid={!!errors.type}
+                    label="隧道类型"
+                    placeholder="请选择隧道类型"
+                    selectedKeys={[form.type.toString()]}
+                    variant="bordered"
+                    onSelectionChange={(keys) => {
+                      const selectedKey = Array.from(keys)[0] as string;
+
+                      if (selectedKey) {
+                        handleTypeChange(parseInt(selectedKey));
+                      }
+                    }}
+                  >
+                    <SelectItem key="1">端口转发</SelectItem>
+                    <SelectItem key="2">隧道转发</SelectItem>
+                  </Select>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Select
-                      label="隧道类型"
-                      placeholder="请选择隧道类型"
-                      selectedKeys={[form.type.toString()]}
+                      errorMessage={errors.flow}
+                      isInvalid={!!errors.flow}
+                      label="流量计算"
+                      placeholder="请选择流量计算方式"
+                      selectedKeys={[form.flow.toString()]}
+                      variant="bordered"
                       onSelectionChange={(keys) => {
                         const selectedKey = Array.from(keys)[0] as string;
+
                         if (selectedKey) {
-                          handleTypeChange(parseInt(selectedKey));
+                          setForm((prev) => ({
+                            ...prev,
+                            flow: parseInt(selectedKey),
+                          }));
                         }
                       }}
-                      isInvalid={!!errors.type}
-                      errorMessage={errors.type}
-                      variant="bordered"
-                      isDisabled={isEdit}
-                      description={isEdit ? "编辑时无法修改隧道类型" : undefined}
                     >
-                      <SelectItem key="1">端口转发</SelectItem>
-                      <SelectItem key="2">隧道转发</SelectItem>
+                      <SelectItem key="1">单向计算（仅上传）</SelectItem>
+                      <SelectItem key="2">双向计算（上传+下载）</SelectItem>
                     </Select>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Select
-                        label="流量计算"
-                        placeholder="请选择流量计算方式"
-                        selectedKeys={[form.flow.toString()]}
-                        onSelectionChange={(keys) => {
-                          const selectedKey = Array.from(keys)[0] as string;
-                          if (selectedKey) {
-                            setForm(prev => ({ ...prev, flow: parseInt(selectedKey) }));
-                          }
-                        }}
-                        isInvalid={!!errors.flow}
-                        errorMessage={errors.flow}
-                        variant="bordered"
-                      >
-                        <SelectItem key="1">单向计算（仅上传）</SelectItem>
-                        <SelectItem key="2">双向计算（上传+下载）</SelectItem>
-                      </Select>
-
-                      <Input
-                        label="流量倍率"
-                        placeholder="请输入流量倍率"
-                        type="number"
-                        value={form.trafficRatio.toString()}
-                        onChange={(e) => setForm(prev => ({ 
-                          ...prev, 
-                          trafficRatio: parseFloat(e.target.value) || 0
-                        }))}
-                        isInvalid={!!errors.trafficRatio}
-                        errorMessage={errors.trafficRatio}
-                        variant="bordered"
-                        endContent={
-                          <div className="pointer-events-none flex items-center">
-                            <span className="text-default-400 text-small">x</span>
-                          </div>
-                        }
-                      />
-                    </div>
-
-                    <Textarea
-                      label="入口IP"
-                      placeholder="一行一个IP地址或域名，例如:&#10;192.168.1.100&#10;example.com"
-                      value={form.inIp}
-                      onChange={(e) => setForm(prev => ({ ...prev, inIp: e.target.value }))}
-                      isInvalid={!!errors.inIp}
-                      errorMessage={errors.inIp}
+                    <Input
+                      endContent={
+                        <div className="pointer-events-none flex items-center">
+                          <span className="text-default-400 text-small">x</span>
+                        </div>
+                      }
+                      errorMessage={errors.trafficRatio}
+                      isInvalid={!!errors.trafficRatio}
+                      label="流量倍率"
+                      placeholder="请输入流量倍率"
+                      type="number"
+                      value={form.trafficRatio.toString()}
                       variant="bordered"
-                      minRows={3}
-                      maxRows={5}
-                      description="支持多个IP，每行一个地址,为空时使用入口节点ip"
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          trafficRatio: parseFloat(e.target.value) || 0,
+                        }))
+                      }
                     />
+                  </div>
 
-                    <Divider />
-                    <h3 className="text-lg font-semibold">入口配置</h3>
+                  <Textarea
+                    description="支持多个IP，每行一个地址,为空时使用入口节点ip"
+                    errorMessage={errors.inIp}
+                    isInvalid={!!errors.inIp}
+                    label="入口IP"
+                    maxRows={5}
+                    minRows={3}
+                    placeholder="一行一个IP地址或域名，例如:&#10;192.168.1.100&#10;example.com"
+                    value={form.inIp}
+                    variant="bordered"
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, inIp: e.target.value }))
+                    }
+                  />
 
-                     <div className="space-y-2">
-                       <Select
-                         label="入口节点"
-                         placeholder="请选择入口节点（可多选）"
-                         selectionMode="multiple"
-                         selectedKeys={form.inNodeId.map(ct => ct.nodeId.toString())}
-                         disabledKeys={[
-                           ...offlineUnselectedKeys(form.inNodeId.map(ct => ct.nodeId)),
-                           ...(form.outNodeId || []).map(ct => ct.nodeId.toString()),
-                           ...getSelectedChainNodeIds().map(id => id.toString())
-                         ]}
-                         onSelectionChange={(keys) => {
-                           const selectedIds = Array.from(keys).map(key => parseInt(key as string));
-                           const newInNodeId: ChainTunnel[] = selectedIds.map(nodeId => {
-                             // 保留已有的端口配置
-                             const existing = form.inNodeId.find(ct => ct.nodeId === nodeId);
-                             return existing || { nodeId, chainType: 1 };
-                           });
-                           setForm(prev => ({ ...prev, inNodeId: newInNodeId }));
-                         }}
-                         isInvalid={!!errors.inNodeId}
-                         errorMessage={errors.inNodeId}
-                         variant="bordered"
-                       >
-                        {nodes.map((node) => (
-                          <SelectItem 
-                            key={node.id}
-                            textValue={`${node.name}`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>{node.name}</span>
-                              <div className="flex items-center gap-2">
-                                <Chip 
-                                  color={node.status === 1 ? 'success' : 'default'} 
-                                  variant="flat" 
-                                  size="sm"
-                                >
-                                  {node.status === 1 ? '在线' : '离线'}
-                                </Chip>
-                                {form.outNodeId && form.outNodeId.some(ct => ct.nodeId === node.id) && (
-                                  <Chip color="danger" variant="flat" size="sm">
+                  <Divider />
+                  <h3 className="text-lg font-semibold">入口配置</h3>
+
+                  <div className="space-y-2">
+                    <Select
+                      disabledKeys={[
+                        ...offlineUnselectedKeys(
+                          form.inNodeId.map((ct) => ct.nodeId),
+                        ),
+                        ...(form.outNodeId || []).map((ct) =>
+                          ct.nodeId.toString(),
+                        ),
+                        ...getSelectedChainNodeIds().map((id) => id.toString()),
+                      ]}
+                      errorMessage={errors.inNodeId}
+                      isInvalid={!!errors.inNodeId}
+                      label="入口节点"
+                      placeholder="请选择入口节点（可多选）"
+                      selectedKeys={form.inNodeId.map((ct) =>
+                        ct.nodeId.toString(),
+                      )}
+                      selectionMode="multiple"
+                      variant="bordered"
+                      onSelectionChange={(keys) => {
+                        const selectedIds = Array.from(keys).map((key) =>
+                          parseInt(key as string),
+                        );
+                        const newInNodeId: ChainTunnel[] = selectedIds.map(
+                          (nodeId) => {
+                            // 保留已有的端口配置
+                            const existing = form.inNodeId.find(
+                              (ct) => ct.nodeId === nodeId,
+                            );
+
+                            return existing || { nodeId, chainType: 1 };
+                          },
+                        );
+
+                        setForm((prev) => ({ ...prev, inNodeId: newInNodeId }));
+                      }}
+                    >
+                      {nodes.map((node) => (
+                        <SelectItem key={node.id} textValue={`${node.name}`}>
+                          <div className="flex items-center justify-between">
+                            <span>{node.name}</span>
+                            <div className="flex items-center gap-2">
+                              <Chip
+                                color={
+                                  node.status === 1 ? "success" : "default"
+                                }
+                                size="sm"
+                                variant="flat"
+                              >
+                                {node.status === 1 ? "在线" : "离线"}
+                              </Chip>
+                              {form.outNodeId &&
+                                form.outNodeId.some(
+                                  (ct) => ct.nodeId === node.id,
+                                ) && (
+                                  <Chip color="danger" size="sm" variant="flat">
                                     已选为出口
                                   </Chip>
                                 )}
-                                {getSelectedChainNodeIds().includes(node.id) && (
-                                  <Chip color="primary" variant="flat" size="sm">
-                                    已选为转发链
-                                  </Chip>
-                                )}
-                              </div>
+                              {getSelectedChainNodeIds().includes(node.id) && (
+                                <Chip color="primary" size="sm" variant="flat">
+                                  已选为转发链
+                                </Chip>
+                              )}
                             </div>
-                          </SelectItem>
-                        ))}
-                      </Select>
-                    </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </Select>
+                  </div>
 
-                    {/* 隧道转发时显示入口-出口绑定配置 */}
-                    {form.type === 2 && form.inNodeId.length > 0 && (
+                  {/* 隧道转发时显示入口-出口绑定配置（无转发链时） */}
+                  {form.type === 2 &&
+                    form.inNodeId.length > 0 &&
+                    !(form.chainNodes || []).some((g) => g.length > 0) && (
                       <>
                         <Divider />
                         <h3 className="text-lg font-semibold">入口-出口绑定</h3>
@@ -824,70 +981,112 @@ export default function TunnelPage() {
                         </p>
                         <div className="space-y-3">
                           {form.inNodeId.map((entry, entryIndex) => {
-                            const entryNode = nodes.find(n => n.id === entry.nodeId);
+                            const entryNode = nodes.find(
+                              (n) => n.id === entry.nodeId,
+                            );
+
                             if (!entryNode) return null;
+
                             return (
-                              <div key={entry.nodeId} className="border border-default-200 rounded-lg p-3">
+                              <div
+                                key={entry.nodeId}
+                                className="border border-default-200 rounded-lg p-3"
+                              >
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-sm font-medium text-default-600">
                                     {entryNode.name}
                                   </span>
-                                  <Chip color="primary" variant="flat" size="sm">
+                                  <Chip
+                                    color="primary"
+                                    size="sm"
+                                    variant="flat"
+                                  >
                                     入口
                                   </Chip>
                                 </div>
                                 <Select
+                                  disabledKeys={[
+                                    ...offlineUnselectedKeys(
+                                      (() => {
+                                        if (!entry.exitNodeIds) return [];
+                                        if (
+                                          typeof entry.exitNodeIds === "string"
+                                        ) {
+                                          try {
+                                            return JSON.parse(
+                                              entry.exitNodeIds,
+                                            );
+                                          } catch {
+                                            return [];
+                                          }
+                                        }
+
+                                        return Array.isArray(entry.exitNodeIds)
+                                          ? entry.exitNodeIds
+                                          : [];
+                                      })(),
+                                    ),
+                                    ...form.inNodeId.map((ct) =>
+                                      ct.nodeId.toString(),
+                                    ),
+                                    ...getSelectedChainNodeIds().map((id) =>
+                                      id.toString(),
+                                    ),
+                                  ]}
                                   label="出口节点"
                                   placeholder="选择出口节点（可多选，不选则使用所有出口）"
-                                  selectionMode="multiple"
                                   selectedKeys={(() => {
                                     // 处理 exitNodeIds 可能是字符串或数组的情况
                                     let ids: number[] = [];
+
                                     if (entry.exitNodeIds) {
-                                      if (typeof entry.exitNodeIds === 'string') {
+                                      if (
+                                        typeof entry.exitNodeIds === "string"
+                                      ) {
                                         try {
                                           ids = JSON.parse(entry.exitNodeIds);
                                         } catch {
                                           ids = [];
                                         }
-                                      } else if (Array.isArray(entry.exitNodeIds)) {
+                                      } else if (
+                                        Array.isArray(entry.exitNodeIds)
+                                      ) {
                                         ids = entry.exitNodeIds;
                                       }
                                     }
-                                    return ids.map(id => id.toString());
+
+                                    return ids.map((id) => id.toString());
                                   })()}
-                                  disabledKeys={[
-                                    ...offlineUnselectedKeys((() => {
-                                      if (!entry.exitNodeIds) return [];
-                                      if (typeof entry.exitNodeIds === 'string') {
-                                        try {
-                                          return JSON.parse(entry.exitNodeIds);
-                                        } catch {
-                                          return [];
-                                        }
-                                      }
-                                      return Array.isArray(entry.exitNodeIds) ? entry.exitNodeIds : [];
-                                    })()),
-                                    ...form.inNodeId.map(ct => ct.nodeId.toString()),
-                                    ...getSelectedChainNodeIds().map(id => id.toString())
-                                  ]}
+                                  selectionMode="multiple"
+                                  size="sm"
+                                  variant="bordered"
                                   onSelectionChange={(keys) => {
-                                    const selectedIds = Array.from(keys).map(key => parseInt(key as string));
-                                    setForm(prev => {
+                                    const selectedIds = Array.from(keys).map(
+                                      (key) => parseInt(key as string),
+                                    );
+
+                                    setForm((prev) => {
                                       const newInNodeId = [...prev.inNodeId];
+
                                       newInNodeId[entryIndex] = {
                                         ...newInNodeId[entryIndex],
-                                        exitNodeIds: selectedIds.length > 0 ? selectedIds : undefined
+                                        exitNodeIds:
+                                          selectedIds.length > 0
+                                            ? selectedIds
+                                            : undefined,
                                       };
+
                                       return { ...prev, inNodeId: newInNodeId };
                                     });
                                   }}
-                                  variant="bordered"
-                                  size="sm"
                                 >
                                   {(form.outNodeId || []).map((outEntry) => {
-                                    const outNode = nodes.find(n => n.id === outEntry.nodeId);
+                                    const outNode = nodes.find(
+                                      (n) => n.id === outEntry.nodeId,
+                                    );
+
                                     if (!outNode) return null;
+
                                     return (
                                       <SelectItem
                                         key={outEntry.nodeId}
@@ -896,11 +1095,17 @@ export default function TunnelPage() {
                                         <div className="flex items-center justify-between">
                                           <span>{outNode.name}</span>
                                           <Chip
-                                            color={outNode.status === 1 ? 'success' : 'default'}
-                                            variant="flat"
+                                            color={
+                                              outNode.status === 1
+                                                ? "success"
+                                                : "default"
+                                            }
                                             size="sm"
+                                            variant="flat"
                                           >
-                                            {outNode.status === 1 ? '在线' : '离线'}
+                                            {outNode.status === 1
+                                              ? "在线"
+                                              : "离线"}
                                           </Chip>
                                         </div>
                                       </SelectItem>
@@ -914,798 +1119,1271 @@ export default function TunnelPage() {
                       </>
                     )}
 
-                    {/* 隧道转发时显示转发链配置 */}
-                    {form.type === 2 && (
+                  {/* 隧道转发且有转发链时，显示入口-转发链绑定配置 */}
+                  {form.type === 2 &&
+                    form.inNodeId.length > 0 &&
+                    (form.chainNodes || []).some((g) => g.length > 0) && (
                       <>
                         <Divider />
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-semibold">转发链配置</h3>
-                          <Button
-                            size="sm"
-                            color="primary"
-                            variant="flat"
-                            onPress={() => {
-                              // 添加新的一跳（一个空组，或包含占位节点）
-                              setForm(prev => ({
-                                ...prev,
-                                chainNodes: [
-                                  ...(prev.chainNodes || []),
-                                  [{ nodeId: -1, chainType: 2, protocol: 'tls', strategy: 'round' }]
-                                ]
-                              }));
-                            }}
-                            startContent={
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                            }
-                          >
-                            添加一跳
-                          </Button>
-                        </div>
+                        <h3 className="text-lg font-semibold">
+                          入口-转发链绑定
+                        </h3>
+                        <p className="text-sm text-default-500 mb-3">
+                          为每个入口节点指定它应该连接的转发链组。如果不指定，则连接到第一个转发链组。
+                        </p>
+                        <div className="space-y-3">
+                          {form.inNodeId.map((entry, entryIndex) => {
+                            const entryNode = nodes.find(
+                              (n) => n.id === entry.nodeId,
+                            );
 
-          
+                            if (!entryNode) return null;
+                            const chainGroups = form.chainNodes || [];
 
-                        {getChainGroups().length > 0 && (
-                          <div className="space-y-3">
-                            {getChainGroups().map((groupNodes, groupIndex) => {
-                              const protocol = groupNodes.length > 0 ? groupNodes[0].protocol || 'tls' : 'tls';
-                              const strategy = groupNodes.length > 0 ? groupNodes[0].strategy || 'round' : 'round';
-                              
-                              return (
-                                <div key={groupIndex} className="border border-default-200 rounded-lg p-3">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-medium text-default-600">第{groupIndex + 1}跳</span>
-                                    <Button
-                                      size="sm"
-                                      color="danger"
-                                      variant="light"
-                                      isIconOnly
-                                      onPress={() => removeChainNode(groupIndex)}
+                            return (
+                              <div
+                                key={entry.nodeId}
+                                className="border border-default-200 rounded-lg p-3"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-medium text-default-600">
+                                    {entryNode.name}
+                                  </span>
+                                  <Chip
+                                    color="warning"
+                                    size="sm"
+                                    variant="flat"
+                                  >
+                                    入口
+                                  </Chip>
+                                </div>
+                                <Select
+                                  label="转发链组"
+                                  placeholder="选择转发链组（可多选，不选则使用第一个）"
+                                  selectedKeys={(() => {
+                                    const groups = entry.entryChainGroups || [];
+
+                                    return groups.map((g) => g.toString());
+                                  })()}
+                                  selectionMode="multiple"
+                                  size="sm"
+                                  variant="bordered"
+                                  onSelectionChange={(keys) => {
+                                    const selectedGroups = Array.from(keys).map(
+                                      (key) => parseInt(key as string),
+                                    );
+
+                                    setForm((prev) => {
+                                      const newInNodeId = [...prev.inNodeId];
+
+                                      newInNodeId[entryIndex] = {
+                                        ...newInNodeId[entryIndex],
+                                        entryChainGroups:
+                                          selectedGroups.length > 0
+                                            ? selectedGroups
+                                            : undefined,
+                                      };
+
+                                      return { ...prev, inNodeId: newInNodeId };
+                                    });
+                                  }}
+                                >
+                                  {chainGroups.map((group, groupIndex) => (
+                                    <SelectItem
+                                      key={groupIndex.toString()}
+                                      textValue={`链组 ${groupIndex + 1}`}
                                     >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
-                                    </Button>
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                                    {/* 节点选择 - 移动端100%，桌面端50% */}
-                                    <div className="col-span-1 md:col-span-2">
-                                      <Select
-                                        label="节点"
-                                        placeholder="选择节点（可多选）"
-                                        selectionMode="multiple"
-                                        selectedKeys={groupNodes.filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId.toString())}
-                                        disabledKeys={[
-                                          ...offlineUnselectedKeys(
-                                            groupNodes.filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId)
+                                      <div className="flex items-center gap-2">
+                                        <span>链组 {groupIndex + 1}</span>
+                                        <Chip
+                                          color="primary"
+                                          size="sm"
+                                          variant="flat"
+                                        >
+                                          {group.length} 节点
+                                        </Chip>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </Select>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+
+                  {/* 隧道转发时显示转发链配置 */}
+                  {form.type === 2 && (
+                    <>
+                      <Divider />
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold">转发链配置</h3>
+                        <Button
+                          color="primary"
+                          size="sm"
+                          startContent={
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                d="M12 4v16m8-8H4"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                              />
+                            </svg>
+                          }
+                          variant="flat"
+                          onPress={() => {
+                            // 添加新的一跳（一个空组，或包含占位节点）
+                            setForm((prev) => ({
+                              ...prev,
+                              chainNodes: [
+                                ...(prev.chainNodes || []),
+                                [
+                                  {
+                                    nodeId: -1,
+                                    chainType: 2,
+                                    protocol: "tls",
+                                    strategy: "round",
+                                  },
+                                ],
+                              ],
+                            }));
+                          }}
+                        >
+                          添加一跳
+                        </Button>
+                      </div>
+
+                      {getChainGroups().length > 0 && (
+                        <div className="space-y-3">
+                          {getChainGroups().map((groupNodes, groupIndex) => {
+                            const protocol =
+                              groupNodes.length > 0
+                                ? groupNodes[0].protocol || "tls"
+                                : "tls";
+                            const strategy =
+                              groupNodes.length > 0
+                                ? groupNodes[0].strategy || "round"
+                                : "round";
+
+                            return (
+                              <div
+                                key={groupIndex}
+                                className="border border-default-200 rounded-lg p-3"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-medium text-default-600">
+                                    第{groupIndex + 1}跳
+                                  </span>
+                                  <Button
+                                    isIconOnly
+                                    color="danger"
+                                    size="sm"
+                                    variant="light"
+                                    onPress={() => removeChainNode(groupIndex)}
+                                  >
+                                    <svg
+                                      className="w-4 h-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        d="M6 18L18 6M6 6l12 12"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                      />
+                                    </svg>
+                                  </Button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                                  {/* 节点选择 - 移动端100%，桌面端50% */}
+                                  <div className="col-span-1 md:col-span-2">
+                                    <Select
+                                      classNames={{
+                                        label: "text-xs",
+                                        value: "text-sm",
+                                      }}
+                                      disabledKeys={[
+                                        ...offlineUnselectedKeys(
+                                          groupNodes
+                                            .filter((ct) => ct.nodeId !== -1)
+                                            .map((ct) => ct.nodeId),
+                                        ),
+                                        ...form.inNodeId.map((ct) =>
+                                          ct.nodeId.toString(),
+                                        ),
+                                        ...(form.outNodeId || []).map((ct) =>
+                                          ct.nodeId.toString(),
+                                        ),
+                                        // 排除其他跳数已选的节点
+                                        ...(form.chainNodes || [])
+                                          .flatMap((group, idx) =>
+                                            idx !== groupIndex
+                                              ? group.map((ct) => ct.nodeId)
+                                              : [],
+                                          )
+                                          .filter((id) => id !== -1)
+                                          .map((id) => id.toString()),
+                                      ]}
+                                      label="节点"
+                                      placeholder="选择节点（可多选）"
+                                      selectedKeys={groupNodes
+                                        .filter((ct) => ct.nodeId !== -1)
+                                        .map((ct) => ct.nodeId.toString())}
+                                      selectionMode="multiple"
+                                      size="sm"
+                                      variant="bordered"
+                                      onSelectionChange={(keys) => {
+                                        const selectedIds = Array.from(
+                                          keys,
+                                        ).map((key) => parseInt(key as string));
+                                        const currentNodes = groupNodes.filter(
+                                          (ct) => ct.nodeId !== -1,
+                                        );
+
+                                        // 找出新增的节点
+                                        const currentNodeIds = currentNodes.map(
+                                          (ct) => ct.nodeId,
+                                        );
+                                        const addedIds = selectedIds.filter(
+                                          (id) => !currentNodeIds.includes(id),
+                                        );
+                                        const removedIds =
+                                          currentNodeIds.filter(
+                                            (id) => !selectedIds.includes(id),
+                                          );
+
+                                        // 添加新节点
+                                        addedIds.forEach((nodeId) =>
+                                          addNodeToChain(groupIndex, nodeId),
+                                        );
+
+                                        // 删除取消选择的节点
+                                        removedIds.forEach((nodeId) =>
+                                          removeNodeFromChain(
+                                            groupIndex,
+                                            nodeId,
                                           ),
-                                          ...form.inNodeId.map(ct => ct.nodeId.toString()),
-                                          ...(form.outNodeId || []).map(ct => ct.nodeId.toString()),
-                                          // 排除其他跳数已选的节点
-                                          ...(form.chainNodes || [])
-                                            .flatMap((group, idx) => idx !== groupIndex ? group.map(ct => ct.nodeId) : [])
-                                            .filter(id => id !== -1)
-                                            .map(id => id.toString())
-                                        ]}
-                                        onSelectionChange={(keys) => {
-                                          const selectedIds = Array.from(keys).map(key => parseInt(key as string));
-                                          const currentNodes = groupNodes.filter(ct => ct.nodeId !== -1);
-                                          
-                                          // 找出新增的节点
-                                          const currentNodeIds = currentNodes.map(ct => ct.nodeId);
-                                          const addedIds = selectedIds.filter(id => !currentNodeIds.includes(id));
-                                          const removedIds = currentNodeIds.filter(id => !selectedIds.includes(id));
-                                          
-                                          // 添加新节点
-                                          addedIds.forEach(nodeId => addNodeToChain(groupIndex, nodeId));
-                                          
-                                          // 删除取消选择的节点
-                                          removedIds.forEach(nodeId => removeNodeFromChain(groupIndex, nodeId));
-                                        }}
-                                        variant="bordered"
-                                        size="sm"
-                                        classNames={{
-                                          label: "text-xs",
-                                          value: "text-sm"
-                                        }}
-                                      >
-                                        {nodes.map((node) => (
-                                          <SelectItem 
-                                            key={node.id}
-                                            textValue={`${node.name}`}
-                                          >
-                                            <div className="flex items-center justify-between">
-                                              <span className="text-sm">{node.name}</span>
-                                              <div className="flex items-center gap-2">
-                                                <Chip 
-                                                  color={node.status === 1 ? 'success' : 'default'} 
-                                                  variant="flat" 
+                                        );
+                                      }}
+                                    >
+                                      {nodes.map((node) => (
+                                        <SelectItem
+                                          key={node.id}
+                                          textValue={`${node.name}`}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-sm">
+                                              {node.name}
+                                            </span>
+                                            <div className="flex items-center gap-2">
+                                              <Chip
+                                                color={
+                                                  node.status === 1
+                                                    ? "success"
+                                                    : "default"
+                                                }
+                                                size="sm"
+                                                variant="flat"
+                                              >
+                                                {node.status === 1
+                                                  ? "在线"
+                                                  : "离线"}
+                                              </Chip>
+                                              {form.inNodeId.some(
+                                                (ct) => ct.nodeId === node.id,
+                                              ) && (
+                                                <Chip
+                                                  color="warning"
                                                   size="sm"
+                                                  variant="flat"
                                                 >
-                                                  {node.status === 1 ? '在线' : '离线'}
+                                                  已选为入口
                                                 </Chip>
-                                                {form.inNodeId.some(ct => ct.nodeId === node.id) && (
-                                                  <Chip color="warning" variant="flat" size="sm">
-                                                    已选为入口
-                                                  </Chip>
-                                                )}
-                                                {form.outNodeId && form.outNodeId.some(ct => ct.nodeId === node.id) && (
-                                                  <Chip color="danger" variant="flat" size="sm">
+                                              )}
+                                              {form.outNodeId &&
+                                                form.outNodeId.some(
+                                                  (ct) => ct.nodeId === node.id,
+                                                ) && (
+                                                  <Chip
+                                                    color="danger"
+                                                    size="sm"
+                                                    variant="flat"
+                                                  >
                                                     已选为出口
                                                   </Chip>
                                                 )}
-                                                {/* 显示是否在其他跳数中被选择 */}
-                                                {(form.chainNodes || []).some((group, idx) => 
-                                                  idx !== groupIndex && group.some(ct => ct.nodeId === node.id && ct.nodeId !== -1)
-                                                ) && (
-                                                  <Chip color="primary" variant="flat" size="sm">
-                                                    已选为其他跳
-                                                  </Chip>
-                                                )}
+                                              {/* 显示是否在其他跳数中被选择 */}
+                                              {(form.chainNodes || []).some(
+                                                (group, idx) =>
+                                                  idx !== groupIndex &&
+                                                  group.some(
+                                                    (ct) =>
+                                                      ct.nodeId === node.id &&
+                                                      ct.nodeId !== -1,
+                                                  ),
+                                              ) && (
+                                                <Chip
+                                                  color="primary"
+                                                  size="sm"
+                                                  variant="flat"
+                                                >
+                                                  已选为其他跳
+                                                </Chip>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </Select>
+                                  </div>
+
+                                  {/* 协议选择 - 25% */}
+                                  <Select
+                                    classNames={{
+                                      label: "text-xs",
+                                      value: "text-sm",
+                                    }}
+                                    label="协议"
+                                    placeholder="选择协议"
+                                    selectedKeys={[protocol]}
+                                    size="sm"
+                                    variant="bordered"
+                                    onSelectionChange={(keys) => {
+                                      const selectedKey = Array.from(
+                                        keys,
+                                      )[0] as string;
+
+                                      if (selectedKey) {
+                                        updateChainProtocol(
+                                          groupIndex,
+                                          selectedKey,
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    <SelectItem key="tls">TLS</SelectItem>
+                                    <SelectItem key="wss">WSS</SelectItem>
+                                    <SelectItem key="tcp">TCP</SelectItem>
+                                    <SelectItem key="mtls">MTLS</SelectItem>
+                                    <SelectItem key="mwss">MWSS</SelectItem>
+                                    <SelectItem key="mtcp">MTCP</SelectItem>
+                                  </Select>
+
+                                  {/* 负载策略 - 25% */}
+                                  <Select
+                                    classNames={{
+                                      label: "text-xs",
+                                      value: "text-sm",
+                                    }}
+                                    label="负载策略"
+                                    placeholder="选择策略"
+                                    selectedKeys={[strategy]}
+                                    size="sm"
+                                    variant="bordered"
+                                    onSelectionChange={(keys) => {
+                                      const selectedKey = Array.from(
+                                        keys,
+                                      )[0] as string;
+
+                                      if (selectedKey) {
+                                        updateChainStrategy(
+                                          groupIndex,
+                                          selectedKey,
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    <SelectItem key="fifo">主备</SelectItem>
+                                    <SelectItem key="round">轮询</SelectItem>
+                                    <SelectItem key="rand">随机</SelectItem>
+                                  </Select>
+
+                                  {/* Brutal 开关 */}
+                                  <div className="flex items-center gap-2 px-1">
+                                    <span className="text-xs text-default-600 whitespace-nowrap">
+                                      Brutal
+                                    </span>
+                                    <Switch
+                                      color="primary"
+                                      isSelected={
+                                        (groupNodes[0] &&
+                                          groupNodes[0].brutal) ||
+                                        false
+                                      }
+                                      size="sm"
+                                      onValueChange={(v) =>
+                                        updateChainBrutal(groupIndex, v)
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {getChainGroups().length === 0 && (
+                        <div className="text-center py-8 bg-default-50 dark:bg-default-100/50 rounded border border-dashed border-default-300">
+                          <p className="text-sm text-default-500">
+                            还没有添加转发链，点击上方点击上方"添加一跳"按钮开始添加#39;添加一跳点击上方"添加一跳"按钮开始添加#39;按钮开始添加
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* 隧道转发时显示出口配置 */}
+                  {form.type === 2 && (
+                    <>
+                      <Divider />
+                      <h3 className="text-lg font-semibold">出口配置</h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                        {/* 节点选择 - 移动端100%，桌面端50% */}
+                        <div className="col-span-1 md:col-span-2">
+                          <Select
+                            classNames={{
+                              label: "text-xs",
+                              value: "text-sm",
+                            }}
+                            disabledKeys={[
+                              ...offlineUnselectedKeys(
+                                (form.outNodeId || [])
+                                  .filter((ct) => ct.nodeId !== -1)
+                                  .map((ct) => ct.nodeId),
+                              ),
+                              ...form.inNodeId.map((ct) =>
+                                ct.nodeId.toString(),
+                              ),
+                              ...getSelectedChainNodeIds().map((id) =>
+                                id.toString(),
+                              ),
+                            ]}
+                            errorMessage={errors.outNodeId}
+                            isInvalid={!!errors.outNodeId}
+                            label="节点"
+                            placeholder="请选择出口节点（可多选）"
+                            selectedKeys={
+                              form.outNodeId
+                                ? form.outNodeId
+                                    .filter((ct) => ct.nodeId !== -1)
+                                    .map((ct) => ct.nodeId.toString())
+                                : []
+                            }
+                            selectionMode="multiple"
+                            variant="bordered"
+                            onSelectionChange={(keys) => {
+                              const selectedIds = Array.from(keys).map((key) =>
+                                parseInt(key as string),
+                              );
+                              const currentOutNodes = form.outNodeId || [];
+
+                              let protocol = "tls";
+                              let strategy = "round";
+
+                              if (currentOutNodes.length > 0) {
+                                protocol = currentOutNodes[0].protocol || "tls";
+                                strategy =
+                                  currentOutNodes[0].strategy || "round";
+                              }
+
+                              const realNodes = currentOutNodes.filter(
+                                (ct) => ct.nodeId !== -1,
+                              );
+                              const newOutNodeId: ChainTunnel[] =
+                                selectedIds.map((nodeId) => {
+                                  const existing = realNodes.find(
+                                    (ct) => ct.nodeId === nodeId,
+                                  );
+
+                                  return (
+                                    existing || {
+                                      nodeId,
+                                      chainType: 3,
+                                      protocol,
+                                      strategy,
+                                    }
+                                  );
+                                });
+
+                              setForm((prev) => ({
+                                ...prev,
+                                outNodeId: newOutNodeId,
+                              }));
+                            }}
+                          >
+                            {nodes.map((node) => (
+                              <SelectItem
+                                key={node.id}
+                                textValue={`${node.name}`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span>{node.name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <Chip
+                                      color={
+                                        node.status === 1
+                                          ? "success"
+                                          : "default"
+                                      }
+                                      size="sm"
+                                      variant="flat"
+                                    >
+                                      {node.status === 1 ? "在线" : "离线"}
+                                    </Chip>
+                                    {form.inNodeId.some(
+                                      (ct) => ct.nodeId === node.id,
+                                    ) && (
+                                      <Chip
+                                        color="warning"
+                                        size="sm"
+                                        variant="flat"
+                                      >
+                                        已选为入口
+                                      </Chip>
+                                    )}
+                                    {getSelectedChainNodeIds().includes(
+                                      node.id,
+                                    ) && (
+                                      <Chip
+                                        color="primary"
+                                        size="sm"
+                                        variant="flat"
+                                      >
+                                        已选为转发链
+                                      </Chip>
+                                    )}
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </Select>
+                        </div>
+
+                        {/* 协议选择 - 25% */}
+                        <Select
+                          classNames={{
+                            label: "text-xs",
+                            value: "text-sm",
+                          }}
+                          errorMessage={errors.protocol}
+                          isInvalid={!!errors.protocol}
+                          label="协议"
+                          placeholder="选择协议"
+                          selectedKeys={[
+                            (() => {
+                              if (
+                                !form.outNodeId ||
+                                form.outNodeId.length === 0
+                              )
+                                return "tls";
+
+                              return form.outNodeId[0].protocol || "tls";
+                            })(),
+                          ]}
+                          variant="bordered"
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+
+                            if (selectedKey) {
+                              setForm((prev) => {
+                                const currentOutNodes = prev.outNodeId || [];
+                                const currentStrategy =
+                                  currentOutNodes.length > 0
+                                    ? currentOutNodes[0].strategy || "round"
+                                    : "round";
+
+                                if (currentOutNodes.length === 0) {
+                                  // 如果还没有出口节点，创建一个占位节点保存设置
+                                  return {
+                                    ...prev,
+                                    outNodeId: [
+                                      {
+                                        nodeId: -1,
+                                        chainType: 3,
+                                        protocol: selectedKey,
+                                        strategy: currentStrategy,
+                                      },
+                                    ],
+                                  };
+                                }
+
+                                // 更新所有出口节点的协议
+                                return {
+                                  ...prev,
+                                  outNodeId: currentOutNodes.map((ct) => ({
+                                    ...ct,
+                                    protocol: selectedKey,
+                                  })),
+                                };
+                              });
+                            }
+                          }}
+                        >
+                          <SelectItem key="tls">TLS</SelectItem>
+                          <SelectItem key="wss">WSS</SelectItem>
+                          <SelectItem key="tcp">TCP</SelectItem>
+                          <SelectItem key="mtls">MTLS</SelectItem>
+                          <SelectItem key="mwss">MWSS</SelectItem>
+                          <SelectItem key="mtcp">MTCP</SelectItem>
+                        </Select>
+
+                        {/* 负载策略 - 25% */}
+                        <Select
+                          classNames={{
+                            label: "text-xs",
+                            value: "text-sm",
+                          }}
+                          label="负载策略"
+                          placeholder="选择策略"
+                          selectedKeys={[
+                            (() => {
+                              if (
+                                !form.outNodeId ||
+                                form.outNodeId.length === 0
+                              )
+                                return "round";
+
+                              return form.outNodeId[0].strategy || "round";
+                            })(),
+                          ]}
+                          variant="bordered"
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+
+                            if (selectedKey) {
+                              setForm((prev) => {
+                                const currentOutNodes = prev.outNodeId || [];
+                                const currentProtocol =
+                                  currentOutNodes.length > 0
+                                    ? currentOutNodes[0].protocol || "tls"
+                                    : "tls";
+
+                                if (currentOutNodes.length === 0) {
+                                  return {
+                                    ...prev,
+                                    outNodeId: [
+                                      {
+                                        nodeId: -1,
+                                        chainType: 3,
+                                        protocol: currentProtocol,
+                                        strategy: selectedKey,
+                                      },
+                                    ],
+                                  };
+                                }
+
+                                return {
+                                  ...prev,
+                                  outNodeId: currentOutNodes.map((ct) => ({
+                                    ...ct,
+                                    strategy: selectedKey,
+                                  })),
+                                };
+                              });
+                            }
+                          }}
+                        >
+                          <SelectItem key="fifo">主备</SelectItem>
+                          <SelectItem key="round">轮询</SelectItem>
+                          <SelectItem key="rand">随机</SelectItem>
+                        </Select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={onClose}>
+                  取消
+                </Button>
+                <Button
+                  color="primary"
+                  isLoading={submitLoading}
+                  onPress={handleSubmit}
+                >
+                  {submitLoading
+                    ? isEdit
+                      ? "更新中..."
+                      : "创建中..."
+                    : isEdit
+                      ? "更新"
+                      : "创建"}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* 删除确认模态框 */}
+      <Modal
+        backdrop="blur"
+        isOpen={deleteModalOpen}
+        placement="center"
+        scrollBehavior="outside"
+        size="2xl"
+        onOpenChange={setDeleteModalOpen}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold">确认删除</h2>
+              </ModalHeader>
+              <ModalBody>
+                <p>
+                  确定要删除隧道{" "}
+                  <strong>&quot;{tunnelToDelete?.name}&quot;</strong> 吗？
+                </p>
+                <p className="text-small text-default-500">
+                  此操作不可恢复，请谨慎操作。
+                </p>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={onClose}>
+                  取消
+                </Button>
+                <Button
+                  color="danger"
+                  isLoading={deleteLoading}
+                  onPress={confirmDelete}
+                >
+                  {deleteLoading ? "删除中..." : "确认删除"}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* 诊断结果模态框 */}
+      <Modal
+        backdrop="blur"
+        classNames={{
+          base: "rounded-2xl",
+          header: "rounded-t-2xl",
+          body: "rounded-none",
+          footer: "rounded-b-2xl",
+        }}
+        isOpen={diagnosisModalOpen}
+        placement="center"
+        scrollBehavior="inside"
+        size="4xl"
+        onOpenChange={setDiagnosisModalOpen}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1 bg-content1 border-b border-divider">
+                <h2 className="text-xl font-bold">隧道诊断结果</h2>
+                {currentDiagnosisTunnel && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-small text-default-500">
+                      {currentDiagnosisTunnel.name}
+                    </span>
+                    <Chip
+                      color={
+                        currentDiagnosisTunnel.type === 1
+                          ? "primary"
+                          : "secondary"
+                      }
+                      size="sm"
+                      variant="flat"
+                    >
+                      {currentDiagnosisTunnel.type === 1
+                        ? "端口转发"
+                        : "隧道转发"}
+                    </Chip>
+                  </div>
+                )}
+              </ModalHeader>
+              <ModalBody className="bg-content1">
+                {diagnosisLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="flex items-center gap-3">
+                      <Spinner size="sm" />
+                      <span className="text-default-600">正在诊断...</span>
+                    </div>
+                  </div>
+                ) : diagnosisResult ? (
+                  <div className="space-y-4">
+                    {/* 统计摘要 */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="text-center p-3 bg-default-100 dark:bg-gray-800 rounded-lg border border-divider">
+                        <div className="text-2xl font-bold text-foreground">
+                          {diagnosisResult.results.length}
+                        </div>
+                        <div className="text-xs text-default-500 mt-1">
+                          总测试数
+                        </div>
+                      </div>
+                      <div className="text-center p-3 bg-success-50 dark:bg-success-900/20 rounded-lg border border-success-200 dark:border-success-700">
+                        <div className="text-2xl font-bold text-success-600 dark:text-success-400">
+                          {
+                            diagnosisResult.results.filter((r) => r.success)
+                              .length
+                          }
+                        </div>
+                        <div className="text-xs text-success-600 dark:text-success-400/80 mt-1">
+                          成功
+                        </div>
+                      </div>
+                      <div className="text-center p-3 bg-danger-50 dark:bg-danger-900/20 rounded-lg border border-danger-200 dark:border-danger-700">
+                        <div className="text-2xl font-bold text-danger-600 dark:text-danger-400">
+                          {
+                            diagnosisResult.results.filter((r) => !r.success)
+                              .length
+                          }
+                        </div>
+                        <div className="text-xs text-danger-600 dark:text-danger-400/80 mt-1">
+                          失败
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 桌面端表格展示 */}
+                    <div className="hidden md:block space-y-3">
+                      {(() => {
+                        // 使用后端返回的 chainType 和 inx 字段进行分组
+                        const groupedResults = {
+                          entry: diagnosisResult.results.filter(
+                            (r) => r.fromChainType === 1,
+                          ),
+                          chains: {} as Record<
+                            number,
+                            typeof diagnosisResult.results
+                          >,
+                          exit: diagnosisResult.results.filter(
+                            (r) => r.fromChainType === 3,
+                          ),
+                        };
+
+                        // 按 inx 分组链路测试
+                        diagnosisResult.results.forEach((r) => {
+                          if (r.fromChainType === 2 && r.fromInx != null) {
+                            if (!groupedResults.chains[r.fromInx]) {
+                              groupedResults.chains[r.fromInx] = [];
+                            }
+                            groupedResults.chains[r.fromInx].push(r);
+                          }
+                        });
+
+                        const renderTableSection = (
+                          title: string,
+                          results: typeof diagnosisResult.results,
+                        ) => {
+                          if (results.length === 0) return null;
+
+                          return (
+                            <div
+                              key={title}
+                              className="border border-divider rounded-lg overflow-hidden bg-white dark:bg-gray-800"
+                            >
+                              <div className="bg-primary/10 dark:bg-primary/20 px-3 py-2 border-b border-divider">
+                                <h3 className="text-sm font-semibold text-primary">
+                                  {title}
+                                </h3>
+                              </div>
+                              <table className="w-full text-sm">
+                                <thead className="bg-default-100 dark:bg-gray-700">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left font-semibold text-xs">
+                                      路径
+                                    </th>
+                                    <th className="px-3 py-2 text-center font-semibold text-xs w-20">
+                                      状态
+                                    </th>
+                                    <th className="px-3 py-2 text-center font-semibold text-xs w-24">
+                                      延迟(ms)
+                                    </th>
+                                    <th className="px-3 py-2 text-center font-semibold text-xs w-24">
+                                      丢包率
+                                    </th>
+                                    <th className="px-3 py-2 text-center font-semibold text-xs w-20">
+                                      质量
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-divider bg-white dark:bg-gray-800">
+                                  {results.map((result, index) => {
+                                    const quality = getQualityDisplay(
+                                      result.averageTime,
+                                      result.packetLoss,
+                                    );
+
+                                    return (
+                                      <tr
+                                        key={index}
+                                        className={`hover:bg-default-50 dark:hover:bg-gray-700/50 ${
+                                          result.success
+                                            ? "bg-white dark:bg-gray-800"
+                                            : "bg-danger-50 dark:bg-danger-900/30"
+                                        }`}
+                                      >
+                                        <td className="px-3 py-2">
+                                          <div className="flex items-center gap-2">
+                                            <span
+                                              className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
+                                                result.success
+                                                  ? "bg-success text-white"
+                                                  : "bg-danger text-white"
+                                              }`}
+                                            >
+                                              {result.success ? "✓" : "✗"}
+                                            </span>
+                                            <div className="flex-1 min-w-0">
+                                              <div className="font-medium text-foreground truncate">
+                                                {result.description}
+                                              </div>
+                                              <div className="text-xs text-default-500 truncate">
+                                                {result.targetIp}:
+                                                {result.targetPort}
                                               </div>
                                             </div>
-                                          </SelectItem>
-                                        ))}
-                                      </Select>
-                                    </div>
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <Chip
+                                            className="min-w-[50px]"
+                                            color={
+                                              result.success
+                                                ? "success"
+                                                : "danger"
+                                            }
+                                            size="sm"
+                                            variant="flat"
+                                          >
+                                            {result.success ? "成功" : "失败"}
+                                          </Chip>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          {result.success ? (
+                                            <span className="font-semibold text-primary">
+                                              {result.averageTime?.toFixed(0)}
+                                            </span>
+                                          ) : (
+                                            <span className="text-default-400">
+                                              -
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          {result.success ? (
+                                            <span
+                                              className={`font-semibold ${
+                                                (result.packetLoss || 0) > 0
+                                                  ? "text-warning"
+                                                  : "text-success"
+                                              }`}
+                                            >
+                                              {result.packetLoss?.toFixed(1)}%
+                                            </span>
+                                          ) : (
+                                            <span className="text-default-400">
+                                              -
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          {result.success && quality ? (
+                                            <Chip
+                                              className="text-xs"
+                                              color={quality.color as any}
+                                              size="sm"
+                                              variant="flat"
+                                            >
+                                              {quality.text}
+                                            </Chip>
+                                          ) : (
+                                            <span className="text-default-400">
+                                              -
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        };
 
-                                    {/* 协议选择 - 25% */}
-                                    <Select
-                                      label="协议"
-                                      placeholder="选择协议"
-                                      selectedKeys={[protocol]}
-                                      onSelectionChange={(keys) => {
-                                        const selectedKey = Array.from(keys)[0] as string;
-                                        if (selectedKey) {
-                                          updateChainProtocol(groupIndex, selectedKey);
-                                        }
-                                      }}
-                                      variant="bordered"
-                                      size="sm"
-                                      classNames={{
-                                        label: "text-xs",
-                                        value: "text-sm"
-                                      }}
-                                    >
-                                      <SelectItem key="tls">TLS</SelectItem>
-                                      <SelectItem key="wss">WSS</SelectItem>
-                                      <SelectItem key="tcp">TCP</SelectItem>
-                                      <SelectItem key="mtls">MTLS</SelectItem>
-                                      <SelectItem key="mwss">MWSS</SelectItem>
-                                      <SelectItem key="mtcp">MTCP</SelectItem>
-                                    </Select>
+                        return (
+                          <>
+                            {/* 入口测试 */}
+                            {renderTableSection(
+                              "🚪 入口测试",
+                              groupedResults.entry,
+                            )}
 
-                                    {/* 负载策略 - 25% */}
-                                    <Select
-                                      label="负载策略"
-                                      placeholder="选择策略"
-                                      selectedKeys={[strategy]}
-                                      onSelectionChange={(keys) => {
-                                        const selectedKey = Array.from(keys)[0] as string;
-                                        if (selectedKey) {
-                                          updateChainStrategy(groupIndex, selectedKey);
-                                        }
-                                      }}
-                                      variant="bordered"
-                                      size="sm"
-                                      classNames={{
-                                        label: "text-xs",
-                                        value: "text-sm"
-                                      }}
-                                    >
-                                      <SelectItem key="fifo">主备</SelectItem>
-                                      <SelectItem key="round">轮询</SelectItem>
-                                      <SelectItem key="rand">随机</SelectItem>
-                                    </Select>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {getChainGroups().length === 0 && (
-                          <div className="text-center py-8 bg-default-50 dark:bg-default-100/50 rounded border border-dashed border-default-300">
-                            <p className="text-sm text-default-500">还没有添加转发链，点击上方"添加一跳"按钮开始添加</p>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    {/* 隧道转发时显示出口配置 */}
-                    {form.type === 2 && (
-                      <>
-                        <Divider />
-                        <h3 className="text-lg font-semibold">出口配置</h3>
-
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                          {/* 节点选择 - 移动端100%，桌面端50% */}
-                          <div className="col-span-1 md:col-span-2">
-                            <Select
-                              label="节点"
-                              placeholder="请选择出口节点（可多选）"
-                              selectionMode="multiple"
-                              selectedKeys={form.outNodeId ? form.outNodeId.filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId.toString()) : []}
-                              disabledKeys={[
-                                ...offlineUnselectedKeys(
-                                  (form.outNodeId || []).filter(ct => ct.nodeId !== -1).map(ct => ct.nodeId)
+                            {/* 链路测试（按跳数排序） */}
+                            {Object.keys(groupedResults.chains)
+                              .map(Number)
+                              .sort((a, b) => a - b)
+                              .map((hop) =>
+                                renderTableSection(
+                                  `🔗 转发链 - 第${hop}跳`,
+                                  groupedResults.chains[hop],
                                 ),
-                                ...form.inNodeId.map(ct => ct.nodeId.toString()),
-                                ...getSelectedChainNodeIds().map(id => id.toString())
-                              ]}
-                              onSelectionChange={(keys) => {
-                                const selectedIds = Array.from(keys).map(key => parseInt(key as string));
-                                const currentOutNodes = form.outNodeId || [];
-                                
-                                let protocol = 'tls';
-                                let strategy = 'round';
-                                if (currentOutNodes.length > 0) {
-                                  protocol = currentOutNodes[0].protocol || 'tls';
-                                  strategy = currentOutNodes[0].strategy || 'round';
-                                }
-                                
-                                const realNodes = currentOutNodes.filter(ct => ct.nodeId !== -1);
-                                const newOutNodeId: ChainTunnel[] = selectedIds.map(nodeId => {
-                                  const existing = realNodes.find(ct => ct.nodeId === nodeId);
-                                  return existing || { nodeId, chainType: 3, protocol, strategy };
-                                });
-                                setForm(prev => ({ ...prev, outNodeId: newOutNodeId }));
-                              }}
-                              isInvalid={!!errors.outNodeId}
-                              errorMessage={errors.outNodeId}
-                              variant="bordered"
-                              classNames={{
-                                label: "text-xs",
-                                value: "text-sm"
-                              }}
-                            >
-                              {nodes.map((node) => (
-                                <SelectItem 
-                                  key={node.id}
-                                  textValue={`${node.name}`}
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span>{node.name}</span>
-                                    <div className="flex items-center gap-2">
-                                      <Chip 
-                                        color={node.status === 1 ? 'success' : 'default'} 
-                                        variant="flat" 
-                                        size="sm"
-                                      >
-                                        {node.status === 1 ? '在线' : '离线'}
-                                      </Chip>
-                                      {form.inNodeId.some(ct => ct.nodeId === node.id) && (
-                                        <Chip color="warning" variant="flat" size="sm">
-                                          已选为入口
-                                        </Chip>
-                                      )}
-                                      {getSelectedChainNodeIds().includes(node.id) && (
-                                        <Chip color="primary" variant="flat" size="sm">
-                                          已选为转发链
-                                        </Chip>
-                                      )}
-                                    </div>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </Select>
-                          </div>
+                              )}
 
-                          {/* 协议选择 - 25% */}
-                          <Select
-                            label="协议"
-                            placeholder="选择协议"
-                            selectedKeys={[(() => {
-                              if (!form.outNodeId || form.outNodeId.length === 0) return 'tls';
-                              return form.outNodeId[0].protocol || 'tls';
-                            })()]}
-                            onSelectionChange={(keys) => {
-                              const selectedKey = Array.from(keys)[0] as string;
-                              if (selectedKey) {
-                                setForm(prev => {
-                                  const currentOutNodes = prev.outNodeId || [];
-                                  const currentStrategy = currentOutNodes.length > 0 ? currentOutNodes[0].strategy || 'round' : 'round';
-                                  
-                                  if (currentOutNodes.length === 0) {
-                                    // 如果还没有出口节点，创建一个占位节点保存设置
-                                    return {
-                                      ...prev,
-                                      outNodeId: [{ nodeId: -1, chainType: 3, protocol: selectedKey, strategy: currentStrategy }]
-                                    };
-                                  }
-                                  // 更新所有出口节点的协议
-                                  return {
-                                    ...prev,
-                                    outNodeId: currentOutNodes.map(ct => ({ ...ct, protocol: selectedKey }))
-                                  };
-                                });
-                              }
-                            }}
-                            isInvalid={!!errors.protocol}
-                            errorMessage={errors.protocol}
-                            variant="bordered"
-                            classNames={{
-                              label: "text-xs",
-                              value: "text-sm"
-                            }}
-                          >
-                            <SelectItem key="tls">TLS</SelectItem>
-                            <SelectItem key="wss">WSS</SelectItem>
-                            <SelectItem key="tcp">TCP</SelectItem>
-                            <SelectItem key="mtls">MTLS</SelectItem>
-                            <SelectItem key="mwss">MWSS</SelectItem>
-                            <SelectItem key="mtcp">MTCP</SelectItem>
-                          </Select>
-
-                          {/* 负载策略 - 25% */}
-                          <Select
-                            label="负载策略"
-                            placeholder="选择策略"
-                            selectedKeys={[(() => {
-                              if (!form.outNodeId || form.outNodeId.length === 0) return 'round';
-                              return form.outNodeId[0].strategy || 'round';
-                            })()]}
-                            onSelectionChange={(keys) => {
-                              const selectedKey = Array.from(keys)[0] as string;
-                              if (selectedKey) {
-                                setForm(prev => {
-                                  const currentOutNodes = prev.outNodeId || [];
-                                  const currentProtocol = currentOutNodes.length > 0 ? currentOutNodes[0].protocol || 'tls' : 'tls';
-                                  
-                                  if (currentOutNodes.length === 0) {
-                                    return {
-                                      ...prev,
-                                      outNodeId: [{ nodeId: -1, chainType: 3, protocol: currentProtocol, strategy: selectedKey }]
-                                    };
-                                  }
-                                  return {
-                                    ...prev,
-                                    outNodeId: currentOutNodes.map(ct => ({ ...ct, strategy: selectedKey }))
-                                  };
-                                });
-                              }
-                            }}
-                            variant="bordered"
-                            classNames={{
-                              label: "text-xs",
-                              value: "text-sm"
-                            }}
-                          >
-                            <SelectItem key="fifo">主备</SelectItem>
-                            <SelectItem key="round">轮询</SelectItem>
-                            <SelectItem key="rand">随机</SelectItem>
-                          </Select>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </ModalBody>
-                <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
-                    取消
-                  </Button>
-                  <Button 
-                    color="primary" 
-                    onPress={handleSubmit}
-                    isLoading={submitLoading}
-                  >
-                    {submitLoading ? (isEdit ? '更新中...' : '创建中...') : (isEdit ? '更新' : '创建')}
-                  </Button>
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
-
-        {/* 删除确认模态框 */}
-        <Modal 
-          isOpen={deleteModalOpen}
-          onOpenChange={setDeleteModalOpen}
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="blur"
-        placement="center"
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold">确认删除</h2>
-                </ModalHeader>
-                <ModalBody>
-                  <p>确定要删除隧道 <strong>"{tunnelToDelete?.name}"</strong> 吗？</p>
-                  <p className="text-small text-default-500">此操作不可恢复，请谨慎操作。</p>
-                </ModalBody>
-                <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
-                    取消
-                  </Button>
-                  <Button 
-                    color="danger" 
-                    onPress={confirmDelete}
-                    isLoading={deleteLoading}
-                  >
-                    {deleteLoading ? '删除中...' : '确认删除'}
-                  </Button>
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
-
-        {/* 诊断结果模态框 */}
-        <Modal 
-          isOpen={diagnosisModalOpen}
-          onOpenChange={setDiagnosisModalOpen}
-          size="4xl"
-          scrollBehavior="inside"
-          backdrop="blur"
-          placement="center"
-          classNames={{
-            base: "rounded-2xl",
-            header: "rounded-t-2xl",
-            body: "rounded-none",
-            footer: "rounded-b-2xl"
-          }}
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex flex-col gap-1 bg-content1 border-b border-divider">
-                  <h2 className="text-xl font-bold">隧道诊断结果</h2>
-                  {currentDiagnosisTunnel && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-small text-default-500">{currentDiagnosisTunnel.name}</span>
-                      <Chip 
-                        color={currentDiagnosisTunnel.type === 1 ? 'primary' : 'secondary'} 
-                        variant="flat" 
-                        size="sm"
-                      >
-                        {currentDiagnosisTunnel.type === 1 ? '端口转发' : '隧道转发'}
-                      </Chip>
+                            {/* 出口测试 */}
+                            {renderTableSection(
+                              "🚀 出口测试",
+                              groupedResults.exit,
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
-                  )}
-                </ModalHeader>
-                <ModalBody className="bg-content1">
-                  {diagnosisLoading ? (
-                    <div className="flex items-center justify-center py-16">
-                      <div className="flex items-center gap-3">
-                        <Spinner size="sm" />
-                        <span className="text-default-600">正在诊断...</span>
-                      </div>
-                    </div>
-                  ) : diagnosisResult ? (
-                    <div className="space-y-4">
-                      {/* 统计摘要 */}
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="text-center p-3 bg-default-100 dark:bg-gray-800 rounded-lg border border-divider">
-                          <div className="text-2xl font-bold text-foreground">{diagnosisResult.results.length}</div>
-                          <div className="text-xs text-default-500 mt-1">总测试数</div>
-                        </div>
-                        <div className="text-center p-3 bg-success-50 dark:bg-success-900/20 rounded-lg border border-success-200 dark:border-success-700">
-                          <div className="text-2xl font-bold text-success-600 dark:text-success-400">
-                            {diagnosisResult.results.filter(r => r.success).length}
-                          </div>
-                          <div className="text-xs text-success-600 dark:text-success-400/80 mt-1">成功</div>
-                        </div>
-                        <div className="text-center p-3 bg-danger-50 dark:bg-danger-900/20 rounded-lg border border-danger-200 dark:border-danger-700">
-                          <div className="text-2xl font-bold text-danger-600 dark:text-danger-400">
-                            {diagnosisResult.results.filter(r => !r.success).length}
-                          </div>
-                          <div className="text-xs text-danger-600 dark:text-danger-400/80 mt-1">失败</div>
-                        </div>
-                      </div>
 
-                      {/* 桌面端表格展示 */}
-                      <div className="hidden md:block space-y-3">
-                        {(() => {
-                          // 使用后端返回的 chainType 和 inx 字段进行分组
-                          const groupedResults = {
-                            entry: diagnosisResult.results.filter(r => r.fromChainType === 1),
-                            chains: {} as Record<number, typeof diagnosisResult.results>,
-                            exit: diagnosisResult.results.filter(r => r.fromChainType === 3)
-                          };
-                          
-                          // 按 inx 分组链路测试
-                          diagnosisResult.results.forEach(r => {
-                            if (r.fromChainType === 2 && r.fromInx != null) {
-                              if (!groupedResults.chains[r.fromInx]) {
-                                groupedResults.chains[r.fromInx] = [];
-                              }
-                              groupedResults.chains[r.fromInx].push(r);
+                    {/* 移动端卡片展示 */}
+                    <div className="md:hidden space-y-3">
+                      {(() => {
+                        // 使用后端返回的 chainType 和 inx 字段进行分组
+                        const groupedResults = {
+                          entry: diagnosisResult.results.filter(
+                            (r) => r.fromChainType === 1,
+                          ),
+                          chains: {} as Record<
+                            number,
+                            typeof diagnosisResult.results
+                          >,
+                          exit: diagnosisResult.results.filter(
+                            (r) => r.fromChainType === 3,
+                          ),
+                        };
+
+                        // 按 inx 分组链路测试
+                        diagnosisResult.results.forEach((r) => {
+                          if (r.fromChainType === 2 && r.fromInx != null) {
+                            if (!groupedResults.chains[r.fromInx]) {
+                              groupedResults.chains[r.fromInx] = [];
                             }
-                          });
+                            groupedResults.chains[r.fromInx].push(r);
+                          }
+                        });
 
-                          const renderTableSection = (title: string, results: typeof diagnosisResult.results) => {
-                            if (results.length === 0) return null;
-                            
-                            return (
-                              <div key={title} className="border border-divider rounded-lg overflow-hidden bg-white dark:bg-gray-800">
-                                <div className="bg-primary/10 dark:bg-primary/20 px-3 py-2 border-b border-divider">
-                                  <h3 className="text-sm font-semibold text-primary">{title}</h3>
-                                </div>
-                                <table className="w-full text-sm">
-                                  <thead className="bg-default-100 dark:bg-gray-700">
-                                    <tr>
-                                      <th className="px-3 py-2 text-left font-semibold text-xs">路径</th>
-                                      <th className="px-3 py-2 text-center font-semibold text-xs w-20">状态</th>
-                                      <th className="px-3 py-2 text-center font-semibold text-xs w-24">延迟(ms)</th>
-                                      <th className="px-3 py-2 text-center font-semibold text-xs w-24">丢包率</th>
-                                      <th className="px-3 py-2 text-center font-semibold text-xs w-20">质量</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-divider bg-white dark:bg-gray-800">
-                                    {results.map((result, index) => {
-                              const quality = getQualityDisplay(result.averageTime, result.packetLoss);
-                              
-                              return (
-                                <tr key={index} className={`hover:bg-default-50 dark:hover:bg-gray-700/50 ${
-                                  result.success ? 'bg-white dark:bg-gray-800' : 'bg-danger-50 dark:bg-danger-900/30'
-                                }`}>
-                                  <td className="px-3 py-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
-                                        result.success 
-                                          ? 'bg-success text-white' 
-                                          : 'bg-danger text-white'
-                                      }`}>
-                                        {result.success ? '✓' : '✗'}
+                        const renderCardSection = (
+                          title: string,
+                          results: typeof diagnosisResult.results,
+                        ) => {
+                          if (results.length === 0) return null;
+
+                          return (
+                            <div key={title} className="space-y-2">
+                              <div className="px-2 py-1.5 bg-primary/10 dark:bg-primary/20 rounded-lg border border-primary/30">
+                                <h3 className="text-sm font-semibold text-primary">
+                                  {title}
+                                </h3>
+                              </div>
+                              {results.map((result, index) => {
+                                const quality = getQualityDisplay(
+                                  result.averageTime,
+                                  result.packetLoss,
+                                );
+
+                                return (
+                                  <div
+                                    key={index}
+                                    className={`border rounded-lg p-3 ${
+                                      result.success
+                                        ? "border-divider bg-white dark:bg-gray-800"
+                                        : "border-danger-200 dark:border-danger-300/30 bg-danger-50 dark:bg-danger-900/30"
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-2 mb-2">
+                                      <span
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${
+                                          result.success
+                                            ? "bg-success text-white"
+                                            : "bg-danger text-white"
+                                        }`}
+                                      >
+                                        {result.success ? "✓" : "✗"}
                                       </span>
                                       <div className="flex-1 min-w-0">
-                                        <div className="font-medium text-foreground truncate">{result.description}</div>
-                                        <div className="text-xs text-default-500 truncate">
+                                        <div className="font-semibold text-sm text-foreground break-words">
+                                          {result.description}
+                                        </div>
+                                        <div className="text-xs text-default-500 mt-0.5 break-all">
                                           {result.targetIp}:{result.targetPort}
                                         </div>
                                       </div>
-                                    </div>
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <Chip 
-                                      color={result.success ? 'success' : 'danger'} 
-                                      variant="flat"
-                                      size="sm"
-                                      className="min-w-[50px]"
-                                    >
-                                      {result.success ? '成功' : '失败'}
-                                    </Chip>
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    {result.success ? (
-                                      <span className="font-semibold text-primary">
-                                        {result.averageTime?.toFixed(0)}
-                                      </span>
-                                    ) : (
-                                      <span className="text-default-400">-</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    {result.success ? (
-                                      <span className={`font-semibold ${
-                                        (result.packetLoss || 0) > 0 ? 'text-warning' : 'text-success'
-                                      }`}>
-                                        {result.packetLoss?.toFixed(1)}%
-                                      </span>
-                                    ) : (
-                                      <span className="text-default-400">-</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    {result.success && quality ? (
-                                      <Chip 
-                                        color={quality.color as any} 
-                                        variant="flat" 
+                                      <Chip
+                                        className="flex-shrink-0"
+                                        color={
+                                          result.success ? "success" : "danger"
+                                        }
                                         size="sm"
-                                        className="text-xs"
+                                        variant="flat"
                                       >
-                                        {quality.text}
+                                        {result.success ? "成功" : "失败"}
                                       </Chip>
+                                    </div>
+
+                                    {result.success ? (
+                                      <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-divider">
+                                        <div className="text-center">
+                                          <div className="text-lg font-bold text-primary">
+                                            {result.averageTime?.toFixed(0)}
+                                          </div>
+                                          <div className="text-xs text-default-500">
+                                            延迟(ms)
+                                          </div>
+                                        </div>
+                                        <div className="text-center">
+                                          <div
+                                            className={`text-lg font-bold ${
+                                              (result.packetLoss || 0) > 0
+                                                ? "text-warning"
+                                                : "text-success"
+                                            }`}
+                                          >
+                                            {result.packetLoss?.toFixed(1)}%
+                                          </div>
+                                          <div className="text-xs text-default-500">
+                                            丢包率
+                                          </div>
+                                        </div>
+                                        <div className="text-center">
+                                          {quality && (
+                                            <>
+                                              <Chip
+                                                className="text-xs"
+                                                color={quality.color as any}
+                                                size="sm"
+                                                variant="flat"
+                                              >
+                                                {quality.text}
+                                              </Chip>
+                                              <div className="text-xs text-default-500 mt-0.5">
+                                                质量
+                                              </div>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
                                     ) : (
-                                      <span className="text-default-400">-</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            );
-                          };
-
-                          return (
-                            <>
-                              {/* 入口测试 */}
-                              {renderTableSection('🚪 入口测试', groupedResults.entry)}
-                              
-                              {/* 链路测试（按跳数排序） */}
-                              {Object.keys(groupedResults.chains)
-                                .map(Number)
-                                .sort((a, b) => a - b)
-                                .map(hop => renderTableSection(`🔗 转发链 - 第${hop}跳`, groupedResults.chains[hop]))}
-                              
-                              {/* 出口测试 */}
-                              {renderTableSection('🚀 出口测试', groupedResults.exit)}
-                            </>
-                          );
-                        })()}
-                      </div>
-
-                      {/* 移动端卡片展示 */}
-                      <div className="md:hidden space-y-3">
-                        {(() => {
-                          // 使用后端返回的 chainType 和 inx 字段进行分组
-                          const groupedResults = {
-                            entry: diagnosisResult.results.filter(r => r.fromChainType === 1),
-                            chains: {} as Record<number, typeof diagnosisResult.results>,
-                            exit: diagnosisResult.results.filter(r => r.fromChainType === 3)
-                          };
-                          
-                          // 按 inx 分组链路测试
-                          diagnosisResult.results.forEach(r => {
-                            if (r.fromChainType === 2 && r.fromInx != null) {
-                              if (!groupedResults.chains[r.fromInx]) {
-                                groupedResults.chains[r.fromInx] = [];
-                              }
-                              groupedResults.chains[r.fromInx].push(r);
-                            }
-                          });
-
-                          const renderCardSection = (title: string, results: typeof diagnosisResult.results) => {
-                            if (results.length === 0) return null;
-                            
-                            return (
-                              <div key={title} className="space-y-2">
-                                <div className="px-2 py-1.5 bg-primary/10 dark:bg-primary/20 rounded-lg border border-primary/30">
-                                  <h3 className="text-sm font-semibold text-primary">{title}</h3>
-                                </div>
-                                {results.map((result, index) => {
-                          const quality = getQualityDisplay(result.averageTime, result.packetLoss);
-                          
-                          return (
-                            <div key={index} className={`border rounded-lg p-3 ${
-                              result.success 
-                                ? 'border-divider bg-white dark:bg-gray-800' 
-                                : 'border-danger-200 dark:border-danger-300/30 bg-danger-50 dark:bg-danger-900/30'
-                            }`}>
-                              <div className="flex items-start gap-2 mb-2">
-                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${
-                                  result.success ? 'bg-success text-white' : 'bg-danger text-white'
-                                }`}>
-                                  {result.success ? '✓' : '✗'}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-semibold text-sm text-foreground break-words">
-                                    {result.description}
-                                  </div>
-                                  <div className="text-xs text-default-500 mt-0.5 break-all">
-                                    {result.targetIp}:{result.targetPort}
-                                  </div>
-                                </div>
-                                <Chip 
-                                  color={result.success ? 'success' : 'danger'} 
-                                  variant="flat"
-                                  size="sm"
-                                  className="flex-shrink-0"
-                                >
-                                  {result.success ? '成功' : '失败'}
-                                </Chip>
-                              </div>
-                              
-                              {result.success ? (
-                                <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-divider">
-                                  <div className="text-center">
-                                    <div className="text-lg font-bold text-primary">
-                                      {result.averageTime?.toFixed(0)}
-                                    </div>
-                                    <div className="text-xs text-default-500">延迟(ms)</div>
-                                  </div>
-                                  <div className="text-center">
-                                    <div className={`text-lg font-bold ${
-                                      (result.packetLoss || 0) > 0 ? 'text-warning' : 'text-success'
-                                    }`}>
-                                      {result.packetLoss?.toFixed(1)}%
-                                    </div>
-                                    <div className="text-xs text-default-500">丢包率</div>
-                                  </div>
-                                  <div className="text-center">
-                                    {quality && (
-                                      <>
-                                        <Chip 
-                                          color={quality.color as any} 
-                                          variant="flat" 
-                                          size="sm"
-                                          className="text-xs"
-                                        >
-                                          {quality.text}
-                                        </Chip>
-                                        <div className="text-xs text-default-500 mt-0.5">质量</div>
-                                      </>
+                                      <div className="mt-2 pt-2 border-t border-divider">
+                                        <div className="text-xs text-danger">
+                                          {result.message || "连接失败"}
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
-                                </div>
-                              ) : (
-                                <div className="mt-2 pt-2 border-t border-divider">
-                                  <div className="text-xs text-danger">
-                                    {result.message || '连接失败'}
-                                  </div>
-                                </div>
-                              )}
+                                );
+                              })}
                             </div>
                           );
-                                })}
-                              </div>
-                            );
-                          };
+                        };
 
-                          return (
-                            <>
-                              {/* 入口测试 */}
-                              {renderCardSection('🚪 入口测试', groupedResults.entry)}
-                              
-                              {/* 链路测试（按跳数排序） */}
-                              {Object.keys(groupedResults.chains)
-                                .map(Number)
-                                .sort((a, b) => a - b)
-                                .map(hop => renderCardSection(`🔗 转发链 - 第${hop}跳`, groupedResults.chains[hop]))}
-                              
-                              {/* 出口测试 */}
-                              {renderCardSection('🚀 出口测试', groupedResults.exit)}
-                            </>
-                          );
-                        })()}
-                      </div>
+                        return (
+                          <>
+                            {/* 入口测试 */}
+                            {renderCardSection(
+                              "🚪 入口测试",
+                              groupedResults.entry,
+                            )}
 
-                      {/* 失败详情（仅桌面端显示，移动端已在卡片中显示） */}
-                      {diagnosisResult.results.some(r => !r.success) && (
-                        <div className="space-y-2 hidden md:block">
-                          <h4 className="text-sm font-semibold text-danger">失败详情</h4>
-                          <div className="space-y-2">
-                            {diagnosisResult.results.filter(r => !r.success).map((result, index) => (
+                            {/* 链路测试（按跳数排序） */}
+                            {Object.keys(groupedResults.chains)
+                              .map(Number)
+                              .sort((a, b) => a - b)
+                              .map((hop) =>
+                                renderCardSection(
+                                  `🔗 转发链 - 第${hop}跳`,
+                                  groupedResults.chains[hop],
+                                ),
+                              )}
+
+                            {/* 出口测试 */}
+                            {renderCardSection(
+                              "🚀 出口测试",
+                              groupedResults.exit,
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    {/* 失败详情（仅桌面端显示，移动端已在卡片中显示） */}
+                    {diagnosisResult.results.some((r) => !r.success) && (
+                      <div className="space-y-2 hidden md:block">
+                        <h4 className="text-sm font-semibold text-danger">
+                          失败详情
+                        </h4>
+                        <div className="space-y-2">
+                          {diagnosisResult.results
+                            .filter((r) => !r.success)
+                            .map((result, index) => (
                               <Alert
                                 key={index}
-                                color="danger"
-                                variant="flat"
-                                title={result.description}
-                                description={result.message || '连接失败'}
                                 className="text-xs"
+                                color="danger"
+                                description={result.message || "连接失败"}
+                                title={result.description}
+                                variant="flat"
                               />
                             ))}
-                          </div>
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-16">
-                      <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
                       </div>
-                      <h3 className="text-lg font-semibold text-foreground">暂无诊断数据</h3>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-16">
+                    <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg
+                        className="w-8 h-8 text-default-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                        />
+                      </svg>
                     </div>
-                  )}
-                </ModalBody>
-                <ModalFooter className="bg-content1 border-t border-divider">
-                  <Button variant="light" onPress={onClose}>
-                    关闭
+                    <h3 className="text-lg font-semibold text-foreground">
+                      暂无诊断数据
+                    </h3>
+                  </div>
+                )}
+              </ModalBody>
+              <ModalFooter className="bg-content1 border-t border-divider">
+                <Button variant="light" onPress={onClose}>
+                  关闭
+                </Button>
+                {currentDiagnosisTunnel && (
+                  <Button
+                    color="primary"
+                    isLoading={diagnosisLoading}
+                    onPress={() => handleDiagnose(currentDiagnosisTunnel)}
+                  >
+                    重新诊断
                   </Button>
-                  {currentDiagnosisTunnel && (
-                    <Button 
-                      color="primary" 
-                      onPress={() => handleDiagnose(currentDiagnosisTunnel)}
-                      isLoading={diagnosisLoading}
-                    >
-                      重新诊断
-                    </Button>
-                  )}
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
-      </div>
-    
+                )}
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+    </div>
   );
-} 
+}

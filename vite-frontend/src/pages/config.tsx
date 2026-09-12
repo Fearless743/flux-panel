@@ -47,8 +47,8 @@ const CONFIG_ITEMS: ConfigItem[] = [
   {
     key: 'ip',
     label: '面板后端地址',
-    placeholder: '请输入面板后端IP:PORT',
-    description: '格式“ip:port”,用于对接节点时使用,ip是你安装面板服务器的公网ip,端口是安装脚本内输入的后端端口。不要套CDN,不支持https,通讯数据有加密',
+    placeholder: '请输入面板后端IP:PORT，多个地址用逗号分隔',
+    description: '格式"ip:port"，多个地址用逗号分隔（如 1.2.3.4:6365,5.6.7.8:6365），用于节点自动切换备份面板地址。支持 IPv4/IPv6/域名，端口为面板后端映射端口。不要套CDN，不支持https，通讯数据有加密',
     type: 'input'
   },
   {

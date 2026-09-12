@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/crypto"
 	"github.com/Fearless743/flux-panel/go-backend/internal/service"
@@ -16,6 +17,30 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// extractClientIP 从 Gin context 中提取客户端真实 IP，支持代理场景
+func extractClientIP(c *gin.Context) string {
+	// 优先从 X-Forwarded-For 获取（代理场景）
+	if ip := c.GetHeader("X-Forwarded-For"); ip != "" {
+		// 取第一个非空 IP
+		for _, part := range strings.Split(ip, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				return part
+			}
+		}
+	}
+	// 其次从 X-Real-IP 获取
+	if ip := c.GetHeader("X-Real-IP"); ip != "" {
+		return strings.TrimSpace(ip)
+	}
+	// 最后从 RemoteAddr 提取 IP（去掉端口）
+	addr := c.Request.RemoteAddr
+	if idx := strings.LastIndex(addr, ":"); idx != -1 {
+		return addr[:idx]
+	}
+	return addr
+}
+
 // HandleWebSocket /system-info
 // Query: secret, type, version, http, tls, socks
 func (a *App) HandleWebSocket(c *gin.Context) {
@@ -25,6 +50,7 @@ func (a *App) HandleWebSocket(c *gin.Context) {
 	httpP := c.Query("http")
 	tlsP := c.Query("tls")
 	socksP := c.Query("socks")
+	nodeIP := c.Query("nodeIP") // 节点主动上报的公网 IP
 
 	var (
 		sessionID   int64
@@ -73,8 +99,12 @@ func (a *App) HandleWebSocket(c *gin.Context) {
 
 	if isNode {
 		a.Hub.RegisterNode(sessionID, conn, nodeSecret, nodeVersion)
-		// 更新在线状态
-		if err := service.NewNodeService(a.DB, a.Hub).MarkOnline(sessionID, version, httpP, tlsP, socksP); err != nil {
+		// 更新在线状态（优先使用节点主动上报的 IP，fallback 到连接来源 IP）
+		reportedIP := nodeIP
+		if reportedIP == "" {
+			reportedIP = extractClientIP(c)
+		}
+		if err := service.NewNodeService(a.DB, a.Hub).MarkOnline(sessionID, version, httpP, tlsP, socksP, reportedIP); err != nil {
 			slog.Warn("节点状态更新失败", "nodeId", sessionID, "err", err)
 		} else {
 			slog.Info("节点连接建立成功", "nodeId", sessionID, "version", version)
@@ -122,6 +152,17 @@ func (a *App) HandleWebSocket(c *gin.Context) {
 		a.Hub.HandleIncoming(conn, nodeSecret, raw)
 
 		if isNode {
+			// 从心跳消息中提取节点公网 IP，写入 detected_ip
+			var heartbeatInfo struct {
+				PublicIP string `json:"public_ip"`
+			}
+			if strings.Contains(string(plain), "memory_usage") && json.Unmarshal(plain, &heartbeatInfo) == nil && heartbeatInfo.PublicIP != "" {
+				nodeSvc := service.NewNodeService(a.DB, a.Hub)
+				if err := nodeSvc.UpdateDetectedIP(sessionID, heartbeatInfo.PublicIP); err != nil {
+					slog.Warn("更新节点检测IP失败", "nodeId", sessionID, "err", err)
+				}
+			}
+
 			msg, _ := json.Marshal(map[string]any{
 				"id":   strconv.FormatInt(sessionID, 10),
 				"type": "info",
