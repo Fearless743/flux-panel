@@ -158,6 +158,18 @@ func migrate(db *sqlx.DB) error {
 		slog.Info("migrated: added brutal column to chain_tunnel")
 	}
 
+	// 检查 node 表是否有 support_brutal 字段
+	err = db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('node') WHERE name='support_brutal'`)
+	if err != nil {
+		return fmt.Errorf("check support_brutal column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE node ADD COLUMN support_brutal INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add support_brutal column: %w", err)
+		}
+		slog.Info("migrated: added support_brutal column to node")
+	}
+
 	// 批量创建缺失的索引（幂等，不影响已有数据）
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_forward_tunnel_id ON forward(tunnel_id)",

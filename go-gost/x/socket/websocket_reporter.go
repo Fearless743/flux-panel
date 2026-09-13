@@ -205,12 +205,13 @@ func (w *WebSocketReporter) connect() error {
 
 	// 重新读取 config.json 获取最新的协议配置
 	type LocalConfig struct {
-		Addr   string `json:"addr"`
-		Secret string `json:"secret"`
-		Http   int    `json:"http"`
-		Tls    int    `json:"tls"`
-		Socks  int    `json:"socks"`
-		Ssl    bool   `json:"ssl"`
+		Addr          string `json:"addr"`
+		Secret        string `json:"secret"`
+		Http          int    `json:"http"`
+		Tls           int    `json:"tls"`
+		Socks         int    `json:"socks"`
+		Ssl           bool   `json:"ssl"`
+		SupportBrutal bool   `json:"supportBrutal"`
 	}
 
 	var cfg LocalConfig
@@ -225,8 +226,12 @@ func (w *WebSocketReporter) connect() error {
 	if w.ssl {
 		scheme = "wss://"
 	}
+	brutal := "0"
+	if cfg.SupportBrutal {
+		brutal = "1"
+	}
 	currentURL := scheme + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
-		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
+		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks) + "&brutal=" + brutal
 
 	// 不再在连接时主动获取公网 IP，改为心跳时按需获取
 
@@ -1100,14 +1105,18 @@ func getMemoryInfo() MemoryInfo {
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
-func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ssl bool, version string) *WebSocketReporter {
+func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ssl bool, version string, supportBrutal bool) *WebSocketReporter {
 
 	// 构建初始 WebSocket URL
 	scheme := "ws://"
 	if ssl {
 		scheme = "wss://"
 	}
-	fullURL := scheme + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
+	brutal := "0"
+	if supportBrutal {
+		brutal = "1"
+	}
+	fullURL := scheme + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks) + "&brutal=" + brutal
 
 	fmt.Printf("🔗 WebSocket连接URL: %s\n", fullURL)
 

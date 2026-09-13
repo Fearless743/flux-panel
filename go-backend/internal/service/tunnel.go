@@ -212,7 +212,7 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			s := string(jsonBytes)
 			exitNodeIDs = &s
 		}
-		ct := repo.NewChainTunnelWithExitBinding(0, 1, in.NodeID, nil, nil, nil, nil, false, exitNodeIDs)
+		ct := repo.NewChainTunnelWithExitBinding(0, 1, in.NodeID, nil, nil, nil, nil, in.Brutal, exitNodeIDs)
 		chainTunnels = append(chainTunnels, ct)
 	}
 
@@ -600,7 +600,7 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 			s := string(jsonBytes)
 			exitNodeIDs = &s
 		}
-		newEntries = append(newEntries, repo.NewChainTunnelWithExitBinding(tunnelID, 1, in.NodeID, nil, nil, nil, nil, false, exitNodeIDs))
+		newEntries = append(newEntries, repo.NewChainTunnelWithExitBinding(tunnelID, 1, in.NodeID, nil, nil, nil, nil, in.Brutal, exitNodeIDs))
 		nodeIDs = append(nodeIDs, in.NodeID)
 	}
 	// 构建入口→链组绑定的映射，供下发时使用

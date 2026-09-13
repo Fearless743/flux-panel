@@ -36,6 +36,7 @@ type Node struct {
 	HTTP          int     `db:"http" json:"http"`
 	TLS           int     `db:"tls" json:"tls"`
 	Socks         int     `db:"socks" json:"socks"`
+	SupportBrutal bool    `db:"support_brutal" json:"supportBrutal"` // 是否支持 TCP Brutal 拥塞控制
 	CreatedTime   int64   `db:"created_time" json:"createdTime"`
 	UpdatedTime   *int64  `db:"updated_time" json:"updatedTime"`
 	Status        int     `db:"status" json:"status"`
