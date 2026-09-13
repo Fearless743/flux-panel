@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
-import { Logo } from '@/components/icons';
-import { siteConfig } from '@/config/site';
+import { Logo } from "@/components/icons";
+import { siteConfig } from "@/config/site";
 
 interface TabItem {
   path: string;
@@ -11,11 +11,7 @@ interface TabItem {
   adminOnly?: boolean;
 }
 
-export default function H5Layout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function H5Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(false);
@@ -23,62 +19,76 @@ export default function H5Layout({
   // Tabbar配置
   const tabItems: TabItem[] = [
     {
-      path: '/dashboard',
-      label: '首页',
+      path: "/dashboard",
+      label: "首页",
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
         </svg>
-      )
+      ),
     },
     {
-      path: '/forward',
-      label: '转发',
+      path: "/forward",
+      label: "转发",
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-        </svg>
-      )
-    },
-    {
-      path: '/tunnel',
-      label: '隧道',
-      icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
+          <path
+            clipRule="evenodd"
+            d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+            fillRule="evenodd"
+          />
         </svg>
       ),
-      adminOnly: true
     },
     {
-      path: '/node',
-      label: '节点',
+      path: "/tunnel",
+      label: "隧道",
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          <path
+            clipRule="evenodd"
+            d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z"
+            fillRule="evenodd"
+          />
         </svg>
       ),
-      adminOnly: true
+      adminOnly: true,
     },
     {
-      path: '/profile',
-      label: '我的',
+      path: "/node",
+      label: "节点",
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path
+            clipRule="evenodd"
+            d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z"
+            fillRule="evenodd"
+          />
+        </svg>
+      ),
+      adminOnly: true,
+    },
+    {
+      path: "/profile",
+      label: "我的",
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
         </svg>
-      )
-    }
+      ),
+    },
   ];
 
   useEffect(() => {
     // 兼容处理：如果没有admin字段，根据role_id判断（0为管理员）
-    let adminFlag = localStorage.getItem('admin') === 'true';
-    if (localStorage.getItem('admin') === null) {
-      const roleId = parseInt(localStorage.getItem('role_id') || '1', 10);
+    let adminFlag = localStorage.getItem("admin") === "true";
+
+    if (localStorage.getItem("admin") === null) {
+      const roleId = parseInt(localStorage.getItem("role_id") || "1", 10);
+
       adminFlag = roleId === 0;
       // 补充设置admin字段，避免下次再次判断
-      localStorage.setItem('admin', adminFlag.toString());
+      localStorage.setItem("admin", adminFlag.toString());
     }
 
     setIsAdmin(adminFlag);
@@ -90,14 +100,14 @@ export default function H5Layout({
   };
 
   // 过滤tab项（根据权限）
-  const filteredTabItems = tabItems.filter(item =>
-    !item.adminOnly || isAdmin
+  const filteredTabItems = tabItems.filter(
+    (item) => !item.adminOnly || isAdmin,
   );
 
   // 路由切换时回到页面顶部，避免上一页的滚动位置遗留
   useEffect(() => {
     try {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     } catch (e) {
       window.scrollTo(0, 0);
     }
@@ -113,16 +123,16 @@ export default function H5Layout({
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
             <Logo size={16} />
           </div>
-          <h1 className="text-sm font-semibold text-foreground tracking-tight">{siteConfig.name}</h1>
+          <h1 className="text-sm font-semibold text-foreground tracking-tight">
+            {siteConfig.name}
+          </h1>
         </div>
 
         <div className="flex items-center gap-2" />
       </header>
 
       {/* 主内容区域 */}
-      <main className="flex-1 bg-background">
-        {children}
-      </main>
+      <main className="flex-1 bg-background">{children}</main>
 
       {/* 用于给固定 Tabbar 腾出空间的占位元素 */}
       <div aria-hidden className="h-16 safe-bottom" />
@@ -131,23 +141,31 @@ export default function H5Layout({
       <nav className="bg-content1/95 backdrop-blur-md border-t border-divider h-16 safe-bottom flex-shrink-0 flex items-center justify-around px-2 fixed bottom-0 left-0 right-0 z-30">
         {filteredTabItems.map((item) => {
           const isActive = location.pathname === item.path;
+
           return (
             <button
               key={item.path}
-              onClick={() => handleTabClick(item.path)}
               className={`
                 flex flex-col items-center justify-center flex-1 h-full gap-0.5
                 transition-colors duration-200 min-h-[44px]
-                ${isActive
-                  ? 'tab-active'
-                  : 'text-default-400 hover:text-default-600'
+                ${
+                  isActive
+                    ? "tab-active"
+                    : "text-default-400 hover:text-default-600"
                 }
               `}
+              onClick={() => handleTabClick(item.path)}
             >
-              <div className={`tab-icon-wrap flex-shrink-0 rounded-lg p-1 ${isActive ? '' : ''}`}>
+              <div
+                className={`tab-icon-wrap flex-shrink-0 rounded-lg p-1 ${isActive ? "" : ""}`}
+              >
                 {item.icon}
               </div>
-              <span className={`text-[11px] ${isActive ? 'font-semibold' : 'font-medium'}`}>{item.label}</span>
+              <span
+                className={`text-[11px] ${isActive ? "font-semibold" : "font-medium"}`}
+              >
+                {item.label}
+              </span>
             </button>
           );
         })}
