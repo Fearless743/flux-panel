@@ -8,13 +8,14 @@ import (
 
 // Config 配置结构体
 type Config struct {
-	Addr          string `json:"addr"`
-	Secret        string `json:"secret"`
-	Http          int    `json:"http"`
-	Tls           int    `json:"tls"`
-	Socks         int    `json:"socks"`
-	Ssl           bool   `json:"ssl"`
-	SupportBrutal bool   `json:"supportBrutal"` // 是否支持 TCP Brutal 拥塞控制
+	Addr   string `json:"addr"`
+	Secret string `json:"secret"`
+	Http   int    `json:"http"`
+	Tls    int    `json:"tls"`
+	Socks  int    `json:"socks"`
+	Ssl    bool   `json:"ssl"`
+	// SupportBrutal 已弃用，现在由系统自动检测
+	SupportBrutal bool `json:"supportBrutal"` // deprecated: auto-detected
 }
 
 // LoadConfig 加载配置文件
