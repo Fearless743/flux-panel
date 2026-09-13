@@ -1105,7 +1105,7 @@ func getMemoryInfo() MemoryInfo {
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
-func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ssl bool, version string, supportBrutal bool) *WebSocketReporter {
+func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ssl bool, version string) *WebSocketReporter {
 
 	// 自动检测系统是否支持 TCP Brutal
 	supportBrutal := CheckBrutalSupport()
