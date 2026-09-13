@@ -227,7 +227,11 @@ func (w *WebSocketReporter) connect() error {
 		scheme = "wss://"
 	}
 	brutal := "0"
+<<<<<<< HEAD
 	if CheckBrutalSupport() {
+=======
+	if cfg.SupportBrutal {
+>>>>>>> cf7b46530c383a5229a9a243c6700a612ca65528
 		brutal = "1"
 	}
 	currentURL := scheme + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
@@ -1105,7 +1109,7 @@ func getMemoryInfo() MemoryInfo {
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
-func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ssl bool, version string) *WebSocketReporter {
+func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ssl bool, version string, supportBrutal bool) *WebSocketReporter {
 
 	// 自动检测系统是否支持 TCP Brutal
 	supportBrutal := CheckBrutalSupport()
