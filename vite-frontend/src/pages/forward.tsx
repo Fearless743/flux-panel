@@ -1562,8 +1562,7 @@ export default function ForwardPage() {
                 const key = Array.from(keys)[0] as string | undefined;
                 setFilterTunnelId(key && key !== 'all' ? parseInt(key) : null);
               }}
-            ]}
-          >
+            >
             {(item) => <SelectItem key={item.id}>{item.name}</SelectItem>}
           </Select>
           <Select
