@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import AdminLayout from '@/layouts/admin';
+import React, { useState, useEffect } from "react";
+
+import AdminLayout from "@/layouts/admin";
 
 interface PageWrapperProps {
   children: React.ReactNode;
@@ -45,9 +46,7 @@ export default function PageWrapper({
       <div className={className}>
         <div className="mb-6">
           <h1 className="page-title">{title}</h1>
-          {description && (
-            <p className="page-desc">{description}</p>
-          )}
+          {description && <p className="page-desc">{description}</p>}
         </div>
         {children}
       </div>
