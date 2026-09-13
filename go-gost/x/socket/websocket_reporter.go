@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync" // 新增：用于管理连接状态的互斥锁
+	"sync"
 	"time"
 
 	"github.com/go-gost/x/config"
@@ -88,6 +88,28 @@ type TcpPingResponse struct {
 	RequestId    string  `json:"requestId,omitempty"`
 }
 
+// cacheTTL 缓存过期时间
+type cacheTTL struct {
+	expiresAt int64 // Unix 时间戳（纳秒）
+	value     interface{}
+}
+
+// cachedStats 缓存的系统统计数据
+type cachedStats struct {
+	network  NetworkStats
+	cpu      float64
+	memory   float64
+	uptime   uint64
+	cachedAt int64
+}
+
+// bufPool 缓冲区池，用于复用 bytes.Buffer 减少内存分配
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
 type WebSocketReporter struct {
 	url            string
 	addr           string // 保存服务器地址
@@ -105,6 +127,12 @@ type WebSocketReporter struct {
 	connMutex      sync.Mutex        // 新增：连接状态锁
 	aesCrypto      *crypto.AESCrypto // 新增：AES加密器
 	publicIP       string            // 节点公网 IP（通过外部服务获取）
+	httpClient     *http.Client      // 复用 HTTP 客户端
+	configCache    *localConfig      // 配置缓存
+	statsCache     cachedStats       // 系统统计缓存
+	cacheMutex     sync.RWMutex      // 缓存读写锁
+	lastCacheTime  int64             // 上次缓存时间（纳秒）
+	cacheDuration  int64             // 缓存持续时间（纳秒）
 }
 
 // NewWebSocketReporter 创建一个新的WebSocket报告器
@@ -130,6 +158,10 @@ func NewWebSocketReporter(serverURL string, secret string) *WebSocketReporter {
 		connected:      false,
 		connecting:     false,
 		aesCrypto:      aesCrypto,
+		httpClient: &http.Client{
+			Timeout: 5 * time.Second,
+		},
+		cacheDuration: int64(2 * time.Second), // 统计缓存 2 秒
 	}
 }
 
@@ -203,21 +235,9 @@ func (w *WebSocketReporter) connect() error {
 		w.connecting = false
 	}()
 
-	// 重新读取 config.json 获取最新的协议配置
-	type LocalConfig struct {
-		Addr          string `json:"addr"`
-		Secret        string `json:"secret"`
-		Http          int    `json:"http"`
-		Tls           int    `json:"tls"`
-		Socks         int    `json:"socks"`
-		Ssl           bool   `json:"ssl"`
-		SupportBrutal bool   `json:"supportBrutal"`
-	}
-
-	var cfg LocalConfig
-	if b, err := os.ReadFile("config.json"); err == nil {
-		json.Unmarshal(b, &cfg)
-		// 更新 ssl 配置
+	// 使用缓存的配置，避免重复读取文件
+	cfg := w.getLocalConfig()
+	if cfg != nil {
 		w.ssl = cfg.Ssl
 	}
 
@@ -230,8 +250,17 @@ func (w *WebSocketReporter) connect() error {
 	if CheckBrutalSupport() {
 		brutal = "1"
 	}
+
+	httpVal := 0
+	tlsVal := 0
+	socksVal := 0
+	if cfg != nil {
+		httpVal = cfg.Http
+		tlsVal = cfg.Tls
+		socksVal = cfg.Socks
+	}
 	currentURL := scheme + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
-		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks) + "&brutal=" + brutal
+		"&http=" + strconv.Itoa(httpVal) + "&tls=" + strconv.Itoa(tlsVal) + "&socks=" + strconv.Itoa(socksVal) + "&brutal=" + brutal
 
 	// 不再在连接时主动获取公网 IP，改为心跳时按需获取
 
@@ -265,21 +294,20 @@ func (w *WebSocketReporter) connect() error {
 		return nil
 	})
 
-	fmt.Printf("✅ WebSocket连接建立成功 (http=%d, tls=%d, socks=%d)\n", cfg.Http, cfg.Tls, cfg.Socks)
+	fmt.Printf("✅ WebSocket连接建立成功 (http=%d, tls=%d, socks=%d)\n", httpVal, tlsVal, socksVal)
 	return nil
 }
 
 // fetchPublicIP 通过访问外部服务获取节点公网 IP
-func fetchPublicIP() string {
+func (w *WebSocketReporter) fetchPublicIP() string {
 	// 依次尝试多个源，提高成功率
 	urls := []string{
 		"https://ip.sb/ip",
 		"https://api.ipify.org",
 		"https://api.my-ip.io/v2/ip",
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
 	for _, u := range urls {
-		resp, err := client.Get(u)
+		resp, err := w.httpClient.Get(u)
 		if err != nil {
 			continue
 		}
@@ -341,23 +369,50 @@ func (w *WebSocketReporter) handleConnection() {
 	}
 }
 
-// collectSystemInfo 收集系统信息
+// collectSystemInfo 收集系统信息（带缓存）
 func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
-	networkStats := getNetworkStats()
-	cpuInfo := getCPUInfo()
-	memoryInfo := getMemoryInfo()
+	now := time.Now().UnixNano()
+
+	// 检查缓存是否有效
+	w.cacheMutex.RLock()
+	isValid := now-w.statsCache.cachedAt < w.cacheDuration
+	networkStats := w.statsCache.network
+	cpuUsage := w.statsCache.cpu
+	memoryUsage := w.statsCache.memory
+	uptime := w.statsCache.uptime
+	w.cacheMutex.RUnlock()
+
+	// 缓存失效时重新采集
+	if !isValid {
+		w.cacheMutex.Lock()
+		// 双重检查
+		if now-w.statsCache.cachedAt >= w.cacheDuration {
+			networkStats = getNetworkStats()
+			cpuUsage = getCPUPercent()
+			memoryUsage = getMemoryPercent()
+			uptime = getUptime()
+			w.statsCache = cachedStats{
+				network:  networkStats,
+				cpu:      cpuUsage,
+				memory:   memoryUsage,
+				uptime:   uptime,
+				cachedAt: now,
+			}
+		}
+		w.cacheMutex.Unlock()
+	}
 
 	// 按需获取公网 IP（首次调用时获取，避免每次心跳都发起网络请求）
 	if w.publicIP == "" {
-		w.publicIP = fetchPublicIP()
+		w.publicIP = w.fetchPublicIP()
 	}
 
 	return SystemInfo{
-		Uptime:           getUptime(),
+		Uptime:           uptime,
 		BytesReceived:    networkStats.BytesReceived,
 		BytesTransmitted: networkStats.BytesTransmitted,
-		CPUUsage:         cpuInfo.Usage,
-		MemoryUsage:      memoryInfo.Usage,
+		CPUUsage:         cpuUsage,
+		MemoryUsage:      memoryUsage,
 		PublicIP:         w.publicIP,
 	}
 }
@@ -505,7 +560,11 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 			}
 			defer gzipReader.Close()
 
-			var decompressedData bytes.Buffer
+			// 从池中获取缓冲区，减少内存分配
+			decompressedData := bufPool.Get().(*bytes.Buffer)
+			decompressedData.Reset()
+			defer bufPool.Put(decompressedData)
+
 			if _, err := decompressedData.ReadFrom(gzipReader); err != nil {
 				fmt.Printf("❌ 解压数据失败: %v\n", err)
 				w.sendErrorResponse("DecompressError", fmt.Sprintf("解压失败: %v", err))
@@ -1053,6 +1112,48 @@ func getUptime() uint64 {
 	return uptime
 }
 
+// localConfig 本地配置结构
+type localConfig struct {
+	Addr          string `json:"addr"`
+	Secret        string `json:"secret"`
+	Http          int    `json:"http"`
+	Tls           int    `json:"tls"`
+	Socks         int    `json:"socks"`
+	Ssl           bool   `json:"ssl"`
+	SupportBrutal bool   `json:"supportBrutal"`
+}
+
+// getLocalConfig 获取并缓存本地配置
+func (w *WebSocketReporter) getLocalConfig() *localConfig {
+	now := time.Now().UnixNano()
+
+	w.cacheMutex.RLock()
+	if w.configCache != nil && now-w.lastCacheTime < int64(30*time.Second) {
+		cfg := w.configCache
+		w.cacheMutex.RUnlock()
+		return cfg
+	}
+	w.cacheMutex.RUnlock()
+
+	w.cacheMutex.Lock()
+	defer w.cacheMutex.Unlock()
+
+	// 再次检查（防止竞态）
+	if w.configCache != nil && now-w.lastCacheTime < int64(30*time.Second) {
+		return w.configCache
+	}
+
+	var cfg localConfig
+	if b, err := os.ReadFile("config.json"); err == nil {
+		if err := json.Unmarshal(b, &cfg); err == nil {
+			w.configCache = &cfg
+			w.lastCacheTime = now
+			return &cfg
+		}
+	}
+	return nil
+}
+
 // getNetworkStats 获取网络统计信息
 func getNetworkStats() NetworkStats {
 	var stats NetworkStats
@@ -1077,31 +1178,22 @@ func getNetworkStats() NetworkStats {
 	return stats
 }
 
-// getCPUInfo 获取CPU信息
-func getCPUInfo() CPUInfo {
-	var cpuInfo CPUInfo
-
-	// 获取CPU使用率
-	percentages, err := cpu.Percent(time.Second, false)
+// getCPUPercent 获取CPU使用率（单次采样，不阻塞）
+func getCPUPercent() float64 {
+	percentages, err := cpu.Percent(0, false)
 	if err == nil && len(percentages) > 0 {
-		cpuInfo.Usage = percentages[0]
+		return percentages[0]
 	}
-
-	return cpuInfo
+	return 0
 }
 
-// getMemoryInfo 获取内存信息
-func getMemoryInfo() MemoryInfo {
-	var memInfo MemoryInfo
-
+// getMemoryPercent 获取内存使用率
+func getMemoryPercent() float64 {
 	vmStat, err := mem.VirtualMemory()
 	if err != nil {
-		return memInfo
+		return 0
 	}
-
-	memInfo.Usage = vmStat.UsedPercent
-
-	return memInfo
+	return vmStat.UsedPercent
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
