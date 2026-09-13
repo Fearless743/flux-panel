@@ -141,7 +141,7 @@ jobs:
 
   create-release:
     name: Create Release
-    needs: [build-gost, build-panel]
+    needs: [build-gost]
     runs-on: ubuntu-latest
     permissions:
       contents: write
