@@ -131,7 +131,7 @@ func (r *NodeRepo) Update(n *model.Node) error {
 	return err
 }
 
-func (r *NodeRepo) UpdateOnline(id int64, version *string, http, tls, socks *int) error {
+func (r *NodeRepo) UpdateOnline(id int64, version *string, http, tls, socks *int, supportBrutal *int) error {
 	now := time.Now().UnixMilli()
 	sets := []string{"status = 1", "updated_time = ?"}
 	args := []any{now}
@@ -150,6 +150,10 @@ func (r *NodeRepo) UpdateOnline(id int64, version *string, http, tls, socks *int
 	if socks != nil {
 		sets = append(sets, "socks = ?")
 		args = append(args, *socks)
+	}
+	if supportBrutal != nil {
+		sets = append(sets, "support_brutal = ?")
+		args = append(args, *supportBrutal)
 	}
 	args = append(args, id)
 	q := `UPDATE node SET ` + strings.Join(sets, ", ") + ` WHERE id = ?`

@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS node (
   udp_listen_addr VARCHAR(100) NOT NULL DEFAULT '[::]',
   auto_detect_ip INTEGER NOT NULL DEFAULT 0,
   detected_ip VARCHAR(100) NOT NULL DEFAULT '',
-  node_ips TEXT NOT NULL DEFAULT ''
+  node_ips TEXT NOT NULL DEFAULT '',
+  support_brutal INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_node_secret ON node(secret);
 CREATE INDEX IF NOT EXISTS idx_node_status ON node(status);

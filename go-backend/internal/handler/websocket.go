@@ -50,6 +50,7 @@ func (a *App) HandleWebSocket(c *gin.Context) {
 	httpP := c.Query("http")
 	tlsP := c.Query("tls")
 	socksP := c.Query("socks")
+	brutalP := c.Query("brutal") // 节点是否支持 TCP Brutal
 	nodeIP := c.Query("nodeIP") // 节点主动上报的公网 IP
 
 	var (
@@ -104,7 +105,7 @@ func (a *App) HandleWebSocket(c *gin.Context) {
 		if reportedIP == "" {
 			reportedIP = extractClientIP(c)
 		}
-		if err := service.NewNodeService(a.DB, a.Hub).MarkOnline(sessionID, version, httpP, tlsP, socksP, reportedIP); err != nil {
+		if err := service.NewNodeService(a.DB, a.Hub).MarkOnline(sessionID, version, httpP, tlsP, socksP, reportedIP, brutalP); err != nil {
 			slog.Warn("节点状态更新失败", "nodeId", sessionID, "err", err)
 		} else {
 			slog.Info("节点连接建立成功", "nodeId", sessionID, "version", version)

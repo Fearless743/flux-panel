@@ -280,12 +280,12 @@ func (s *NodeService) GetBySecret(secret string) (*model.Node, error) {
 	return s.Repo.GetBySecret(secret)
 }
 
-func (s *NodeService) MarkOnline(id int64, version string, http, tls, socks string, clientIP string) error {
+func (s *NodeService) MarkOnline(id int64, version string, http, tls, socks string, clientIP string, brutal string) error {
 	var v *string
 	if version != "" {
 		v = &version
 	}
-	var h, t, so *int
+	var h, t, so, sb *int
 	if http != "" {
 		if n, err := strconv.Atoi(http); err == nil {
 			h = &n
@@ -301,7 +301,12 @@ func (s *NodeService) MarkOnline(id int64, version string, http, tls, socks stri
 			so = &n
 		}
 	}
-	if err := s.Repo.UpdateOnline(id, v, h, t, so); err != nil {
+	if brutal != "" {
+		if n, err := strconv.Atoi(brutal); err == nil {
+			sb = &n
+		}
+	}
+	if err := s.Repo.UpdateOnline(id, v, h, t, so, sb); err != nil {
 		return err
 	}
 	// 自动检测节点 IP：如果开启了 auto_detect_ip，记录本次连接的客户端 IP

@@ -64,6 +64,7 @@ interface Node {
   id: number;
   name: string;
   status: number; // 1: 在线, 0: 离线
+  supportBrutal?: boolean; // 是否支持 TCP Brutal 拥塞控制
 }
 
 interface TunnelForm {
@@ -407,6 +408,16 @@ export default function TunnelPage() {
 
       return { ...prev, chainNodes };
     });
+  };
+
+  // 更新入口节点的 Brutal 开关
+  const updateEntryBrutal = (nodeId: number, brutal: boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      inNodeId: prev.inNodeId.map((ct) =>
+        ct.nodeId === nodeId ? { ...ct, brutal } : ct,
+      ),
+    }));
   };
 
   // 获取所有转发链中已选择的节点ID列表
@@ -968,6 +979,46 @@ export default function TunnelPage() {
                       ))}
                     </Select>
                   </div>
+
+                  {/* 入口节点 Brutal 开关配置 */}
+                  {form.inNodeId.length > 0 && (
+                    <div className="space-y-2">
+                      {form.inNodeId.map((entry) => {
+                        const entryNode = nodes.find(
+                          (n) => n.id === entry.nodeId,
+                        );
+
+                        if (!entryNode) return null;
+
+                        return (
+                          <div
+                            key={entry.nodeId}
+                            className="flex items-center justify-between p-2 bg-default-50 dark:bg-default-100/50 rounded-lg"
+                          >
+                            <span className="text-sm text-default-700">
+                              {entryNode.name}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {!entryNode.supportBrutal && (
+                                <span className="text-xs text-default-400">
+                                  (节点不支持)
+                                </span>
+                              )}
+                              <Switch
+                                color="primary"
+                                isDisabled={!entryNode.supportBrutal}
+                                isSelected={entry.brutal || false}
+                                size="sm"
+                                onValueChange={(v) =>
+                                  updateEntryBrutal(entry.nodeId, v)
+                                }
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* 隧道转发时显示入口-出口绑定配置（无转发链时） */}
                   {form.type === 2 &&
