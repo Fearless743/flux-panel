@@ -55,8 +55,8 @@ func (l *tcpBrutalListener) Init(md md.Metadata) (err error) {
 	lc := net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
 			return c.Control(func(fd uintptr) {
-				// 设置 brutal 拥塞控制
-				if err := setTCPBrutal(int(fd), unix.IPPROTO_TCP, unix.TCP_CONGESTION, "brutal"); err != nil {
+				// 监听 fd 上设置 brutal（已接受连接的速率参数见 dialer 侧）
+				if err := unix.SetsockoptString(int(fd), unix.IPPROTO_TCP, unix.TCP_CONGESTION, "brutal"); err != nil {
 					l.logger.Warnf("failed to set TCP_CONGESTION brutal: %v", err)
 				}
 			})
@@ -105,12 +105,4 @@ func (l *tcpBrutalListener) Addr() net.Addr {
 
 func (l *tcpBrutalListener) Close() error {
 	return l.ln.Close()
-}
-
-// setTCPBrutal 通过 setsockopt 设置 TCP 拥塞控制为 brutal
-func setTCPBrutal(fd int, level, opt int, value string) error {
-	// 使用 TCP_CONGESTION sockopt 设置拥塞控制算法
-	buf := []byte(value)
-	buf = append(buf, 0) // 以 null 结尾
-	return unix.SetsockoptString(fd, level, opt, value)
 }

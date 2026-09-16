@@ -1331,6 +1331,7 @@ func (s *TunnelService) addChains(nodeID int64, target []model.ChainTunnel, node
 			ServerIP: n.GetEffectiveIP(),
 			Port:     port,
 			Brutal:   ct.Brutal,
+			DownBW:   n.DownBW, // Brutal 速率取目标节点下行带宽
 		})
 	}
 	data := gost.BuildChainData(tunnelID, nodeID, iface, strategy, inputs)

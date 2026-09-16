@@ -8,8 +8,8 @@ import (
 	"github.com/go-gost/core/dialer"
 	"github.com/go-gost/core/logger"
 	md "github.com/go-gost/core/metadata"
+	"github.com/go-gost/x/internal/brutal"
 	"github.com/go-gost/x/registry"
-	"golang.org/x/sys/unix"
 )
 
 func init() {
@@ -44,12 +44,13 @@ func (d *tcpBrutalDialer) Dial(ctx context.Context, addr string, opts ...dialer.
 
 	network := "tcp"
 
+	// download 为目标网络（接收方）下载带宽 (Mbps)，作为 Brutal 发送速率；
+	// 未配置(0)时 agent 兜底 100Mbps
 	dialer := &net.Dialer{
 		Control: func(network, address string, c syscall.RawConn) error {
 			return c.Control(func(fd uintptr) {
-				// 设置 brutal 拥塞控制
-				if err := unix.SetsockoptString(int(fd), unix.IPPROTO_TCP, unix.TCP_CONGESTION, "brutal"); err != nil {
-					d.logger.Warnf("failed to set TCP_CONGESTION brutal for dialer: %v", err)
+				if err := brutal.Enable(int(fd), d.md.download); err != nil {
+					d.logger.Warnf("failed to set tcp brutal for dialer: %v", err)
 				}
 			})
 		},

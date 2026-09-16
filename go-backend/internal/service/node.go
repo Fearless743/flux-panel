@@ -38,6 +38,8 @@ type NodeCreateReq struct {
 	InterfaceName *string `json:"interfaceName"`
 	TCPListenAddr string  `json:"tcpListenAddr"`
 	UDPListenAddr string  `json:"udpListenAddr"`
+	DownBW        int     `json:"downBw"` // 下行带宽 (Mbps)，TCP Brutal 速率参考，0 未配置
+	UpBW          int     `json:"upBw"`   // 上行带宽 (Mbps)，TCP Brutal 速率参考，0 未配置
 }
 
 type NodeUpdateReq struct {
@@ -52,6 +54,8 @@ type NodeUpdateReq struct {
 	Socks         *int    `json:"socks"`
 	TCPListenAddr string  `json:"tcpListenAddr"`
 	UDPListenAddr string  `json:"udpListenAddr"`
+	DownBW        int     `json:"downBw"` // 下行带宽 (Mbps)，TCP Brutal 速率参考，0 未配置
+	UpBW          int     `json:"upBw"`   // 上行带宽 (Mbps)，TCP Brutal 速率参考，0 未配置
 }
 
 func (s *NodeService) Create(req NodeCreateReq) error {
@@ -80,6 +84,8 @@ func (s *NodeService) Create(req NodeCreateReq) error {
 		Socks:         0,
 		TCPListenAddr: req.TCPListenAddr,
 		UDPListenAddr: req.UDPListenAddr,
+		DownBW:        req.DownBW,
+		UpBW:          req.UpBW,
 	}
 	return s.Repo.Create(n)
 }
@@ -166,6 +172,8 @@ func (s *NodeService) Update(req NodeUpdateReq) error {
 	} else {
 		upd.Socks = node.Socks
 	}
+	upd.DownBW = req.DownBW
+	upd.UpBW = req.UpBW
 	return s.Repo.Update(upd)
 }
 

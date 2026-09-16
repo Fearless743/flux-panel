@@ -43,25 +43,31 @@ type ChainNodeInput struct {
 	ServerIP string
 	Port     int
 	Brutal   bool // 是否启用 TCP Brutal 拥塞控制
+	DownBW   int  // 目标节点下行带宽 (Mbps)，启用 Brutal 时作为速率参数，0 未配置（agent 兜底 100Mbps）
 }
 
 func BuildChainData(tunnelID, sourceNodeID int64, interfaceName string, strategy string, nodes []ChainNodeInput) map[string]any {
 	arr := make([]any, 0, len(nodes))
 	for i, n := range nodes {
+		dialer := map[string]any{
+			"type": func() string {
+				if n.Brutal {
+					return "tcpbrutal"
+				}
+				return n.Protocol
+			}(),
+		}
+		// Brutal 时附带目标节点下行带宽作为速率参数 (Mbps)，未配置(0)由 agent 兜底
+		if n.Brutal {
+			dialer["metadata"] = map[string]any{"download": n.DownBW}
+		}
 		arr = append(arr, map[string]any{
 			"name": fmt.Sprintf("node_%d", i+1),
 			"addr": ProcessServerAddress(fmt.Sprintf("%s:%d", n.ServerIP, n.Port)),
 			"connector": map[string]any{
 				"type": "relay",
 			},
-			"dialer": map[string]any{
-				"type": func() string {
-					if n.Brutal {
-						return "tcpbrutal"
-					}
-					return n.Protocol
-				}(),
-			},
+			"dialer": dialer,
 		})
 	}
 	if strategy == "" {

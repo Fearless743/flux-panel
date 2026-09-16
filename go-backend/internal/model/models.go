@@ -27,7 +27,7 @@ type Node struct {
 	// AutoDetectIP 是否启用自动获取节点 IP
 	AutoDetectIP bool `db:"auto_detect_ip" json:"autoDetectIP"`
 	// DetectedIP 节点上线时自动捕获的真实 IP
-	DetectedIP    string  `db:"detected_ip" json:"detectedIp"`
+	DetectedIP string `db:"detected_ip" json:"detectedIp"`
 	// NodeIPs 节点的所有 IP 地址列表（JSON 数组）
 	NodeIPs       string  `db:"node_ips" json:"nodeIps"`
 	Port          string  `db:"port" json:"port"`
@@ -37,6 +37,8 @@ type Node struct {
 	TLS           int     `db:"tls" json:"tls"`
 	Socks         int     `db:"socks" json:"socks"`
 	SupportBrutal bool    `db:"support_brutal" json:"supportBrutal"` // 是否支持 TCP Brutal 拥塞控制
+	DownBW        int     `db:"down_bw" json:"downBw"`               // 下行带宽 (Mbps)，TCP Brutal 速率参考
+	UpBW          int     `db:"up_bw" json:"upBw"`                   // 上行带宽 (Mbps)，TCP Brutal 速率参考
 	CreatedTime   int64   `db:"created_time" json:"createdTime"`
 	UpdatedTime   *int64  `db:"updated_time" json:"updatedTime"`
 	Status        int     `db:"status" json:"status"`

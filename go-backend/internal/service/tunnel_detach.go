@@ -376,6 +376,8 @@ func pushChains(hub *ws.Hub, nodeID int64, target []model.ChainTunnel, nodes map
 			Protocol: proto,
 			ServerIP: n.GetEffectiveIP(),
 			Port:     port,
+			Brutal:   ct.Brutal, // 保持 detach 后重建的链与原始配置一致
+			DownBW:   n.DownBW,  // Brutal 速率取目标节点下行带宽
 		})
 	}
 	data := gost.BuildChainData(tunnelID, nodeID, iface, strategy, inputs)

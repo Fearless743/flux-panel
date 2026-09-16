@@ -38,11 +38,11 @@ func (r *NodeRepo) Create(n *model.Node) error {
 	n.UpdatedTime = &now
 	res, err := r.DB.Exec(`
 		INSERT INTO node (name, secret, server_ip, auto_detect_ip, detected_ip, port, interface_name, version, http, tls, socks,
-			created_time, updated_time, status, tcp_listen_addr, udp_listen_addr)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_time, updated_time, status, tcp_listen_addr, udp_listen_addr, down_bw, up_bw)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		n.Name, n.Secret, n.ServerIP, boolToInt(n.AutoDetectIP), n.DetectedIP, n.Port, n.InterfaceName, n.Version,
 		n.HTTP, n.TLS, n.Socks, n.CreatedTime, n.UpdatedTime, n.Status,
-		nullListen(n.TCPListenAddr), nullListen(n.UDPListenAddr),
+		nullListen(n.TCPListenAddr), nullListen(n.UDPListenAddr), n.DownBW, n.UpBW,
 	)
 	if err != nil {
 		return err
@@ -122,11 +122,11 @@ func (r *NodeRepo) Update(n *model.Node) error {
 	n.UpdatedTime = &now
 	_, err := r.DB.Exec(`
 		UPDATE node SET name=?, server_ip=?, auto_detect_ip=?, detected_ip=?, port=?, interface_name=?,
-			http=?, tls=?, socks=?, updated_time=?, tcp_listen_addr=?, udp_listen_addr=?
+			http=?, tls=?, socks=?, updated_time=?, tcp_listen_addr=?, udp_listen_addr=?, down_bw=?, up_bw=?
 		WHERE id=?`,
 		n.Name, n.ServerIP, boolToInt(n.AutoDetectIP), n.DetectedIP, n.Port, n.InterfaceName,
 		n.HTTP, n.TLS, n.Socks, n.UpdatedTime,
-		nullListen(n.TCPListenAddr), nullListen(n.UDPListenAddr), n.ID,
+		nullListen(n.TCPListenAddr), nullListen(n.UDPListenAddr), n.DownBW, n.UpBW, n.ID,
 	)
 	return err
 }

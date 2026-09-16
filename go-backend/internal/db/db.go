@@ -170,6 +170,30 @@ func migrate(db *sqlx.DB) error {
 		slog.Info("migrated: added support_brutal column to node")
 	}
 
+	// 检查 node 表是否有 down_bw 字段
+	err = db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('node') WHERE name='down_bw'`)
+	if err != nil {
+		return fmt.Errorf("check down_bw column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE node ADD COLUMN down_bw INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add down_bw column: %w", err)
+		}
+		slog.Info("migrated: added down_bw column to node")
+	}
+
+	// 检查 node 表是否有 up_bw 字段
+	err = db.Get(&count, `SELECT COUNT(*) FROM pragma_table_info('node') WHERE name='up_bw'`)
+	if err != nil {
+		return fmt.Errorf("check up_bw column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE node ADD COLUMN up_bw INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add up_bw column: %w", err)
+		}
+		slog.Info("migrated: added up_bw column to node")
+	}
+
 	// 批量创建缺失的索引（幂等，不影响已有数据）
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_forward_tunnel_id ON forward(tunnel_id)",

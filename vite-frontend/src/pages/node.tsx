@@ -39,6 +39,8 @@ interface Node {
   http?: number; // 0 关 1 开
   tls?: number; // 0 关 1 开
   socks?: number; // 0 关 1 开
+  downBw?: number; // 下行带宽 (Mbps)，TCP Brutal 速率参考，0 未配置
+  upBw?: number; // 上行带宽 (Mbps)，TCP Brutal 速率参考，0 未配置
   status: number; // 1: 在线, 0: 离线
   connectionStatus: "online" | "offline";
   systemInfo?: {
@@ -63,6 +65,8 @@ interface NodeForm {
   tcpListenAddr: string;
   udpListenAddr: string;
   interfaceName: string;
+  downBw: string; // 下行带宽 (Mbps)，空 = 未配置
+  upBw: string; // 上行带宽 (Mbps)，空 = 未配置
   http: number; // 0 关 1 开
   tls: number; // 0 关 1 开
   socks: number; // 0 关 1 开
@@ -89,6 +93,8 @@ export default function NodePage() {
     tcpListenAddr: "[::]",
     udpListenAddr: "[::]",
     interfaceName: "",
+    downBw: "",
+    upBw: "",
     http: 0,
     tls: 0,
     socks: 0,
@@ -521,6 +527,8 @@ export default function NodePage() {
       tcpListenAddr: node.tcpListenAddr || "[::]",
       udpListenAddr: node.udpListenAddr || "[::]",
       interfaceName: (node as any).interfaceName || "",
+      downBw: (node as any).downBw ? String((node as any).downBw) : "",
+      upBw: (node as any).upBw ? String((node as any).upBw) : "",
       http: typeof node.http === "number" ? node.http : 1,
       tls: typeof node.tls === "number" ? node.tls : 1,
       socks: typeof node.socks === "number" ? node.socks : 1,
@@ -658,6 +666,8 @@ export default function NodePage() {
       const apiCall = isEdit ? updateNode : createNode;
       const data = {
         ...form,
+        downBw: form.downBw.trim() === "" ? 0 : parseInt(form.downBw, 10) || 0,
+        upBw: form.upBw.trim() === "" ? 0 : parseInt(form.upBw, 10) || 0,
       };
 
       const res = await apiCall(data);
@@ -679,6 +689,8 @@ export default function NodePage() {
                     tcpListenAddr: form.tcpListenAddr,
                     udpListenAddr: form.udpListenAddr,
                     interfaceName: form.interfaceName,
+                    downBw: data.downBw,
+                    upBw: data.upBw,
                     http: form.http,
                     tls: form.tls,
                     socks: form.socks,
@@ -710,6 +722,8 @@ export default function NodePage() {
       tcpListenAddr: "[::]",
       udpListenAddr: "[::]",
       interfaceName: "",
+      downBw: "",
+      upBw: "",
       http: 0,
       tls: 0,
       socks: 0,
@@ -1058,6 +1072,39 @@ export default function NodePage() {
                         }))
                       }
                     />
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Input
+                        description="TCP Brutal 下行速率 (Mbps)，用于链 hop 拨号限速，未配置节点 agent 兜底 100Mbps"
+                        label="下行带宽 (Mbps)"
+                        min={0}
+                        placeholder="例如: 100"
+                        type="number"
+                        value={form.downBw}
+                        variant="bordered"
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            downBw: e.target.value,
+                          }))
+                        }
+                      />
+                      <Input
+                        description="TCP Brutal 上行速率 (Mbps)，tcpbrutal 监听侧限速"
+                        label="上行带宽 (Mbps)"
+                        min={0}
+                        placeholder="例如: 50"
+                        type="number"
+                        value={form.upBw}
+                        variant="bordered"
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            upBw: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Input
