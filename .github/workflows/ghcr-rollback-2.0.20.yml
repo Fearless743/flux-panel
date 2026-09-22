@@ -1,8 +1,10 @@
 # 一次性回滚任务（workflow_dispatch）
-# 背景：本地 PAT 无 packages scope（GHCR token 被降级为 pull-only，registry DELETE 返回 405 UNSUPPORTED），
+# 背景：本地 PAT 无 packages scope（GHCR token 被降级为 pull-only，registry DELETE 与 manifest PUT 均被拒），
 #       故通过 CI 的 GITHUB_TOKEN（permissions: packages:write）执行所有 GHCR 变更。
-# 顺序刻意：先删高位 release/tag → 重指向 latest → 删高位镜像版本 → 最后创建 2.0.20-beta release，
+# 鉴权：沿用 docker-build.yml 已验证可行的 docker/login-action；crane 的 token 流程会被 GHCR 拒绝（UNAUTHORIZED）。
+# 顺序刻意：删高位 release/tag → 重指向 latest（带 digest 门禁）→ 删高位镜像版本 → 最后创建 2.0.20-beta release，
 #           使 GitHub "latest" 指针落在 2.0.20-beta（install.sh 依赖 releases/latest）。
+# 幂等：重复执行安全（release 创建有存在性守卫，asset 上传用 --clobber，删除步骤容忍 "已不存在"）。
 name: ghcr-rollback-2.0.20
 on:
   workflow_dispatch: {}
@@ -34,12 +36,6 @@ jobs:
         with:
           go-version: '1.23.4'
           cache-dependency-path: go-gost/go.sum
-
-      - name: Install crane
-        run: |
-          go install github.com/google/go-containerregistry/cmd/crane@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          crane version
 
       - name: Install UPX
         run: |
@@ -88,13 +84,12 @@ jobs:
           done
           gh release list
 
-      - name: Delete higher remote git tags (Packages/Refs API; `git push +:` is ambiguous post-tag-delete)
+      - name: Delete higher remote git tags (Refs API)
         run: |
           for t in 2.0.21-beta 2.0.22-beta 2.0.24-beta 2.0.27-beta 2.0.32-beta 2.0.33-beta; do
-            SHA=$(git rev-parse "refs/tags/$t" 2>/dev/null || true)
-            if [ -n "$SHA" ]; then
-              gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$t" --silent \
-                && echo "deleted git tag $t" || echo "skip git tag $t (gone)"
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$t" >/dev/null 2>&1; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$t" --silent
+              echo "deleted git tag $t"
             else
               echo "skip git tag $t (gone)"
             fi
@@ -102,13 +97,28 @@ jobs:
           echo "=== tags left ==="
           git ls-remote --tags origin | sed 's|.*/||' | tr -d '^{}' | sort -V
 
+      - name: Configure GHCR auth (same pattern as docker-build.yml)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
       - name: Retag GHCR latest -> 2.0.20-beta
         run: |
-          printf '%s' "$GITHUB_TOKEN" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
-          echo "2.0.20-beta digest = $(crane digest "$IMAGE:2.0.20-beta")"
-          # 注意：crane tag 的 DST 只能是裸标签名，不能带完整镜像路径
-          crane tag "$IMAGE:2.0.20-beta" latest
-          echo "latest digest      = $(crane digest "$IMAGE:latest")"
+          # imagetools 走 docker 客户端的凭据（docker/login-action 已写入），复用 CI 已验证的推送路径。
+          # GHCR 不支持 registry manifest DELETE，因此重指向必须走 manifest 推送。
+          docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:2.0.20-beta"
+
+          WANT=$(docker buildx imagetools inspect "$IMAGE:2.0.20-beta" -t 'json{{index .Manifests 0 .Digest}}' 2>/dev/null || true)
+          GOT=$(docker buildx imagetools inspect "$IMAGE:latest" -t 'json{{index .Manifests 0 .Digest}}' 2>/dev/null || true)
+          echo "2.0.20-beta manifest = ${WANT:-<inspect-failed>}"
+          echo "latest manifest      = ${GOT:-<inspect-failed>}"
+          if [ -z "$GOT" ] || [ "$GOT" != "$WANT" ]; then
+            echo "❌ latest 未指向 2.0.20-beta，中止（不删除任何镜像版本）"
+            exit 1
+          fi
+          echo "✅ latest 已指向 2.0.20-beta"
 
       - name: Delete higher GHCR image versions (Packages REST API; registry DELETE is unsupported on GHCR)
         run: |
@@ -121,7 +131,10 @@ jobs:
           jq -s 'add' /tmp/versions-1.json /tmp/versions-2.json > /tmp/versions.json
           COUNT=$(jq length /tmp/versions.json)
           echo "package versions: $COUNT"
-          if [ "$COUNT" -eq 0 ]; then exit 1; fi
+          if [ "$COUNT" -eq 0 ]; then
+            echo "❌ 未取到 package versions，中止（不做任何删除）"
+            exit 1
+          fi
           jq -r '.[] | "\(.id) \(.metadata.container.tags // [] | join(" "))"' /tmp/versions.json > /tmp/versions-ids.txt
           cat /tmp/versions-ids.txt
           while read -r id tags; do
@@ -169,11 +182,9 @@ jobs:
           gh release list
           echo "=== releases/latest redirect ==="
           curl -s -o /dev/null -w "%{redirect_url}\n" "https://github.com/${GITHUB_REPOSITORY}/releases/latest"
-          echo "=== tags ==="
+          echo "=== git tags ==="
           git ls-remote --tags origin | sed 's|.*/||' | tr -d '^{}' | sort -V
-          echo "=== images ==="
-          printf '%s' "$GITHUB_TOKEN" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
-          crane ls "$IMAGE" | sort -V
-          echo "=== latest digest vs 2.0.20-beta digest ==="
-          crane digest "$IMAGE:latest"
-          crane digest "$IMAGE:2.0.20-beta"
+          echo "=== GHCR image tags (anonymous registry list) ==="
+          curl -s "https://ghcr.io/token?scope=repository:fearless743/flux-panel:pull" | jq -r .token > /tmp/tok
+          curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
+            "https://ghcr.io/v2/fearless743/flux-panel/tags/list" | jq -r '.tags[]' | sort -V
