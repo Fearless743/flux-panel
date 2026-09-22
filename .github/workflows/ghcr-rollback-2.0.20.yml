@@ -1,0 +1,148 @@
+# 一次性回滚任务（workflow_dispatch，本地 PAT 无 packages:write，故走 CI 的 GITHUB_TOKEN）
+# 顺序刻意：先删高位 release/tag，最后创建 2.0.20-beta release，确保 GitHub "latest" 指针落到 2.0.20-beta
+# 1) 构建 2.0.20-beta gost 二进制（CI 约定：amd64+arm64，UPX -9）
+# 2) 删除高于 2.0.20-beta 的 GitHub Release
+# 3) 删除高于 2.0.20-beta 的远端 git tag
+# 4) GHCR: flux-panel:latest 重指向 2.0.20-beta，删除高位版本 tag
+# 5) 创建 2.0.20-beta GitHub Release + 上传二进制
+# 6) 校验远端最终状态
+name: ghcr-rollback-2.0.20
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # 必须 fetch 全量：构建用 2.0.20-beta 的源码树，release notes 也要读该 tag 的提交信息
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout 2.0.20-beta sources
+        run: |
+          git checkout 2.0.20-beta
+          git rev-parse --short HEAD
+
+      - name: Install crane
+        run: |
+          curl -fsSL https://github.com/google/go-containerregistry/releases/latest/download/crane_linux_amd64.tar.gz -o /tmp/crane.tgz
+          tar -xzf /tmp/crane.tgz -C /usr/local/bin crane
+          crane version
+
+      - name: Install UPX
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq upx-ucl || {
+            wget -q https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
+            tar -xf upx-4.2.4-amd64_linux.tar.xz
+            sudo mv upx-4.2.4-amd64_linux/upx /usr/local/bin/
+            rm -rf upx-4.2.4-amd64_linux*
+          }
+          upx --version
+
+      - name: Build GOST binaries (amd64 + arm64)
+        working-directory: ./go-gost
+        run: |
+          VERSION="2.0.20-beta"
+          LDFLAGS="-s -w -X main.version=${VERSION}"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o gost-amd64 &
+          pid_amd=$!
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o gost-arm64 &
+          pid_arm=$!
+          wait $pid_amd
+          wait $pid_arm
+          ls -lh gost-amd64 gost-arm64
+
+      - name: Compress with UPX
+        working-directory: ./go-gost
+        run: |
+          upx -9 gost-amd64 &
+          pid_amd=$!
+          upx -9 gost-arm64 &
+          pid_arm=$!
+          wait $pid_amd
+          wait $pid_arm
+          ls -lh gost-amd64 gost-arm64
+
+      - name: Delete higher GitHub releases
+        run: |
+          for r in 2.0.33-beta 2.0.32-beta 2.0.27-beta 2.0.26-beta 2.0.24-beta 2.0.23-beta 2.0.22-beta 2.0.21-beta; do
+            if gh release view "$r" >/dev/null 2>&1; then
+              gh release delete "$r"
+              echo "deleted release $r"
+            else
+              echo "skip $r (absent)"
+            fi
+          done
+          gh release list
+
+      - name: Delete higher remote git tags
+        run: |
+          for t in 2.0.21-beta 2.0.22-beta 2.0.24-beta 2.0.27-beta 2.0.32-beta 2.0.33-beta; do
+            git push origin "+:refs/tags/$t" && echo "deleted git tag $t" || echo "skip git tag $t (absent)"
+          done
+          echo "=== tags left ==="
+          git ls-remote --tags origin | sed 's|.*/||' | tr -d '^{}' | sort -V
+
+      - name: Retag GHCR latest -> 2.0.20-beta
+        run: |
+          REPO=ghcr.io/fearless743/flux-panel
+          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "2.0.20-beta digest = $(crane digest "$REPO:2.0.20-beta")"
+          crane tag "$REPO:2.0.20-beta" "$REPO:latest"
+          echo "latest digest      = $(crane digest "$REPO:latest")"
+
+      - name: Delete higher GHCR version tags
+        run: |
+          REPO=ghcr.io/fearless743/flux-panel
+          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for t in 2.0.21-beta 2.0.22-beta 2.0.23-beta 2.0.27-beta 2.0.29-beta 2.0.30-beta 2.0.31-beta 2.0.32-beta 2.0.33-beta; do
+            crane delete "$REPO:$t" && echo "deleted image $t" || echo "skip image $t (absent)"
+          done
+          echo "=== images left ==="
+          crane ls "$REPO" | sort -V
+
+      - name: Create 2.0.20-beta release (last, so GitHub "latest" points here)
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          SHA=$(git rev-parse 2.0.20-beta^{commit})
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s" "$SHA")
+          COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an" "$SHA")
+          COMMIT_DATE=$(git log -1 --pretty=format:"%ai" "$SHA")
+          if ! gh release view 2.0.20-beta >/dev/null 2>&1; then
+            gh release create 2.0.20-beta \
+              --title "Release 2.0.20-beta" \
+              --target "$SHA" \
+              --notes "## 📝 Commit Information
+          - **Message**: ${COMMIT_MSG}
+          - **Author**: ${COMMIT_AUTHOR}
+          - **Date**: ${COMMIT_DATE}
+          - **Commit**: [\`${SHA:0:7}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})
+
+          ## 📦 Images
+          - \`ghcr.io/${OWNER}/flux-panel:2.0.20-beta\` — **唯一面板镜像**（Caddy + Go 后端 + 前端）
+          - 兼容标签：\`go-backend:2.0.20-beta\`（同一镜像）
+          - 对外端口 **80**（compose 映射 \`PANEL_PORT\`，默认 6366）
+          - 节点请将面板地址配到该端口；\`/api\` \`/flow\` \`/system-info\` 由 Caddy 反代"
+          fi
+          gh release upload 2.0.20-beta ./go-gost/gost-amd64 ./go-gost/gost-arm64 --clobber
+          echo "✅ Release 2.0.20-beta 已创建并上传二进制"
+
+      - name: Verify final remote state
+        run: |
+          echo "=== releases ==="
+          gh release list
+          echo "=== releases/latest redirect ==="
+          curl -s -o /dev/null -w "%{redirect_url}\n" "https://github.com/${GITHUB_REPOSITORY}/releases/latest"
+          echo "=== tags ==="
+          git ls-remote --tags origin | sed 's|.*/||' | tr -d '^{}' | sort -V
+          echo "=== images ==="
+          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          crane ls ghcr.io/fearless743/flux-panel | sort -V
