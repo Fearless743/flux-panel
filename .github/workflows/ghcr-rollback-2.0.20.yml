@@ -88,10 +88,16 @@ jobs:
           done
           gh release list
 
-      - name: Delete higher remote git tags
+      - name: Delete higher remote git tags (Packages/Refs API; `git push +:` is ambiguous post-tag-delete)
         run: |
           for t in 2.0.21-beta 2.0.22-beta 2.0.24-beta 2.0.27-beta 2.0.32-beta 2.0.33-beta; do
-            git push origin "+:refs/tags/$t" && echo "deleted git tag $t" || echo "skip git tag $t (absent)"
+            SHA=$(git rev-parse "refs/tags/$t" 2>/dev/null || true)
+            if [ -n "$SHA" ]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$t" --silent \
+                && echo "deleted git tag $t" || echo "skip git tag $t (gone)"
+            else
+              echo "skip git tag $t (gone)"
+            fi
           done
           echo "=== tags left ==="
           git ls-remote --tags origin | sed 's|.*/||' | tr -d '^{}' | sort -V
@@ -100,7 +106,8 @@ jobs:
         run: |
           printf '%s' "$GITHUB_TOKEN" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
           echo "2.0.20-beta digest = $(crane digest "$IMAGE:2.0.20-beta")"
-          crane tag "$IMAGE:2.0.20-beta" "$IMAGE:latest"
+          # 注意：crane tag 的 DST 只能是裸标签名，不能带完整镜像路径
+          crane tag "$IMAGE:2.0.20-beta" latest
           echo "latest digest      = $(crane digest "$IMAGE:latest")"
 
       - name: Delete higher GHCR image versions (Packages REST API; registry DELETE is unsupported on GHCR)
