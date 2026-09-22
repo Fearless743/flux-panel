@@ -1,11 +1,8 @@
-# 一次性回滚任务（workflow_dispatch，本地 PAT 无 packages:write，故走 CI 的 GITHUB_TOKEN）
-# 顺序刻意：先删高位 release/tag，最后创建 2.0.20-beta release，确保 GitHub "latest" 指针落到 2.0.20-beta
-# 1) 构建 2.0.20-beta gost 二进制（CI 约定：amd64+arm64，UPX -9）
-# 2) 删除高于 2.0.20-beta 的 GitHub Release
-# 3) 删除高于 2.0.20-beta 的远端 git tag
-# 4) GHCR: flux-panel:latest 重指向 2.0.20-beta，删除高位版本 tag
-# 5) 创建 2.0.20-beta GitHub Release + 上传二进制
-# 6) 校验远端最终状态
+# 一次性回滚任务（workflow_dispatch）
+# 背景：本地 PAT 无 packages scope（GHCR token 被降级为 pull-only，registry DELETE 返回 405 UNSUPPORTED），
+#       故通过 CI 的 GITHUB_TOKEN（permissions: packages:write）执行所有 GHCR 变更。
+# 顺序刻意：先删高位 release/tag → 重指向 latest → 删高位镜像版本 → 最后创建 2.0.20-beta release，
+#           使 GitHub "latest" 指针落在 2.0.20-beta（install.sh 依赖 releases/latest）。
 name: ghcr-rollback-2.0.20
 on:
   workflow_dispatch: {}
@@ -19,21 +16,29 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      OWNER: fearless743
+      IMAGE: ghcr.io/fearless743/flux-panel
     steps:
-      # 必须 fetch 全量：构建用 2.0.20-beta 的源码树，release notes 也要读该 tag 的提交信息
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Checkout 2.0.20-beta sources
         run: |
           git checkout 2.0.20-beta
           git rev-parse --short HEAD
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.4'
+          cache-dependency-path: go-gost/go.sum
+
       - name: Install crane
         run: |
-          curl -fsSL https://github.com/google/go-containerregistry/releases/latest/download/crane_linux_amd64.tar.gz -o /tmp/crane.tgz
-          tar -xzf /tmp/crane.tgz -C /usr/local/bin crane
+          go install github.com/google/go-containerregistry/cmd/crane@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           crane version
 
       - name: Install UPX
@@ -93,26 +98,42 @@ jobs:
 
       - name: Retag GHCR latest -> 2.0.20-beta
         run: |
-          REPO=ghcr.io/fearless743/flux-panel
-          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
-          echo "2.0.20-beta digest = $(crane digest "$REPO:2.0.20-beta")"
-          crane tag "$REPO:2.0.20-beta" "$REPO:latest"
-          echo "latest digest      = $(crane digest "$REPO:latest")"
+          printf '%s' "$GITHUB_TOKEN" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "2.0.20-beta digest = $(crane digest "$IMAGE:2.0.20-beta")"
+          crane tag "$IMAGE:2.0.20-beta" "$IMAGE:latest"
+          echo "latest digest      = $(crane digest "$IMAGE:latest")"
 
-      - name: Delete higher GHCR version tags
+      - name: Delete higher GHCR image versions (Packages REST API; registry DELETE is unsupported on GHCR)
         run: |
-          REPO=ghcr.io/fearless743/flux-panel
-          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
-          for t in 2.0.21-beta 2.0.22-beta 2.0.23-beta 2.0.27-beta 2.0.29-beta 2.0.30-beta 2.0.31-beta 2.0.32-beta 2.0.33-beta; do
-            crane delete "$REPO:$t" && echo "deleted image $t" || echo "skip image $t (absent)"
-          done
-          echo "=== images left ==="
-          crane ls "$REPO" | sort -V
+          # 保留集合：2.0.20-beta 及更旧的版本标签，加 latest。
+          # 版本按 digest 划分，删版本会同时删掉其全部标签，
+          # 所以必须先完成上一步 latest 重指向，避免误删 2.0.20-beta 版本。
+          KEEP="latest 2.0.20-beta 2.0.19-beta 2.0.18-beta 2.0.17-beta 2.0.16-beta 2.0.15-beta 2.0.14-beta"
+          gh api "users/$OWNER/packages/container/flux-panel/versions?per_page=100&page=1" > /tmp/versions-1.json
+          gh api "users/$OWNER/packages/container/flux-panel/versions?per_page=100&page=2" > /tmp/versions-2.json
+          jq -s 'add' /tmp/versions-1.json /tmp/versions-2.json > /tmp/versions.json
+          COUNT=$(jq length /tmp/versions.json)
+          echo "package versions: $COUNT"
+          if [ "$COUNT" -eq 0 ]; then exit 1; fi
+          jq -r '.[] | "\(.id) \(.metadata.container.tags // [] | join(" "))"' /tmp/versions.json > /tmp/versions-ids.txt
+          cat /tmp/versions-ids.txt
+          while read -r id tags; do
+            hit=0
+            for t in $tags; do
+              case " $KEEP " in *" $t "*) hit=1 ;; esac
+            done
+            if [ "$hit" -eq 0 ]; then
+              gh api -X DELETE "users/$OWNER/packages/container/flux-panel/versions/$id" > /dev/null
+              echo "deleted image version $id [$(echo $tags)]"
+            else
+              echo "keep image version $id [$(echo $tags)]"
+            fi
+          done < /tmp/versions-ids.txt
 
       - name: Create 2.0.20-beta release (last, so GitHub "latest" points here)
         run: |
-          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          SHA=$(git rev-parse 2.0.20-beta^{commit})
+          OWNER_LC="${GITHUB_REPOSITORY_OWNER,,}"
+          SHA=$(git rev-parse '2.0.20-beta^{commit}')
           COMMIT_MSG=$(git log -1 --pretty=format:"%s" "$SHA")
           COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an" "$SHA")
           COMMIT_DATE=$(git log -1 --pretty=format:"%ai" "$SHA")
@@ -127,7 +148,7 @@ jobs:
           - **Commit**: [\`${SHA:0:7}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})
 
           ## 📦 Images
-          - \`ghcr.io/${OWNER}/flux-panel:2.0.20-beta\` — **唯一面板镜像**（Caddy + Go 后端 + 前端）
+          - \`ghcr.io/${OWNER_LC}/flux-panel:2.0.20-beta\` — **唯一面板镜像**（Caddy + Go 后端 + 前端）
           - 兼容标签：\`go-backend:2.0.20-beta\`（同一镜像）
           - 对外端口 **80**（compose 映射 \`PANEL_PORT\`，默认 6366）
           - 节点请将面板地址配到该端口；\`/api\` \`/flow\` \`/system-info\` 由 Caddy 反代"
@@ -144,5 +165,8 @@ jobs:
           echo "=== tags ==="
           git ls-remote --tags origin | sed 's|.*/||' | tr -d '^{}' | sort -V
           echo "=== images ==="
-          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
-          crane ls ghcr.io/fearless743/flux-panel | sort -V
+          printf '%s' "$GITHUB_TOKEN" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          crane ls "$IMAGE" | sort -V
+          echo "=== latest digest vs 2.0.20-beta digest ==="
+          crane digest "$IMAGE:latest"
+          crane digest "$IMAGE:2.0.20-beta"
