@@ -1,10 +1,21 @@
-# 一次性回滚任务（workflow_dispatch）
-# 背景：本地 PAT 无 packages scope（GHCR token 被降级为 pull-only，registry DELETE 与 manifest PUT 均被拒），
-#       故通过 CI 的 GITHUB_TOKEN（permissions: packages:write）执行所有 GHCR 变更。
-# 鉴权：沿用 docker-build.yml 已验证可行的 docker/login-action；crane 的 token 流程会被 GHCR 拒绝（UNAUTHORIZED）。
-# 顺序刻意：删高位 release/tag → 重指向 latest（带 digest 门禁）→ 删高位镜像版本 → 最后创建 2.0.20-beta release，
-#           使 GitHub "latest" 指针落在 2.0.20-beta（install.sh 依赖 releases/latest）。
-# 幂等：重复执行安全（release 创建有存在性守卫，asset 上传用 --clobber，删除步骤容忍 "已不存在"）。
+# 一次性回滚任务（workflow_dispatch）：把 GitHub release / git tag / GHCR 镜像统一回退到 2.0.20-beta
+#
+# 鉴权（实测结论，不要凭直觉改）：
+#   - 本地 PAT 无 packages scope：PUT manifests -> 403 DENIED "token does not match expected scopes"，
+#     列 package versions -> 403 "need at least read:packages scope"。
+#   - 因此所有 GHCR 写操作必须走 CI 的 GITHUB_TOKEN（本文件 permissions: packages: write）。
+#   - 实测 docker/login-action 写入的凭据可让 skopeo 成功推送；crane 的 token 流程被 GHCR 拒绝（UNAUTHORIZED）。
+#
+# 执行顺序刻意：删高位 release/tag -> 重指向 latest（带门禁）-> 删高位镜像版本 -> 最后创建 2.0.20-beta release，
+#   使 GitHub 的 releases/latest 落在 2.0.20-beta（install.sh 依赖 releases/latest）。
+#
+# 关键教训（上一次失败的两个真实原因）：
+#   1) skopeo copy 必须带 --all；否则只推默认平台（amd64）的单个清单，latest 会从多架构索引退化成单架构。
+#   2) 门禁要比「索引的子清单 digest 集合」，不是索引自身 digest —— skopeo 重新序列化后索引 digest 会变，
+#      但子清单（各平台镜像内容）digest 不变。之前用 awk -F: 拆 docker-content-digest 头，
+#      取到的是 " sha256"（被冒号截断），门禁永远误判失败。
+#
+# 幂等：重复执行安全（删除步骤容忍"已不存在"；release 创建有存在性守卫；asset 上传用 --clobber）。
 name: ghcr-rollback-2.0.20
 on:
   workflow_dispatch: {}
@@ -13,13 +24,15 @@ permissions:
   contents: write
   packages: write
 
+env:
+  GH_TOKEN: ${{ github.token }}
+  OWNER: fearless743
+  IMAGE: ghcr.io/fearless743/flux-panel
+  TARGET: 2.0.20-beta
+
 jobs:
   rollback:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-      OWNER: fearless743
-      IMAGE: ghcr.io/fearless743/flux-panel
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +41,7 @@ jobs:
 
       - name: Checkout 2.0.20-beta sources
         run: |
-          git checkout 2.0.20-beta
+          git checkout "$TARGET"
           git rev-parse --short HEAD
 
       - name: Set up Go
@@ -48,11 +61,11 @@ jobs:
           }
           upx --version
 
+      # amd64 / arm64 并行编译，与 docker-build.yml 的 build-gost 保持一致
       - name: Build GOST binaries (amd64 + arm64)
         working-directory: ./go-gost
         run: |
-          VERSION="2.0.20-beta"
-          LDFLAGS="-s -w -X main.version=${VERSION}"
+          LDFLAGS="-s -w -X main.version=${TARGET}"
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o gost-amd64 &
           pid_amd=$!
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o gost-arm64 &
@@ -104,87 +117,216 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Retag GHCR latest -> 2.0.20-beta
+      - name: Retag GHCR latest -> 2.0.20-beta (preserve multi-arch index)
         run: |
-          # imagetools 走 docker 客户端的凭据（docker/login-action 已写入），复用 CI 已验证的推送路径。
-          # GHCR 不支持 registry manifest DELETE，因此重指向必须走 manifest 推送。
-          docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:2.0.20-beta"
+          set -uo pipefail
+          # GHCR 不支持 registry manifest DELETE，重指向只能靠 PUT 一个新 manifest 到 latest。
+          # 两种方式都保留多架构索引；区别在于 latest 的索引 digest 是否与 2.0.20-beta 完全相同。
 
-          WANT=$(docker buildx imagetools inspect "$IMAGE:2.0.20-beta" -t 'json{{index .Manifests 0 .Digest}}' 2>/dev/null || true)
-          GOT=$(docker buildx imagetools inspect "$IMAGE:latest" -t 'json{{index .Manifests 0 .Digest}}' 2>/dev/null || true)
-          echo "2.0.20-beta manifest = ${WANT:-<inspect-failed>}"
-          echo "latest manifest      = ${GOT:-<inspect-failed>}"
-          if [ -z "$GOT" ] || [ "$GOT" != "$WANT" ]; then
-            echo "❌ latest 未指向 2.0.20-beta，中止（不删除任何镜像版本）"
+          ACC_IDX='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json'
+          METHOD=none
+
+          # ---- 方式 1：把 2.0.20-beta 的索引字节原样 PUT 到 latest（digest 完全一致）----
+          TK=""
+          for USER in "${GITHUB_ACTOR}" "ghcr.io" "ghcr"; do
+            BODY=$(curl -s -u "${USER}:${GITHUB_TOKEN}" \
+              "https://ghcr.io/token?scope=repository:${OWNER}/flux-panel:pull,push&service=ghcr.io")
+            TK=$(printf '%s' "$BODY" | jq -r '.token // empty')
+            if [ -n "$TK" ]; then
+              echo "token exchange ok (user=${USER}, len=${#TK})"
+              break
+            fi
+            echo "token exchange failed (user=${USER}); raw response: $(printf '%s' "$BODY" | head -c 300)"
+          done
+
+          if [ -n "${TK:-}" ]; then
+            curl -s -H "Authorization: Bearer ${TK}" -H "Accept: ${ACC_IDX}" \
+              "https://ghcr.io/v2/${OWNER}/flux-panel/manifests/${TARGET}" -o /tmp/idx.json
+            CT=$(jq -r '.mediaType' /tmp/idx.json)
+            echo "source index: mediaType=${CT} bytes=$(wc -c < /tmp/idx.json)"
+            HTTP=$(curl -s -o /tmp/put.out -w '%{http_code}' -X PUT \
+              -H "Authorization: Bearer ${TK}" -H "Content-Type: ${CT}" \
+              --data-binary @/tmp/idx.json \
+              "https://ghcr.io/v2/${OWNER}/flux-panel/manifests/latest")
+            echo "PUT latest -> HTTP ${HTTP} : $(head -c 300 /tmp/put.out)"
+            if [ "${HTTP:0:1}" = "2" ]; then
+              METHOD=registry-put
+            fi
+          fi
+
+          # ---- 方式 2：skopeo（已实测可推；必须 --all 否则只推 amd64 单清单）----
+          if [ "$METHOD" = none ]; then
+            echo "fallback: skopeo"
+            skopeo --version
+            if skopeo copy --all \
+                "docker://${IMAGE}:${TARGET}" \
+                "docker://${IMAGE}:latest"; then
+              METHOD=skopeo
+            fi
+          fi
+
+          echo "METHOD=${METHOD}"
+          if [ "$METHOD" = none ]; then
+            echo "FAIL 所有重指向方式都失败，中止"
             exit 1
           fi
-          echo "✅ latest 已指向 2.0.20-beta"
+
+      - name: "Gate: latest must resolve to 2.0.20-beta's platforms"
+        run: |
+          set -uo pipefail
+          REPO="${OWNER}/flux-panel"
+          ACC='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+          # 匿名 pull token 即可读；镜像是公开的
+          PT=$(curl -s "https://ghcr.io/token?scope=repository:${REPO}:pull" | jq -r .token)
+
+          index_digest() {
+            curl -s -D - -o /dev/null -H "Authorization: Bearer $PT" -H "Accept: $ACC" \
+              "https://ghcr.io/v2/${REPO}/manifests/$1" \
+              | tr -d '\r' | sed -n 's/^docker-content-digest:[[:space:]]*//p'
+          }
+          # 子清单 digest 集合 = 各平台镜像内容指纹。比索引自身 digest 稳定：
+          # skopeo 重建索引时索引 digest 会变，但每个平台清单的 digest 不变。
+          children() {
+            curl -s -H "Authorization: Bearer $PT" -H "Accept: $ACC" \
+              "https://ghcr.io/v2/${REPO}/manifests/$1" \
+              | jq -r '.manifests[]?.digest' | sort | paste -sd, -
+          }
+
+          WANT=$(children "$TARGET")
+          echo "target children = [${WANT}]"
+          if [ -z "$WANT" ]; then
+            echo "FAIL ${TARGET} 不是多架构索引，中止（不删除任何镜像版本）"
+            exit 1
+          fi
+
+          GOT=""
+          for i in 1 2 3 4 5 6; do
+            GOT=$(children latest)
+            echo "try $i: latest children = [${GOT}]"
+            [ "$GOT" = "$WANT" ] && break
+            sleep 5
+          done
+
+          if [ "$GOT" != "$WANT" ]; then
+            echo "FAIL latest 未指向 ${TARGET}，中止（不删除任何镜像版本）"
+            exit 1
+          fi
+          echo "OK latest -> ${TARGET}"
+          echo "latest index digest   = $(index_digest latest)"
+          echo "${TARGET} index digest = $(index_digest "$TARGET")"
 
       - name: Delete higher GHCR image versions (Packages REST API; registry DELETE is unsupported on GHCR)
         run: |
-          # 保留集合：2.0.20-beta 及更旧的版本标签，加 latest。
-          # 版本按 digest 划分，删版本会同时删掉其全部标签，
-          # 所以必须先完成上一步 latest 重指向，避免误删 2.0.20-beta 版本。
-          KEEP="latest 2.0.20-beta 2.0.19-beta 2.0.18-beta 2.0.17-beta 2.0.16-beta 2.0.15-beta 2.0.14-beta"
-          gh api "users/$OWNER/packages/container/flux-panel/versions?per_page=100&page=1" > /tmp/versions-1.json
-          gh api "users/$OWNER/packages/container/flux-panel/versions?per_page=100&page=2" > /tmp/versions-2.json
-          jq -s 'add' /tmp/versions-1.json /tmp/versions-2.json > /tmp/versions.json
+          set -uo pipefail
+          REPO="${OWNER}/flux-panel"
+          # 注意：包名是 flux-panel，不是 owner/flux-panel
+          API="users/${OWNER}/packages/container/flux-panel/versions"
+
+          # 先取干净的分页结果
+          rm -f /tmp/v*.json
+          for p in 1 2 3 4; do
+            if ! gh api "${API}?per_page=100&page=${p}" > "/tmp/v${p}.json" 2>/dev/null; then
+              rm -f "/tmp/v${p}.json"
+            fi
+            n=$(jq length "/tmp/v${p}.json" 2>/dev/null || echo 0)
+            if [ "$n" = "0" ]; then
+              rm -f "/tmp/v${p}.json"
+              break
+            fi
+          done
+          if ! ls /tmp/v*.json >/dev/null 2>&1; then
+            echo "FAIL 未取到任何 package versions 页，中止（不做任何删除）"
+            exit 1
+          fi
+          jq -s 'add // []' /tmp/v*.json > /tmp/versions.json
           COUNT=$(jq length /tmp/versions.json)
           echo "package versions: $COUNT"
           if [ "$COUNT" -eq 0 ]; then
-            echo "❌ 未取到 package versions，中止（不做任何删除）"
+            echo "FAIL 未取到 package versions，中止（不做任何删除）"
             exit 1
           fi
-          jq -r '.[] | "\(.id) \(.metadata.container.tags // [] | join(" "))"' /tmp/versions.json > /tmp/versions-ids.txt
-          cat /tmp/versions-ids.txt
-          while read -r id tags; do
+          jq -r '.[] | "\(.id)\t\((.metadata.container.tags // []) | join(" "))"' /tmp/versions.json > /tmp/vids.tsv
+          echo "=== versions & tags ==="
+          cat /tmp/vids.tsv
+
+          # 规则：
+          #   - 有 tag 且任一 tag == latest 或 <= TARGET  -> 保留
+          #   - 有 tag 且全部 tag > TARGET                -> 删除
+          #   - 无 tag                                     -> 不动（可能是被保留索引引用的子清单，
+          #     上一次漏 --all 遗留的那个单架构版本；误删会破坏 2.0.20-beta 的 amd64 拉取）
+          DEL=0; KEEP=0; SKIP=0
+          while IFS=$'\t' read -r id tags; do
+            [ -n "$id" ] || continue
+            if [ -z "$tags" ]; then
+              echo "skip   $id (untagged)"
+              SKIP=$((SKIP+1))
+              continue
+            fi
             hit=0
             for t in $tags; do
-              case " $KEEP " in *" $t "*) hit=1 ;; esac
+              if [ "$t" = "latest" ]; then hit=1; break; fi
+              if [ "$(printf '%s\n%s\n' "$t" "$TARGET" | sort -V | tail -1)" = "$TARGET" ]; then hit=1; break; fi
             done
-            if [ "$hit" -eq 0 ]; then
-              gh api -X DELETE "users/$OWNER/packages/container/flux-panel/versions/$id" > /dev/null
-              echo "deleted image version $id [$(echo $tags)]"
+            if [ "$hit" -eq 1 ]; then
+              echo "keep   $id [tags: $tags]"
+              KEEP=$((KEEP+1))
+            elif gh api -X DELETE "${API}/${id}" >/dev/null 2>&1; then
+              echo "delete $id [tags: $tags]"
+              DEL=$((DEL+1))
             else
-              echo "keep image version $id [$(echo $tags)]"
+              echo "delete-failed $id [tags: $tags]"
+              SKIP=$((SKIP+1))
             fi
-          done < /tmp/versions-ids.txt
+          done < /tmp/vids.tsv
+          echo "summary: deleted=${DEL} kept=${KEEP} skipped=${SKIP}"
 
       - name: Create 2.0.20-beta release (last, so GitHub "latest" points here)
         run: |
           OWNER_LC="${GITHUB_REPOSITORY_OWNER,,}"
-          SHA=$(git rev-parse '2.0.20-beta^{commit}')
+          SHA=$(git rev-parse "${TARGET}^{commit}")
           COMMIT_MSG=$(git log -1 --pretty=format:"%s" "$SHA")
           COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an" "$SHA")
           COMMIT_DATE=$(git log -1 --pretty=format:"%ai" "$SHA")
-          if ! gh release view 2.0.20-beta >/dev/null 2>&1; then
-            gh release create 2.0.20-beta \
-              --title "Release 2.0.20-beta" \
-              --target "$SHA" \
-              --notes "## 📝 Commit Information
+          NOTES=$(cat <<EOF
+          ## 📝 Commit Information
           - **Message**: ${COMMIT_MSG}
           - **Author**: ${COMMIT_AUTHOR}
           - **Date**: ${COMMIT_DATE}
           - **Commit**: [\`${SHA:0:7}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})
 
           ## 📦 Images
-          - \`ghcr.io/${OWNER_LC}/flux-panel:2.0.20-beta\` — **唯一面板镜像**（Caddy + Go 后端 + 前端）
-          - 兼容标签：\`go-backend:2.0.20-beta\`（同一镜像）
+          - \`ghcr.io/${OWNER_LC}/flux-panel:${TARGET}\` — **唯一面板镜像**（Caddy + Go 后端 + 前端）
           - 对外端口 **80**（compose 映射 \`PANEL_PORT\`，默认 6366）
-          - 节点请将面板地址配到该端口；\`/api\` \`/flow\` \`/system-info\` 由 Caddy 反代"
+          - 节点请将面板地址配到该端口；\`/api\` \`/flow\` \`/system-info\` 由 Caddy 反代
+          EOF
+          )
+          if gh release view "$TARGET" >/dev/null 2>&1; then
+            echo "release $TARGET already exists, skip create"
+          else
+            gh release create "$TARGET" --title "Release ${TARGET}" --target "$SHA" --notes "$NOTES"
           fi
-          gh release upload 2.0.20-beta ./go-gost/gost-amd64 ./go-gost/gost-arm64 --clobber
-          echo "✅ Release 2.0.20-beta 已创建并上传二进制"
+          gh release upload "$TARGET" ./go-gost/gost-amd64 ./go-gost/gost-arm64 --clobber
+          echo "release $TARGET ready"
 
       - name: Verify final remote state
         run: |
+          set -uo pipefail
+          REPO="${OWNER}/flux-panel"
+          ACC='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+          PT=$(curl -s "https://ghcr.io/token?scope=repository:${REPO}:pull" | jq -r .token)
+          children() {
+            curl -s -H "Authorization: Bearer $PT" -H "Accept: $ACC" \
+              "https://ghcr.io/v2/${REPO}/manifests/$1" \
+              | jq -r '.manifests[]?.digest' | sort | paste -sd, -
+          }
           echo "=== releases ==="
           gh release list
           echo "=== releases/latest redirect ==="
           curl -s -o /dev/null -w "%{redirect_url}\n" "https://github.com/${GITHUB_REPOSITORY}/releases/latest"
           echo "=== git tags ==="
           git ls-remote --tags origin | sed 's|.*/||' | tr -d '^{}' | sort -V
-          echo "=== GHCR image tags (anonymous registry list) ==="
-          curl -s "https://ghcr.io/token?scope=repository:fearless743/flux-panel:pull" | jq -r .token > /tmp/tok
-          curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
-            "https://ghcr.io/v2/fearless743/flux-panel/tags/list" | jq -r '.tags[]' | sort -V
+          echo "=== GHCR image tags (anonymous) ==="
+          curl -s -H "Authorization: Bearer $PT" "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]' | sort -V
+          echo "=== latest vs ${TARGET} ==="
+          echo "latest children = [$(children latest)]"
+          echo "target children = [$(children "$TARGET")]"
