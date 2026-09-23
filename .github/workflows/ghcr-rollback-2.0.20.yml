@@ -127,9 +127,10 @@ jobs:
           METHOD=none
 
           # ---- 方式 1：把 2.0.20-beta 的索引字节原样 PUT 到 latest（digest 完全一致）----
+          # 注意：本工作流 env 定义的是 GH_TOKEN，不是 GITHUB_TOKEN（set -u 下后者会 unbound）。
           TK=""
           for USER in "${GITHUB_ACTOR}" "ghcr.io" "ghcr"; do
-            BODY=$(curl -s -u "${USER}:${GITHUB_TOKEN}" \
+            BODY=$(curl -s -u "${USER}:${GH_TOKEN}" \
               "https://ghcr.io/token?scope=repository:${OWNER}/flux-panel:pull,push&service=ghcr.io")
             TK=$(printf '%s' "$BODY" | jq -r '.token // empty')
             if [ -n "$TK" ]; then
