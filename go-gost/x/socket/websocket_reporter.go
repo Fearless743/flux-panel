@@ -1144,11 +1144,8 @@ func (w *WebSocketReporter) handleTcpPing(data interface{}) (TcpPingResponse, er
 	return response, nil
 }
 
-// tcpPingHost 执行TCP连接测试，返回平均连接时间和失败率
+// tcpPingHost 执行TCP连接测试，返回平均连接时间和失败率：count 次 Dial 并行执行
 func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float64, error) {
-	var totalTime float64
-	var successCount int
-
 	timeout := time.Duration(timeoutMs) * time.Millisecond
 
 	// 使用net.JoinHostPort来正确处理IPv4、IPv6和域名
@@ -1183,28 +1180,30 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 		fmt.Printf("🎯 使用IP地址进行测试: %s\n", target)
 	}
 
+	var totalTime float64
+	var successCount int
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	for i := 0; i < count; i++ {
-		start := time.Now()
-
-		// 创建带超时的TCP连接
-		conn, err := net.DialTimeout("tcp", target, timeout)
-
-		elapsed := time.Since(start)
-
-		if err != nil {
-			fmt.Printf("  第%d次连接失败: %v (%.2fms)\n", i+1, err, elapsed.Seconds()*1000)
-		} else {
-			fmt.Printf("  第%d次连接成功: %.2fms\n", i+1, elapsed.Seconds()*1000)
-			conn.Close()
-			totalTime += elapsed.Seconds() * 1000 // 转换为毫秒
-			successCount++
-		}
-
-		// 如果不是最后一次，等待一下再进行下次测试
-		if i < count-1 {
-			time.Sleep(100 * time.Millisecond)
-		}
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			start := time.Now()
+			conn, err := net.DialTimeout("tcp", target, timeout)
+			elapsed := time.Since(start)
+			if err != nil {
+				fmt.Printf("  err %d: %v (%.2fms)\n", idx+1, err, elapsed.Seconds()*1000)
+			} else {
+				fmt.Printf("  ok %d: %.2fms\n", idx+1, elapsed.Seconds()*1000)
+				conn.Close()
+				mu.Lock()
+				totalTime += elapsed.Seconds() * 1000
+				successCount++
+				mu.Unlock()
+			}
+		}(i)
 	}
+	wg.Wait()
 
 	if successCount == 0 {
 		return 0, 100.0, fmt.Errorf("所有TCP连接尝试都失败")

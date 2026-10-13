@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/gost"
@@ -84,18 +85,26 @@ func (s *SpeedLimitService) Create(req CreateSpeedLimitReq) error {
 	}
 
 	success := make([]int64, 0, len(nodeIDs))
-	for _, nodeID := range nodeIDs {
+	var sucMu sync.Mutex
+	errs := parallelEach(len(nodeIDs), 8, func(i int) string {
+		nodeID := nodeIDs[i]
 		res := s.hub.SendMsg(nodeID, gost.LimiterData(sl.ID, speedInMBps), "AddLimiters")
 		if gost.IsOK(res.Msg) {
+			sucMu.Lock()
 			success = append(success, nodeID)
-			continue
+			sucMu.Unlock()
+			return ""
 		}
-		// 失败回滚 DB + 已成功节点的 DeleteLimiters
+		return gost.NormalizeOK(res.Msg)
+	})
+	if len(errs) > 0 {
+		// 失败回滚 DB + 已成功节点的 DeleteLimiters（并行补偿）
 		_ = s.repo.Delete(sl.ID)
-		for _, nid := range success {
-			_ = s.hub.SendMsg(nid, map[string]any{"limiter": strconv.FormatInt(sl.ID, 10)}, "DeleteLimiters")
-		}
-		return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
+		parallelEach(len(success), 8, func(i int) string {
+			_ = s.hub.SendMsg(success[i], map[string]any{"limiter": strconv.FormatInt(sl.ID, 10)}, "DeleteLimiters")
+			return ""
+		})
+		return fmt.Errorf("%s", errs[0])
 	}
 	return nil
 }
@@ -133,16 +142,20 @@ func (s *SpeedLimitService) Update(req UpdateSpeedLimitReq) error {
 	if err != nil {
 		return fmt.Errorf("查询隧道节点失败: %v", err)
 	}
-	for _, nodeID := range nodeIDs {
+	errs := parallelEach(len(nodeIDs), 8, func(i int) string {
 		payload := map[string]any{
 			"limiter": strconv.FormatInt(sl.ID, 10),
 			"data":    gost.LimiterData(sl.ID, speedInMBps),
 		}
-		res := s.hub.SendMsg(nodeID, payload, "UpdateLimiters")
+		res := s.hub.SendMsg(nodeIDs[i], payload, "UpdateLimiters")
 		// Java 对 Update 不做 exists/not found 归一，仅接受 OK
 		if res.Msg != "OK" {
-			return fmt.Errorf("%s", res.Msg)
+			return res.Msg
 		}
+		return ""
+	})
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", errs[0])
 	}
 
 	if err := s.repo.Update(sl); err != nil {
@@ -175,11 +188,15 @@ func (s *SpeedLimitService) Delete(id int64) error {
 	if err != nil {
 		return fmt.Errorf("查询隧道节点失败: %v", err)
 	}
-	for _, nodeID := range nodeIDs {
-		res := s.hub.SendMsg(nodeID, map[string]any{"limiter": strconv.FormatInt(sl.ID, 10)}, "DeleteLimiters")
+	errs := parallelEach(len(nodeIDs), 8, func(i int) string {
+		res := s.hub.SendMsg(nodeIDs[i], map[string]any{"limiter": strconv.FormatInt(sl.ID, 10)}, "DeleteLimiters")
 		if !gost.IsOK(res.Msg) {
-			return fmt.Errorf("%s", res.Msg)
+			return res.Msg
 		}
+		return ""
+	})
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", errs[0])
 	}
 
 	if err := s.repo.Delete(id); err != nil {

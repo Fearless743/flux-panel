@@ -3,6 +3,7 @@ package task
 import (
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/db"
@@ -61,12 +62,19 @@ func (s *Scheduler) resetFlow() {
 	currentDay := now.Day()
 	lastDay := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location()).Day()
 
-	s.resetUserFlow(currentDay, lastDay)
-	s.resetUserTunnelFlow(currentDay, lastDay)
+	// 两张表重置相互独立，并行执行
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); s.resetUserFlow(currentDay, lastDay) }()
+	go func() { defer wg.Done(); s.resetUserTunnelFlow(currentDay, lastDay) }()
+	wg.Wait()
 	slog.Info("流量重置任务执行完成")
 
-	s.expireUsers()
-	s.expireUserTunnels()
+	// 到期扫描相互独立，并行执行
+	wg.Add(2)
+	go func() { defer wg.Done(); s.expireUsers() }()
+	go func() { defer wg.Done(); s.expireUserTunnels() }()
+	wg.Wait()
 	slog.Info("到期任务执行完成")
 }
 
@@ -135,13 +143,43 @@ func (s *Scheduler) expireUsers() {
 		slog.Warn("查询过期用户失败", "err", err)
 		return
 	}
-	// 转发查询仍按用户逐个（暂停目标不同），暂停下发与状态写批量化
+	// 转发一次批量查回按用户分组，暂停并发下发
 	expiredIDs := make([]int64, 0, len(users))
-	for _, u := range users {
-		var forwards []model.Forward
-		_ = s.DB.Select(&forwards, `SELECT * FROM forward WHERE user_id = ? AND status = 1`, u.ID)
-		s.flow.PauseForwardByIDs(forwards)
-		expiredIDs = append(expiredIDs, u.ID)
+	if len(users) > 0 {
+		userIDs := make([]int64, 0, len(users))
+		for _, u := range users {
+			userIDs = append(userIDs, u.ID)
+		}
+		q, args, err := sqlx.In(`SELECT * FROM forward WHERE user_id IN (?) AND status = 1`, userIDs)
+		var allForwards []model.Forward
+		if err == nil {
+			q = s.DB.Rebind(q)
+			_ = s.DB.Select(&allForwards, q, args...)
+		}
+		byUser := make(map[int64][]model.Forward, len(users))
+		for _, f := range allForwards {
+			uid := int64(f.UserID)
+			byUser[uid] = append(byUser[uid], f)
+		}
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 8)
+		for _, u := range users {
+			fws := byUser[u.ID]
+			if len(fws) == 0 {
+				continue
+			}
+			wg.Add(1)
+			go func(list []model.Forward) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				s.flow.PauseForwardByIDs(list)
+			}(fws)
+		}
+		wg.Wait()
+		for _, u := range users {
+			expiredIDs = append(expiredIDs, u.ID)
+		}
 	}
 	if len(expiredIDs) > 0 {
 		q, args, err := sqlx.In(`UPDATE user SET status = 0 WHERE id IN (?)`, expiredIDs)
@@ -162,13 +200,55 @@ func (s *Scheduler) expireUserTunnels() {
 		return
 	}
 	expiredIDs := make([]int, 0, len(list))
-	for _, ut := range list {
-		var forwards []model.Forward
-		_ = s.DB.Select(&forwards, `
-			SELECT * FROM forward
-			WHERE tunnel_id = ? AND user_id = ? AND status = 1`, ut.TunnelID, ut.UserID)
-		s.flow.PauseForwardByIDs(forwards)
-		expiredIDs = append(expiredIDs, ut.ID)
+	if len(list) > 0 {
+		type utKey struct {
+			tunnelID int
+			userID   int
+		}
+		// 按 (tunnel,user) 去重后一次 IN 查询全部转发，再分组并发暂停
+		seen := make(map[utKey]struct{}, len(list))
+		pairs := make([]utKey, 0, len(list))
+		for _, ut := range list {
+			k := utKey{tunnelID: ut.TunnelID, userID: ut.UserID}
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			pairs = append(pairs, k)
+		}
+		var allForwards []model.Forward
+		if len(pairs) > 0 {
+			var conds []string
+			var args []any
+			for _, p := range pairs {
+				conds = append(conds, `(tunnel_id = ? AND user_id = ?)`)
+				args = append(args, p.tunnelID, p.userID)
+			}
+			_ = s.DB.Select(&allForwards, `SELECT * FROM forward WHERE status = 1 AND (`+strings.Join(conds, " OR ")+`)`, args...)
+		}
+		byPair := make(map[utKey][]model.Forward, len(pairs))
+		for _, f := range allForwards {
+			byPair[utKey{tunnelID: f.TunnelID, userID: f.UserID}] = append(byPair[utKey{tunnelID: f.TunnelID, userID: f.UserID}], f)
+		}
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 8)
+		for _, ut := range list {
+			fws := byPair[utKey{tunnelID: ut.TunnelID, userID: ut.UserID}]
+			if len(fws) == 0 {
+				continue
+			}
+			wg.Add(1)
+			go func(list []model.Forward) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				s.flow.PauseForwardByIDs(list)
+			}(fws)
+		}
+		wg.Wait()
+		for _, ut := range list {
+			expiredIDs = append(expiredIDs, ut.ID)
+		}
 	}
 	if len(expiredIDs) > 0 {
 		q, args, err := sqlx.In(`UPDATE user_tunnel SET status = 0 WHERE id IN (?)`, expiredIDs)

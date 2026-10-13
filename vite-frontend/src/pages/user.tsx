@@ -169,11 +169,19 @@ export default function UserPage() {
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [speedLimits, setSpeedLimits] = useState<SpeedLimit[]>([]);
 
-  // 生命周期
+  // 生命周期：tunnel/speedLimit 只拉一次；用户列表分页/搜索防抖并行拉取
   useEffect(() => {
-    loadUsers();
     loadTunnels();
     loadSpeedLimits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      loadUsers();
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagination.current, pagination.size, searchKeyword]);
 
   // 数据加载函数

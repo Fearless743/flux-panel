@@ -19,6 +19,25 @@ var httpReportURL string
 var configReportURL string
 var httpAESCrypto *crypto.AESCrypto // 新增：HTTP上报加密器
 
+// 复用 HTTP client，避免每次上报新建连接导致 TIME_WAIT 堆积
+var sharedTrafficClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+	},
+	Timeout: 5 * time.Second,
+}
+
+var sharedConfigClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        5,
+		MaxIdleConnsPerHost: 5,
+		IdleConnTimeout:     30 * time.Second,
+	},
+	Timeout: 10 * time.Second,
+}
+
 // TrafficReportItem 流量报告项（压缩格式）
 type TrafficReportItem struct {
 	N string `json:"n"` // 服务名（name缩写）
@@ -81,11 +100,7 @@ func sendBatchTrafficReport(ctx context.Context, reportItems []TrafficReportItem
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "GOST-Traffic-Reporter/1.0")
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := sharedTrafficClient.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("发送HTTP请求失败: %v", err)
 	}
@@ -158,11 +173,7 @@ func sendConfigReport(ctx context.Context) (bool, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Config-Reporter/1.0")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second, // 配置上报可以稍长一些
-	}
-
-	resp, err := client.Do(req)
+	resp, err := sharedConfigClient.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("发送HTTP请求失败: %v", err)
 	}
