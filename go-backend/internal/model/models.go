@@ -2,6 +2,23 @@ package model
 
 // 表结构与 schema.sql / 现有 gost.db 对齐
 
+// UnlimitedFlow / UnlimitedNum 为“无限流量/无限转发数量”的魔数标记。
+// 历史前端/后端约定：flow/num == 99999 即无限制。集中定义避免散落硬编码。
+const (
+	UnlimitedFlow int64 = 99999
+	UnlimitedNum  int   = 99999
+)
+
+// IsUnlimitedFlow 判断流量配额是否为无限制
+func IsUnlimitedFlow(flow int64) bool {
+	return flow >= UnlimitedFlow
+}
+
+// IsUnlimitedNum 判断转发数量配额是否为无限制
+func IsUnlimitedNum(num int) bool {
+	return num >= UnlimitedNum
+}
+
 type User struct {
 	ID            int64  `db:"id" json:"id"`
 	User          string `db:"user" json:"user"`

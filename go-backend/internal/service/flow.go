@@ -182,12 +182,21 @@ func (s *FlowService) checkUserRelatedLimits(userID int64) {
 	if err := s.DB.Get(&user, `SELECT * FROM user WHERE id = ?`, userID); err != nil {
 		return
 	}
-	limit := user.Flow * bytesToGB
-	current := user.InFlow + user.OutFlow
 	now := time.Now().UnixMilli()
-	if limit < current || (user.ExpTime > 0 && user.ExpTime <= now) || user.Status != 1 {
+	// 无限流量：跳过配额检查，仅检查到期/停用
+	if !model.IsUnlimitedFlow(user.Flow) {
+		limit := user.Flow * bytesToGB
+		current := user.InFlow + user.OutFlow
+		if limit < current {
+			slog.Info("流量上报自动暂停", "scope", "user", "user", userID,
+				"quotaGB", user.Flow, "used", current, "expTime", user.ExpTime, "status", user.Status)
+			s.pauseAllUserServices(userID)
+			return
+		}
+	}
+	if (user.ExpTime > 0 && user.ExpTime <= now) || user.Status != 1 {
 		slog.Info("流量上报自动暂停", "scope", "user", "user", userID,
-			"quotaGB", user.Flow, "used", current, "expTime", user.ExpTime, "status", user.Status)
+			"quotaGB", user.Flow, "used", user.InFlow+user.OutFlow, "expTime", user.ExpTime, "status", user.Status)
 		s.pauseAllUserServices(userID)
 	}
 }
@@ -199,7 +208,16 @@ func (s *FlowService) checkUserTunnelRelatedLimits(userTunnelID, userID int64) {
 	}
 	flow := ut.InFlow + ut.OutFlow
 	now := time.Now().UnixMilli()
-	if flow >= ut.Flow*bytesToGB || (ut.ExpTime > 0 && ut.ExpTime <= now) || ut.Status != 1 {
+	// 无限流量：跳过配额检查，仅检查到期/停用
+	if !model.IsUnlimitedFlow(ut.Flow) {
+		if flow >= ut.Flow*bytesToGB {
+			slog.Info("流量上报自动暂停", "scope", "user_tunnel", "ut", userTunnelID, "user", userID,
+				"quotaGB", ut.Flow, "used", flow, "expTime", ut.ExpTime, "status", ut.Status)
+			s.pauseSpecificForward(int64(ut.TunnelID), userID)
+			return
+		}
+	}
+	if (ut.ExpTime > 0 && ut.ExpTime <= now) || ut.Status != 1 {
 		slog.Info("流量上报自动暂停", "scope", "user_tunnel", "ut", userTunnelID, "user", userID,
 			"quotaGB", ut.Flow, "used", flow, "expTime", ut.ExpTime, "status", ut.Status)
 		s.pauseSpecificForward(int64(ut.TunnelID), userID)
