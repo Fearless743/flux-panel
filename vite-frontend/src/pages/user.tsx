@@ -45,16 +45,17 @@ import { SearchIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/comp
 import { parseDate } from "@internationalized/date";
 
 
-// 工具函数
+// 工具函数，流量自动进位到 TB/PB/EB
 const formatFlow = (value: number, unit: string = 'bytes'): string => {
   if (unit === 'gb') {
     return `${value} GB`;
   } else {
-    if (value === 0) return '0 B';
+    if (!value || value <= 0) return '0 B';
     if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${(value / 1024).toFixed(2)} KB`;
-    if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(2)} MB`;
-    return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+    const i = Math.min(Math.floor(Math.log(value) / Math.log(k)), sizes.length - 1);
+    return `${(value / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
   }
 };
 
