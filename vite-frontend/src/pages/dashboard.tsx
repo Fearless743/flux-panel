@@ -208,11 +208,12 @@ export default function DashboardPage() {
     if (unit === 'gb') {
       return value + ' GB';
     } else {
-      if (value === 0) return '0 B';
+      if (!value || value <= 0) return '0 B';
       if (value < 1024) return value + ' B';
-      if (value < 1024 * 1024) return (value / 1024).toFixed(2) + ' KB';
-      if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(2) + ' MB';
-      return (value / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+      const i = Math.min(Math.floor(Math.log(value) / Math.log(k)), sizes.length - 1);
+      return (value / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
     }
   };
 
@@ -745,11 +746,12 @@ export default function DashboardPage() {
                            tickLine={false}
                            axisLine={{ stroke: '#e5e7eb', strokeWidth: 1 }}
                            tickFormatter={(value) => {
-                             if (value === 0) return '0';
+                             if (!value || value <= 0) return '0';
                              if (value < 1024) return `${value}B`;
-                             if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}K`;
-                             if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)}M`;
-                             return `${(value / (1024 * 1024 * 1024)).toFixed(1)}G`;
+                             const k = 1024;
+                             const sizes = ['B', 'K', 'M', 'G', 'T', 'P', 'E'];
+                             const i = Math.min(Math.floor(Math.log(value) / Math.log(k)), sizes.length - 1);
+                             return `${(value / Math.pow(k, i)).toFixed(1)}${sizes[i]}`;
                            }}
                          />
                          <Tooltip 
