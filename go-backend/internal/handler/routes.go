@@ -71,6 +71,9 @@ func RegisterRoutes(r *gin.Engine, app *App) {
 				admin.POST("/config/list", app.ConfigList)
 				admin.POST("/config/update", app.ConfigUpdate)
 				admin.POST("/config/update-single", app.ConfigUpdateSingle)
+
+				admin.POST("/backup/export", app.BackupExport)
+				admin.POST("/backup/import", app.BackupImport)
 			}
 
 			authz.POST("/tunnel/user/tunnel", app.UserTunnelMine)

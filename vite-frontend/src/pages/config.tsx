@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -7,8 +7,9 @@ import { Spinner } from "@heroui/spinner";
 import { Divider } from "@heroui/divider";
 import { Switch } from "@heroui/switch";
 import { Select, SelectItem } from "@heroui/select";
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import toast from 'react-hot-toast';
-import { updateConfigs } from '@/api';
+import { updateConfigs, exportBackup, importBackup } from '@/api';
 import { SettingsIcon } from '@/components/icons';
 
 import { isAdmin } from '@/utils/auth';
@@ -135,6 +136,12 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [originalConfigs, setOriginalConfigs] = useState<Record<string, string>>(initialConfigs);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [pendingBackup, setPendingBackup] = useState<any>(null);
+  const [pendingFileName, setPendingFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { isOpen: isImportOpen, onOpen: onImportOpen, onOpenChange: onImportOpenChange } = useDisclosure();
 
   // 权限检查
   useEffect(() => {
@@ -247,6 +254,91 @@ export default function ConfigPage() {
 
 
 
+  // 导出全部数据：下载 JSON 备份文件
+  const handleExportBackup = async () => {
+    setExporting(true);
+    try {
+      const response = await exportBackup();
+      if (response.code !== 0 || !response.data) {
+        toast.error('导出失败: ' + (response.msg || '未知错误'));
+        return;
+      }
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const fileName = `flux-panel-backup-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('备份文件已导出');
+    } catch (error) {
+      toast.error('导出出错，请重试');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 选择导入文件：解析并弹窗二次确认
+  const handlePickImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // 允许重复选择同一文件
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result as string);
+        if (!data || typeof data !== 'object' || (!data.users && !data.nodes && !data.tunnels && !data.forwards)) {
+          toast.error('不是有效的备份文件');
+          return;
+        }
+        setPendingBackup(data);
+        setPendingFileName(file.name);
+        onImportOpen();
+      } catch {
+        toast.error('备份文件解析失败，请选择正确的 JSON 文件');
+      }
+    };
+    reader.onerror = () => toast.error('文件读取失败');
+    reader.readAsText(file);
+  };
+
+  // 确认导入：全量覆盖，导入后刷新配置缓存并提示重新登录（防止当前管理员被覆盖后 token 失效 confusion）
+  const handleConfirmImport = async (onClose: () => void) => {
+    if (!pendingBackup) return;
+    setImporting(true);
+    try {
+      const response = await importBackup(pendingBackup);
+      if (response.code === 0) {
+        toast.success('数据恢复成功，页面即将刷新');
+        clearConfigCache();
+        onClose();
+        setPendingBackup(null);
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        toast.error('导入失败: ' + response.msg);
+      }
+    } catch (error) {
+      toast.error('导入出错，请重试');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const backupSummary = pendingBackup ? [
+    `用户 ${pendingBackup.users?.length ?? 0}`,
+    `节点 ${pendingBackup.nodes?.length ?? 0}`,
+    `隧道 ${pendingBackup.tunnels?.length ?? 0}`,
+    `转发 ${pendingBackup.forwards?.length ?? 0}`,
+    `用户隧道授权 ${pendingBackup.userTunnels?.length ?? 0}`,
+    `限速 ${pendingBackup.speedLimits?.length ?? 0}`,
+  ].join('、') : '';
+
   // 检查配置项是否应该显示（依赖检查）
   const shouldShowItem = (item: ConfigItem): boolean => {
     if (!item.dependsOn || !item.dependsValue) {
@@ -340,7 +432,7 @@ export default function ConfigPage() {
   }
 
   return (
-    
+    <>
       <div className="p-6 max-w-4xl mx-auto">
         {/* 页面标题 */}
         <div className="flex items-center gap-3 mb-6">
@@ -429,7 +521,66 @@ export default function ConfigPage() {
             </CardBody>
           </Card>
         )}
+
+        {/* 数据备份 */}
+        <Card className="shadow-md mt-6">
+          <CardHeader className="pb-4">
+            <div>
+              <h2 className="text-xl font-semibold">数据备份</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                一键导出全部数据（用户、节点、隧道、转发、授权、限速、网站配置、流量统计），或从备份文件全量恢复
+              </p>
+            </div>
+          </CardHeader>
+          <Divider />
+          <CardBody className="pt-6">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button color="primary" variant="flat" onClick={handleExportBackup} isLoading={exporting}>
+                {exporting ? '导出中...' : '导出全部数据'}
+              </Button>
+              <Button color="danger" variant="flat" onClick={() => fileInputRef.current?.click()}>
+                从备份文件恢复
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handlePickImportFile}
+              />
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
+              注意：恢复为全量覆盖操作，会清空当前所有数据并按备份文件原样写入（含管理员账号与密码），操作不可撤销，请先导出当前数据再恢复。
+            </p>
+          </CardBody>
+        </Card>
       </div>
-    
+
+      {/* 导入二次确认 */}
+      <Modal isOpen={isImportOpen} onOpenChange={onImportOpenChange} placement="center" backdrop="blur">
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader>确认恢复数据？</ModalHeader>
+              <ModalBody>
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  即将从文件 <span className="font-mono font-medium">{pendingFileName}</span> 全量恢复，当前所有数据将被覆盖：
+                </p>
+                <p className="text-sm mt-2 rounded-lg bg-default-100 p-3">{backupSummary}</p>
+                <p className="text-sm text-danger mt-2">该操作不可撤销，请确认已备份当前数据。</p>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={onClose} disabled={importing}>
+                  取消
+                </Button>
+                <Button color="danger" onPress={() => handleConfirmImport(onClose)} isLoading={importing}>
+                  {importing ? '恢复中...' : '确认覆盖恢复'}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+    </>
   );
 } 
