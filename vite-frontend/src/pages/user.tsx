@@ -16,6 +16,7 @@ import { DatePicker } from "@heroui/date-picker";
 import { Spinner } from "@heroui/spinner";
 import { Progress } from "@heroui/progress";
 import { Divider } from "@heroui/divider";
+import { Switch } from "@heroui/switch";
 import toast from "react-hot-toast";
 import { parseDate } from "@internationalized/date";
 
@@ -103,6 +104,10 @@ const calculateTunnelUsedFlow = (tunnel: UserTunnel): number => {
   // 后端已按计费类型处理流量，前端直接使用入站+出站总和
   return inFlow + outFlow;
 };
+
+// 无限流量标记（与后端 model.UnlimitedFlow 对齐）
+const UNLIMITED_FLOW = 99999;
+const isUnlimitedFlow = (flow: number): boolean => flow >= UNLIMITED_FLOW;
 
 export default function UserPage() {
   // 状态管理
@@ -665,7 +670,7 @@ export default function UserPage() {
                   : null;
                 const usedFlow = calculateUserTotalUsedFlow(user);
                 const flowLimitBytes = (user.flow || 0) * 1024 * 1024 * 1024;
-                const isUnlimited = user.flow === 99999;
+                const isUnlimited = isUnlimitedFlow(user.flow);
                 const flowPercent =
                   !isUnlimited && flowLimitBytes > 0
                     ? Math.min((usedFlow / flowLimitBytes) * 100, 100)
@@ -849,11 +854,17 @@ export default function UserPage() {
               />
               <Input
                 isRequired
+                isDisabled={isUnlimitedFlow(userForm.flow)}
                 label="流量限制(GB)"
                 max="99999"
                 min="1"
+                placeholder={
+                  isUnlimitedFlow(userForm.flow) ? "无限制" : "请输入流量"
+                }
                 type="number"
-                value={userForm.flow.toString()}
+                value={
+                  isUnlimitedFlow(userForm.flow) ? "" : userForm.flow.toString()
+                }
                 onChange={(e) => {
                   const value = Math.min(
                     Math.max(Number(e.target.value) || 0, 1),
@@ -933,6 +944,25 @@ export default function UserPage() {
                     setUserForm((prev) => ({ ...prev, expTime: null }));
                   }
                 }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 mt-4 rounded-xl border border-divider bg-default-50/60 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">无限流量</p>
+                <p className="text-xs text-default-500 mt-0.5">
+                  开启后该用户流量不受限制，关闭可恢复自定义配额
+                </p>
+              </div>
+              <Switch
+                aria-label="无限流量"
+                isSelected={isUnlimitedFlow(userForm.flow)}
+                onValueChange={(selected) =>
+                  setUserForm((prev) => ({
+                    ...prev,
+                    flow: selected ? UNLIMITED_FLOW : 100,
+                  }))
+                }
               />
             </div>
 
@@ -1094,12 +1124,20 @@ export default function UserPage() {
 
                   <Input
                     classNames={{ inputWrapper: "bg-content1" }}
+                    isDisabled={isUnlimitedFlow(tunnelForm.flow)}
                     label="流量限制 (GB)"
                     max="99999"
                     min="1"
+                    placeholder={
+                      isUnlimitedFlow(tunnelForm.flow) ? "无限制" : "请输入流量"
+                    }
                     size="sm"
                     type="number"
-                    value={tunnelForm.flow.toString()}
+                    value={
+                      isUnlimitedFlow(tunnelForm.flow)
+                        ? ""
+                        : tunnelForm.flow.toString()
+                    }
                     onChange={(e) => {
                       const value = Math.min(
                         Math.max(Number(e.target.value) || 0, 1),
@@ -1189,6 +1227,28 @@ export default function UserPage() {
                       }
                     }}
                   />
+
+                  <div className="col-span-1 sm:col-span-2 lg:col-span-3 flex items-center justify-between gap-3 rounded-xl border border-divider bg-content1 px-4 py-2.5">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        无限流量
+                      </p>
+                      <p className="text-xs text-default-500 mt-0.5">
+                        开启后该隧道权限流量不受限制
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="隧道无限流量"
+                      isSelected={isUnlimitedFlow(tunnelForm.flow)}
+                      size="sm"
+                      onValueChange={(selected) =>
+                        setTunnelForm((prev) => ({
+                          ...prev,
+                          flow: selected ? UNLIMITED_FLOW : 100,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
 
                 <div className="flex justify-end">
@@ -1266,7 +1326,7 @@ export default function UserPage() {
                           const usedFlow = calculateTunnelUsedFlow(userTunnel);
                           const flowLimitBytes =
                             (userTunnel.flow || 0) * 1024 * 1024 * 1024;
-                          const isUnlimited = userTunnel.flow === 99999;
+                          const isUnlimited = isUnlimitedFlow(userTunnel.flow);
                           const flowPercent =
                             !isUnlimited && flowLimitBytes > 0
                               ? Math.min((usedFlow / flowLimitBytes) * 100, 100)
@@ -1475,12 +1535,22 @@ export default function UserPage() {
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Input
+                    isDisabled={isUnlimitedFlow(editTunnelForm.flow)}
                     label="流量限制 (GB)"
                     max="99999"
                     min="1"
+                    placeholder={
+                      isUnlimitedFlow(editTunnelForm.flow)
+                        ? "无限制"
+                        : "请输入流量"
+                    }
                     size="sm"
                     type="number"
-                    value={editTunnelForm.flow.toString()}
+                    value={
+                      isUnlimitedFlow(editTunnelForm.flow)
+                        ? ""
+                        : editTunnelForm.flow.toString()
+                    }
                     onChange={(e) => {
                       const value = Math.min(
                         Math.max(Number(e.target.value) || 0, 1),
@@ -1613,6 +1683,32 @@ export default function UserPage() {
                       }
                     }}
                   />
+
+                  <div className="col-span-1 md:col-span-2 flex items-center justify-between gap-3 rounded-xl border border-divider bg-default-50/60 px-4 py-2.5">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        无限流量
+                      </p>
+                      <p className="text-xs text-default-500 mt-0.5">
+                        开启后该隧道权限流量不受限制
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="隧道无限流量"
+                      isSelected={isUnlimitedFlow(editTunnelForm.flow)}
+                      size="sm"
+                      onValueChange={(selected) =>
+                        setEditTunnelForm((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                flow: selected ? UNLIMITED_FLOW : 100,
+                              }
+                            : null,
+                        )
+                      }
+                    />
+                  </div>
                 </div>
 
                 <RadioGroup
