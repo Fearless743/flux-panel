@@ -138,7 +138,7 @@ func (h *Hub) writeConn(conn *websocket.Conn, secret string, plain []byte) error
 }
 
 func (h *Hub) BroadcastAdmins(message []byte) {
-	// 先快照连接列表再释放锁，写操作在锁外进行，避免 RLock→Lock 死锁卡死节点指令通道。
+	// 先快照连接列表再释放锁，写操作并行进行，避免慢管理端拖慢全广播。
 	h.mu.RLock()
 	conns := make([]*websocket.Conn, 0, len(h.adminSessions))
 	for conn := range h.adminSessions {
@@ -146,9 +146,15 @@ func (h *Hub) BroadcastAdmins(message []byte) {
 	}
 	h.mu.RUnlock()
 
+	var wg sync.WaitGroup
 	for _, conn := range conns {
-		_ = h.writeConn(conn, "", message)
+		wg.Add(1)
+		go func(c *websocket.Conn) {
+			defer wg.Done()
+			_ = h.writeConn(c, "", message)
+		}(conn)
 	}
+	wg.Wait()
 }
 
 func (h *Hub) RegisterNode(nodeID int64, conn *websocket.Conn, secret, version string) {

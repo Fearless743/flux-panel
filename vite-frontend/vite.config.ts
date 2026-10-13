@@ -19,9 +19,16 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: false,  
+    minify: 'esbuild',
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
-      treeshake: false,
+      treeshake: true,
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+        },
+      },
     }
   }
 });

@@ -87,7 +87,10 @@ func (s *NodeSyncService) SyncNodeConfig(nodeID int64) {
 	}
 
 	var okN, failN int
+	var recMu sync.Mutex
 	record := func(label string, msg string) {
+		recMu.Lock()
+		defer recMu.Unlock()
 		if gost.IsOK(msg) {
 			okN++
 			return
@@ -96,35 +99,37 @@ func (s *NodeSyncService) SyncNodeConfig(nodeID int64) {
 		slog.Warn("节点配置同步项失败", "nodeId", nodeID, "item", label, "msg", msg)
 	}
 
-	// 1) Limiters
+	// 1) Limiters：多限速器并发下发（IO 等待重叠，同节点写由 hub per-conn 锁串行化）
 	if len(tunnelIDs) > 0 {
 		limiters, err := s.listSpeedLimitsByTunnelIDs(tunnelIDs)
 		if err != nil {
 			slog.Warn("节点配置同步：查询限速失败", "nodeId", nodeID, "err", err)
 		} else {
-			for i := range limiters {
+			parallelEach(len(limiters), 8, func(i int) string {
 				sl := &limiters[i]
 				record(fmt.Sprintf("limiter:%d", sl.ID), s.ensureLimiter(nodeID, sl))
-			}
+				return ""
+			})
 		}
 	}
 
-	// 2-3) 按隧道重放 chain + tunnel service
-	for _, tid := range tunnelIDs {
+	// 2-3) 按隧道重放 chain + tunnel service：per-tunnel 并发（读 DB + WS 下发）
+	parallelEach(len(tunnelIDs), 8, func(i int) string {
+		tid := tunnelIDs[i]
 		tunnel, err := s.Tunnel.GetByID(tid)
 		if err != nil || tunnel == nil {
 			slog.Warn("节点配置同步：隧道不存在", "nodeId", nodeID, "tunnelId", tid, "err", err)
-			continue
+			return ""
 		}
 		all, err := s.Chain.ListByTunnelID(tid)
 		if err != nil {
 			slog.Warn("节点配置同步：加载拓扑失败", "nodeId", nodeID, "tunnelId", tid, "err", err)
-			continue
+			return ""
 		}
 		nodes, err := s.loadNodesForChains(all)
 		if err != nil {
 			slog.Warn("节点配置同步：加载节点失败", "nodeId", nodeID, "tunnelId", tid, "err", err)
-			continue
+			return ""
 		}
 		// 确保本节点在 map 中
 		nodes[nodeID] = node
@@ -132,23 +137,24 @@ func (s *NodeSyncService) SyncNodeConfig(nodeID int64) {
 		if tunnel.Type == 2 {
 			s.syncTunnelTopology(nodeID, all, nodes, record)
 		}
-	}
+		return ""
+	})
 
-	// 4) Forwards on this node (入口端口)
+	// 4) Forwards on this node (入口端口)：per-forward 并发重放
 	ports, err := s.Port.ListByNodeID(nodeID)
 	if err != nil {
 		slog.Warn("节点配置同步：查询 forward_port 失败", "nodeId", nodeID, "err", err)
 	} else {
 		fwSvc := NewForwardService(s.DB, s.Hub)
-		for i := range ports {
+		parallelEach(len(ports), 8, func(i int) string {
 			fp := &ports[i]
 			fw, err := s.Forward.GetByID(fp.ForwardID)
 			if err != nil || fw == nil {
-				continue
+				return ""
 			}
 			tunnel, err := s.Tunnel.GetByID(int64(fw.TunnelID))
 			if err != nil || tunnel == nil {
-				continue
+				return ""
 			}
 			var ut *model.UserTunnel
 			var limiter *int
@@ -165,17 +171,20 @@ func (s *NodeSyncService) SyncNodeConfig(nodeID int64) {
 				msg = fwSvc.addOrUpdateService(base, limiter, node, fw, fp, tunnel, "AddService")
 			}
 			// exists 也算成功
+			recMu.Lock()
 			if gost.IsOK(msg) {
 				okN++
 			} else {
 				failN++
 				slog.Warn("节点配置同步项失败", "nodeId", nodeID, "item", "forward:"+base, "msg", msg)
 			}
+			recMu.Unlock()
 			if fw.Status == 0 {
 				res := s.Hub.SendMsg(nodeID, gost.PauseResumePayload(base), "PauseService")
 				record("pause:"+base, gost.NormalizeOK(res.Msg))
 			}
-		}
+			return ""
+		})
 	}
 
 	slog.Info("节点配置同步完成", "nodeId", nodeID, "ok", okN, "fail", failN)
@@ -188,6 +197,12 @@ func (s *NodeSyncService) syncTunnelTopology(
 	record func(label, msg string),
 ) {
 	entries, chainGroups, outs := splitTopology(all)
+
+	type topoTask struct {
+		label string
+		fn    func() string
+	}
+	tasks := make([]topoTask, 0, len(entries)+len(chainGroups)+len(outs))
 
 	// 本节点作为入口：需要 chain 指向下一跳
 	for _, entry := range entries {
@@ -203,8 +218,11 @@ func (s *NodeSyncService) syncTunnelTopology(
 		if len(target) == 0 {
 			continue
 		}
-		res := pushChains(s.Hub, nodeID, target, nodes)
-		record(fmt.Sprintf("chain:entry:tunnel=%d", entry.TunnelID), res.Msg)
+		e, t := entry, target
+		tasks = append(tasks, topoTask{
+			label: fmt.Sprintf("chain:entry:tunnel=%d", e.TunnelID),
+			fn:    func() string { return pushChains(s.Hub, nodeID, t, nodes).Msg },
+		})
 	}
 
 	// 本节点作为转发链
@@ -220,11 +238,17 @@ func (s *NodeSyncService) syncTunnelTopology(
 				continue
 			}
 			if len(target) > 0 {
-				res := pushChains(s.Hub, nodeID, target, nodes)
-				record(fmt.Sprintf("chain:hop:tunnel=%d", ct.TunnelID), res.Msg)
+				ctCopy, tCopy := ct, target
+				tasks = append(tasks, topoTask{
+					label: fmt.Sprintf("chain:hop:tunnel=%d", ctCopy.TunnelID),
+					fn:    func() string { return pushChains(s.Hub, nodeID, tCopy, nodes).Msg },
+				})
 			}
-			res := pushChainService(s.Hub, nodeID, ct, nodes)
-			record(fmt.Sprintf("service:tls:tunnel=%d", ct.TunnelID), res.Msg)
+			ctCopy := ct
+			tasks = append(tasks, topoTask{
+				label: fmt.Sprintf("service:tls:tunnel=%d", ctCopy.TunnelID),
+				fn:    func() string { return pushChainService(s.Hub, nodeID, ctCopy, nodes).Msg },
+			})
 		}
 	}
 
@@ -233,9 +257,17 @@ func (s *NodeSyncService) syncTunnelTopology(
 		if ct.NodeID != nodeID {
 			continue
 		}
-		res := pushChainService(s.Hub, nodeID, ct, nodes)
-		record(fmt.Sprintf("service:out:tunnel=%d", ct.TunnelID), res.Msg)
+		ctCopy := ct
+		tasks = append(tasks, topoTask{
+			label: fmt.Sprintf("service:out:tunnel=%d", ctCopy.TunnelID),
+			fn:    func() string { return pushChainService(s.Hub, nodeID, ctCopy, nodes).Msg },
+		})
 	}
+
+	parallelEach(len(tasks), 8, func(i int) string {
+		record(tasks[i].label, tasks[i].fn())
+		return ""
+	})
 }
 
 func (s *NodeSyncService) ensureLimiter(nodeID int64, sl *model.SpeedLimit) string {

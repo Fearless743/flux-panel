@@ -781,43 +781,30 @@ export default function ForwardPage() {
 
     try {
       const lines = importData.trim().split('\n').filter(line => line.trim());
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
+      type ImportResult = { line: string; success: boolean; message: string; forwardName?: string };
+      const results: ImportResult[] = [];
+
+      const runOne = async (rawLine: string): Promise<ImportResult> => {
+        const line = rawLine.trim();
         const parts = line.split('|');
-        
+
         if (parts.length < 2) {
-          setImportResults(prev => [{
-            line,
-            success: false,
-            message: '格式错误：需要至少包含目标地址和转发名称'
-          }, ...prev]);
-          continue;
+          return { line, success: false, message: '格式错误：需要至少包含目标地址和转发名称' };
         }
 
         const [remoteAddr, name, inPort] = parts;
-        
+
         if (!remoteAddr.trim() || !name.trim()) {
-          setImportResults(prev => [{
-            line,
-            success: false,
-            message: '目标地址和转发名称不能为空'
-          }, ...prev]);
-          continue;
+          return { line, success: false, message: '目标地址和转发名称不能为空' };
         }
 
         // 验证远程地址格式 - 支持单个地址或多个地址用逗号分隔
         const addresses = remoteAddr.trim().split(',');
         const addressPattern = /^[^:]+:\d+$/;
         const isValidFormat = addresses.every(addr => addressPattern.test(addr.trim()));
-        
+
         if (!isValidFormat) {
-          setImportResults(prev => [{
-            line,
-            success: false,
-            message: '目标地址格式错误，应为 地址:端口 格式，多个地址用逗号分隔'
-          }, ...prev]);
-          continue;
+          return { line, success: false, message: '目标地址格式错误，应为 地址:端口 格式，多个地址用逗号分隔' };
         }
 
         try {
@@ -826,12 +813,7 @@ export default function ForwardPage() {
           if (inPort && inPort.trim()) {
             const port = parseInt(inPort.trim());
             if (isNaN(port) || port < 1 || port > 65535) {
-              setImportResults(prev => [{
-                line,
-                success: false,
-                message: '入口端口格式错误，应为1-65535之间的数字'
-              }, ...prev]);
-              continue;
+              return { line, success: false, message: '入口端口格式错误，应为1-65535之间的数字' };
             }
             portNumber = port;
           }
@@ -846,27 +828,23 @@ export default function ForwardPage() {
           });
 
           if (response.code === 0) {
-            setImportResults(prev => [{
-              line,
-              success: true,
-              message: '创建成功',
-              forwardName: name.trim()
-            }, ...prev]);
-          } else {
-            setImportResults(prev => [{
-              line,
-              success: false,
-              message: response.msg || '创建失败'
-            }, ...prev]);
+            return { line, success: true, message: '创建成功', forwardName: name.trim() };
           }
+          return { line, success: false, message: response.msg || '创建失败' };
         } catch (error) {
-          setImportResults(prev => [{
-            line,
-            success: false,
-            message: '网络错误，创建失败'
-          }, ...prev]);
+          return { line, success: false, message: '网络错误，创建失败' };
         }
+      };
+
+      // 限并发 5 并行导入，避免 100 条串行 N×RTT；结果一次 setState 减少重渲染
+      const CONCURRENCY = 5;
+      for (let i = 0; i < lines.length; i += CONCURRENCY) {
+        const chunk = lines.slice(i, i + CONCURRENCY);
+        const chunkResults = await Promise.all(chunk.map(runOne));
+        results.push(...chunkResults);
       }
+      // 保持原有倒序展示语义
+      setImportResults(results.reverse());
       
       
       toast.success(`导入执行完成`);

@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/auth"
@@ -219,19 +220,48 @@ func (s *UserService) Package(userID int64) (*PackageDto, error) {
 	if u == nil {
 		return nil, errors.New("用户不存在")
 	}
-	tunnels, err := s.repo.GetUserTunnelDetails(userID)
-	if err != nil {
-		return nil, err
-	}
-	forwards, err := s.repo.GetUserForwardDetails(userID)
-	if err != nil {
-		return nil, err
+	// tunnels / forwards / stats 相互独立，并发查询后 Fill 依赖 forwards
+	var tunnels []repo.PackageUserTunnelDetail
+	var forwards []repo.UserForwardDetail
+	var stats []model.StatisticsFlow
+	var wg sync.WaitGroup
+	errCh := make(chan error, 3)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		t, err := s.repo.GetUserTunnelDetails(userID)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		tunnels = t
+	}()
+	go func() {
+		defer wg.Done()
+		f, err := s.repo.GetUserForwardDetails(userID)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		forwards = f
+	}()
+	go func() {
+		defer wg.Done()
+		st, err := s.repo.GetLast24HoursFlow(userID)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		stats = st
+	}()
+	wg.Wait()
+	close(errCh)
+	for e := range errCh {
+		if e != nil {
+			return nil, e
+		}
 	}
 	if err := s.repo.FillForwardInIPAndPort(forwards); err != nil {
-		return nil, err
-	}
-	stats, err := s.repo.GetLast24HoursFlow(userID)
-	if err != nil {
 		return nil, err
 	}
 	return &PackageDto{

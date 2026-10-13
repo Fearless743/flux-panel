@@ -408,11 +408,12 @@ type forwardSuccessItem struct {
 func (s *ForwardService) rollbackCreate(forwardID int64, items []forwardSuccessItem) {
 	_ = s.Repo.Delete(forwardID)
 	_ = s.Port.DeleteByForwardID(forwardID)
-	for _, it := range items {
-		names := []string{it.name + "_tcp", it.name + "_udp"}
-		res := s.Hub.SendMsg(it.nodeID, gost.DeleteServicePayload(names), "DeleteService")
+	parallelEach(len(items), 8, func(i int) string {
+		names := []string{items[i].name + "_tcp", items[i].name + "_udp"}
+		res := s.Hub.SendMsg(items[i].nodeID, gost.DeleteServicePayload(names), "DeleteService")
 		_ = gost.NormalizeOK(res.Msg)
-	}
+		return ""
+	})
 }
 
 // ---- update ----
