@@ -186,6 +186,8 @@ func (s *FlowService) checkUserRelatedLimits(userID int64) {
 	current := user.InFlow + user.OutFlow
 	now := time.Now().UnixMilli()
 	if limit < current || (user.ExpTime > 0 && user.ExpTime <= now) || user.Status != 1 {
+		slog.Info("流量上报自动暂停", "scope", "user", "user", userID,
+			"quotaGB", user.Flow, "used", current, "expTime", user.ExpTime, "status", user.Status)
 		s.pauseAllUserServices(userID)
 	}
 }
@@ -198,22 +200,31 @@ func (s *FlowService) checkUserTunnelRelatedLimits(userTunnelID, userID int64) {
 	flow := ut.InFlow + ut.OutFlow
 	now := time.Now().UnixMilli()
 	if flow >= ut.Flow*bytesToGB || (ut.ExpTime > 0 && ut.ExpTime <= now) || ut.Status != 1 {
+		slog.Info("流量上报自动暂停", "scope", "user_tunnel", "ut", userTunnelID, "user", userID,
+			"quotaGB", ut.Flow, "used", flow, "expTime", ut.ExpTime, "status", ut.Status)
 		s.pauseSpecificForward(int64(ut.TunnelID), userID)
 	}
 }
 
 func (s *FlowService) pauseAllUserServices(userID int64) {
 	var forwards []model.Forward
-	if err := s.DB.Select(&forwards, `SELECT * FROM forward WHERE user_id = ?`, userID); err != nil {
+	// 只处理运行中的，已暂停的不再重复下发
+	if err := s.DB.Select(&forwards, `SELECT * FROM forward WHERE user_id = ? AND status = 1`, userID); err != nil {
 		return
+	}
+	if len(forwards) > 0 {
+		slog.Info("执行自动暂停", "scope", "user", "user", userID, "count", len(forwards))
 	}
 	s.pauseForwards(forwards)
 }
 
 func (s *FlowService) pauseSpecificForward(tunnelID, userID int64) {
 	var forwards []model.Forward
-	if err := s.DB.Select(&forwards, `SELECT * FROM forward WHERE tunnel_id = ? AND user_id = ?`, tunnelID, userID); err != nil {
+	if err := s.DB.Select(&forwards, `SELECT * FROM forward WHERE tunnel_id = ? AND user_id = ? AND status = 1`, tunnelID, userID); err != nil {
 		return
+	}
+	if len(forwards) > 0 {
+		slog.Info("执行自动暂停", "scope", "user_tunnel", "tunnel", tunnelID, "user", userID, "count", len(forwards))
 	}
 	s.pauseForwards(forwards)
 }
