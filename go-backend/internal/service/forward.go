@@ -1175,11 +1175,16 @@ func (s *ForwardService) checkUserPermissions(user CurrentUser, tunnel *model.Tu
 	if ut.ExpTime > 0 && ut.ExpTime <= time.Now().UnixMilli() {
 		return userPermissionResult{err: fmt.Errorf("该隧道权限已到期")}
 	}
-	if userInfo.Flow <= 0 {
-		return userPermissionResult{err: fmt.Errorf("用户总流量已用完")}
+	// 无限流量直接通过配额检查；有限流量检查已用是否超限
+	if !model.IsUnlimitedFlow(userInfo.Flow) {
+		if userInfo.Flow <= 0 || userInfo.Flow*forwardBytesToGB <= userInfo.InFlow+userInfo.OutFlow {
+			return userPermissionResult{err: fmt.Errorf("用户总流量已用完")}
+		}
 	}
-	if ut.Flow <= 0 {
-		return userPermissionResult{err: fmt.Errorf("该隧道流量已用完")}
+	if !model.IsUnlimitedFlow(ut.Flow) {
+		if ut.Flow <= 0 || ut.Flow*forwardBytesToGB <= ut.InFlow+ut.OutFlow {
+			return userPermissionResult{err: fmt.Errorf("该隧道流量已用完")}
+		}
 	}
 	if err := s.checkForwardQuota(int(user.UserID), int(tunnel.ID), ut, userInfo, excludeForwardID); err != nil {
 		return userPermissionResult{err: err}
@@ -1192,15 +1197,19 @@ func (s *ForwardService) checkForwardQuota(userID, tunnelID int, ut *model.UserT
 	if err != nil {
 		return err
 	}
-	if n >= int64(userInfo.Num) {
-		return fmt.Errorf("用户总转发数量已达上限，当前限制：%d个", userInfo.Num)
+	if !model.IsUnlimitedNum(userInfo.Num) {
+		if n >= int64(userInfo.Num) {
+			return fmt.Errorf("用户总转发数量已达上限，当前限制：%d个", userInfo.Num)
+		}
 	}
 	tn, err := s.Repo.CountByUserTunnel(userID, tunnelID, excludeForwardID)
 	if err != nil {
 		return err
 	}
-	if tn >= int64(ut.Num) {
-		return fmt.Errorf("该隧道转发数量已达上限，当前限制：%d个", ut.Num)
+	if !model.IsUnlimitedNum(ut.Num) {
+		if tn >= int64(ut.Num) {
+			return fmt.Errorf("该隧道转发数量已达上限，当前限制：%d个", ut.Num)
+		}
 	}
 	return nil
 }
@@ -1226,12 +1235,16 @@ func (s *ForwardService) checkUserFlowLimits(userID int, tunnel *model.Tunnel) e
 	if ut.ExpTime > 0 && ut.ExpTime <= time.Now().UnixMilli() {
 		return fmt.Errorf("该隧道权限已到期，无法恢复服务")
 	}
-	if userInfo.Flow*forwardBytesToGB <= userInfo.InFlow+userInfo.OutFlow {
-		return fmt.Errorf("用户总流量已用完，无法恢复服务")
+	if !model.IsUnlimitedFlow(userInfo.Flow) {
+		if userInfo.Flow*forwardBytesToGB <= userInfo.InFlow+userInfo.OutFlow {
+			return fmt.Errorf("用户总流量已用完，无法恢复服务")
+		}
 	}
 	tunnelFlow := ut.InFlow + ut.OutFlow
-	if ut.Flow*forwardBytesToGB <= tunnelFlow {
-		return fmt.Errorf("该隧道流量已用完，无法恢复服务")
+	if !model.IsUnlimitedFlow(ut.Flow) {
+		if ut.Flow*forwardBytesToGB <= tunnelFlow {
+			return fmt.Errorf("该隧道流量已用完，无法恢复服务")
+		}
 	}
 	return nil
 }
