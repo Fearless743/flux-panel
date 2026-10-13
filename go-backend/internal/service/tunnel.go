@@ -109,18 +109,18 @@ type TunnelUpdateReq struct {
 }
 
 type TunnelDetailDto struct {
-	ID           int64               `json:"id"`
-	Name         string              `json:"name"`
-	Type         int                 `json:"type"`
-	Flow         int                 `json:"flow"`
-	TrafficRatio float64             `json:"trafficRatio"`
-	Status       int                 `json:"status"`
-	CreatedTime  int64               `json:"createdTime"`
-	UpdatedTime  int64               `json:"updatedTime"`
-	InIP         *string             `json:"inIp"`
-	InNodeID     []model.ChainTunnel `json:"inNodeId"`
+	ID           int64                 `json:"id"`
+	Name         string                `json:"name"`
+	Type         int                   `json:"type"`
+	Flow         int                   `json:"flow"`
+	TrafficRatio float64               `json:"trafficRatio"`
+	Status       int                   `json:"status"`
+	CreatedTime  int64                 `json:"createdTime"`
+	UpdatedTime  int64                 `json:"updatedTime"`
+	InIP         *string               `json:"inIp"`
+	InNodeID     []model.ChainTunnel   `json:"inNodeId"`
 	ChainNodes   [][]model.ChainTunnel `json:"chainNodes"`
-	OutNodeID    []model.ChainTunnel `json:"outNodeId"`
+	OutNodeID    []model.ChainTunnel   `json:"outNodeId"`
 }
 
 // ---- create ----
@@ -154,20 +154,69 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 	var chainTunnels []model.ChainTunnel
 	var nodeIDs []int64
 
-	// 入口
+	// 相关节点一次查回（原逐个 GetByID + 后续重复 ListByIDs，N+1）
 	for _, in := range req.InNodeID {
 		if in.NodeID == 0 {
 			return fmt.Errorf("节点不存在")
 		}
 		nodeIDs = append(nodeIDs, in.NodeID)
-		n, err := s.Node.GetByID(in.NodeID)
-		if err != nil {
-			return err
+	}
+	if req.Type == 2 {
+		for _, group := range req.ChainNodes {
+			for _, c := range group {
+				if c.NodeID == 0 {
+					return fmt.Errorf("节点不存在")
+				}
+				nodeIDs = append(nodeIDs, c.NodeID)
+			}
 		}
+		for _, out := range req.OutNodeID {
+			if out.NodeID == 0 {
+				return fmt.Errorf("节点不存在")
+			}
+			nodeIDs = append(nodeIDs, out.NodeID)
+		}
+	}
+	// 节点不重复（原先顺序：各节点存在性校验之后、在线校验之前；
+	// 缺节点与重复并存时优先报“节点不存在”，此处保持一致）
+	set := make(map[int64]struct{})
+	for _, id := range nodeIDs {
+		set[id] = struct{}{}
+	}
+	uniqNodeIDs := make([]int64, 0, len(set))
+	for id := range set {
+		uniqNodeIDs = append(uniqNodeIDs, id)
+	}
+	batchNodes, err := s.Node.ListByIDs(uniqNodeIDs)
+	if err != nil {
+		return err
+	}
+	if len(batchNodes) != len(set) {
+		return fmt.Errorf("节点不存在")
+	}
+	if len(set) != len(nodeIDs) {
+		return fmt.Errorf("节点重复")
+	}
+	for i := range batchNodes {
+		nodes[batchNodes[i].ID] = &batchNodes[i]
+	}
+	// 全部在线
+	for id := range set {
+		n := nodes[id]
+		if n == nil {
+			return fmt.Errorf("部分节点不存在")
+		}
+		if n.Status != 1 {
+			return fmt.Errorf("部分节点不在线")
+		}
+	}
+
+	// 入口
+	for _, in := range req.InNodeID {
+		n := nodes[in.NodeID]
 		if n == nil {
 			return fmt.Errorf("节点不存在")
 		}
-		nodes[n.ID] = n
 		// 将 ExitNodeIDs 转换为 JSON 字符串
 		var exitNodeIDs *string
 		exitIDs := in.GetExitNodeIDs()
@@ -191,18 +240,11 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 		for _, group := range req.ChainNodes {
 			var newGroup []model.ChainTunnel
 			for _, c := range group {
-				if c.NodeID == 0 {
-					return fmt.Errorf("节点不存在")
-				}
-				nodeIDs = append(nodeIDs, c.NodeID)
-				n, err := s.Node.GetByID(c.NodeID)
-				if err != nil {
-					return err
-				}
+				n := nodes[c.NodeID]
 				if n == nil {
 					return fmt.Errorf("节点不存在")
 				}
-				nodes[n.ID] = n
+				// 端口分配保持串行：分配结果依赖库中实时占用，并发会选出重复端口
 				port, err := s.GetNodePort(c.NodeID)
 				if err != nil {
 					return err
@@ -218,18 +260,10 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			}
 		}
 		for _, out := range req.OutNodeID {
-			if out.NodeID == 0 {
-				return fmt.Errorf("节点不存在")
-			}
-			nodeIDs = append(nodeIDs, out.NodeID)
-			n, err := s.Node.GetByID(out.NodeID)
-			if err != nil {
-				return err
-			}
+			n := nodes[out.NodeID]
 			if n == nil {
 				return fmt.Errorf("节点不存在")
 			}
-			nodes[n.ID] = n
 			port, err := s.GetNodePort(out.NodeID)
 			if err != nil {
 				return err
@@ -238,25 +272,6 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			ct := repo.NewChainTunnel(0, 3, out.NodeID, &p, out.Strategy, out.Protocol, nil)
 			outNodes = append(outNodes, ct)
 			chainTunnels = append(chainTunnels, ct)
-		}
-	}
-
-	// 节点不重复
-	set := make(map[int64]struct{})
-	for _, id := range nodeIDs {
-		if _, ok := set[id]; ok {
-			return fmt.Errorf("节点重复")
-		}
-		set[id] = struct{}{}
-	}
-	// 全部在线
-	for id := range set {
-		n := nodes[id]
-		if n == nil {
-			return fmt.Errorf("部分节点不存在")
-		}
-		if n.Status != 1 {
-			return fmt.Errorf("部分节点不在线")
 		}
 	}
 
@@ -471,15 +486,28 @@ func (s *TunnelService) Update(req TunnelUpdateReq) error {
 		if err != nil {
 			return err
 		}
+		// 入口节点一次查回（原循环内逐个 GetByID）
+		entryNodeIDs := make([]int64, 0)
+		for _, ct := range entries {
+			if repo.ChainTypeOf(ct) != 1 {
+				continue
+			}
+			entryNodeIDs = append(entryNodeIDs, ct.NodeID)
+		}
+		entryNodes, err := s.Node.ListByIDs(entryNodeIDs)
+		if err != nil {
+			return err
+		}
+		entryNodeMap := make(map[int64]*model.Node, len(entryNodes))
+		for i := range entryNodes {
+			entryNodeMap[entryNodes[i].ID] = &entryNodes[i]
+		}
 		var parts []string
 		for _, ct := range entries {
 			if repo.ChainTypeOf(ct) != 1 {
 				continue
 			}
-			n, err := s.Node.GetByID(ct.NodeID)
-			if err != nil {
-				return err
-			}
+			n := entryNodeMap[ct.NodeID]
 			if n == nil {
 				return fmt.Errorf("隧道节点数据错误，部分节点不存在")
 			}
@@ -561,18 +589,23 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 	}
 
 	nodes := make(map[int64]*model.Node)
+	uniqNodeIDs := make([]int64, 0, len(set))
 	for id := range set {
-		n, err := s.Node.GetByID(id)
-		if err != nil {
-			return err
-		}
-		if n == nil {
-			return fmt.Errorf("部分节点不存在")
-		}
+		uniqNodeIDs = append(uniqNodeIDs, id)
+	}
+	nodeList, err := s.Node.ListByIDs(uniqNodeIDs)
+	if err != nil {
+		return err
+	}
+	if len(nodeList) != len(set) {
+		return fmt.Errorf("部分节点不存在")
+	}
+	for i := range nodeList {
+		n := &nodeList[i]
 		if n.Status != 1 {
 			return fmt.Errorf("节点 %s 不在线，无法下发配置", n.Name)
 		}
-		nodes[id] = n
+		nodes[n.ID] = n
 	}
 
 	oldRecords, err := s.Chain.ListByTunnelID(tunnelID)
@@ -761,11 +794,83 @@ func (s *TunnelService) migrateForwardServices(
 		*failures = append(*failures, "查询转发失败: "+err.Error())
 		return
 	}
+	if len(forwards) == 0 {
+		return
+	}
 	fwSvc := NewForwardService(s.DB, s.Hub)
 
+	// 归属权限、已有端口一次查回（原逐转发各 1 次查询）
+	fwdIDs := make([]int64, 0, len(forwards))
 	for i := range forwards {
-		fw := &forwards[i]
-		ut, _ := s.UserTunn.GetByUserAndTunnel(fw.UserID, int(tunnel.ID))
+		fwdIDs = append(fwdIDs, forwards[i].ID)
+	}
+	uts, _ := s.UserTunn.ListByTunnelIDs([]int64{tunnel.ID})
+	utByUser := make(map[int]*model.UserTunnel, len(uts))
+	for i := range uts {
+		utByUser[uts[i].UserID] = &uts[i]
+	}
+	portsMap, _ := s.Port.ListByForwardIDs(fwdIDs)
+
+	// 新增节点可用端口一次算好（原逐转发 GetAvailablePorts 各 3 次查询）
+	addedList := make([]int64, 0, len(added))
+	for id := range added {
+		addedList = append(addedList, id)
+	}
+	sort.Slice(addedList, func(i, j int) bool { return addedList[i] < addedList[j] })
+	availByNode, availErr := s.batchAvailablePorts(addedList)
+
+	removedList := make([]int64, 0, len(removed))
+	for id := range removed {
+		removedList = append(removedList, id)
+	}
+	sort.Slice(removedList, func(i, j int) bool { return removedList[i] < removedList[j] })
+
+	// 本次已分配端口（串行分配时扣减，避免同批多条转发选到同一端口）
+	consumed := make(map[int64]map[int]struct{}, len(addedList))
+
+	type addTask struct {
+		fwIndex int
+		base    string
+		limiter *int
+		fp      *model.ForwardPort
+		node    *model.Node
+		paused  bool
+	}
+	var addTasks []addTask
+	// 移除：按节点批量删库，WS 删除并行尽力清理
+	if len(removedList) > 0 {
+		type delTask struct {
+			fwIndex int
+			nodeID  int64
+			names   []string
+		}
+		var delTasks []delTask
+		for fi := range forwards {
+			fw := &forwards[fi]
+			ut := utByUser[fw.UserID]
+			var utID int64
+			if ut != nil {
+				utID = int64(ut.ID)
+			}
+			base := gost.ForwardServiceBase(fw.ID, int64(fw.UserID), utID)
+			for _, nodeID := range removedList {
+				delTasks = append(delTasks, delTask{fwIndex: fi, nodeID: nodeID,
+					names: []string{base + "_tcp", base + "_udp"}})
+			}
+		}
+		_ = parallelEach(len(delTasks), batchConcurrency, func(i int) string {
+			t := delTasks[i]
+			deleteService(s.Hub, t.nodeID, t.names)
+			return ""
+		})
+		for _, nodeID := range removedList {
+			_ = s.Port.DeleteByNodeAndForwardIDs(nodeID, fwdIDs)
+		}
+	}
+
+	for fi := range forwards {
+		fw := &forwards[fi]
+		ut := utByUser[fw.UserID]
 		utID := int64(0)
 		var limiter *int
 		if ut != nil {
@@ -776,7 +881,7 @@ func (s *TunnelService) migrateForwardServices(
 
 		// preferred port
 		var preferredPort *int
-		existingPorts, _ := s.Port.ListByForwardID(fw.ID)
+		existingPorts := portsMap[fw.ID]
 		for _, fp := range existingPorts {
 			p := fp.Port
 			if preferredPort == nil {
@@ -788,12 +893,7 @@ func (s *TunnelService) migrateForwardServices(
 			}
 		}
 
-		for nodeID := range removed {
-			deleteService(s.Hub, nodeID, []string{base + "_tcp", base + "_udp"})
-			_ = s.Port.DeleteByForwardAndNode(fw.ID, nodeID)
-		}
-
-		for nodeID := range added {
+		for _, nodeID := range addedList {
 			n := nodes[nodeID]
 			if n == nil {
 				n2, _ := s.Node.GetByID(nodeID)
@@ -803,10 +903,19 @@ func (s *TunnelService) migrateForwardServices(
 				*failures = append(*failures, fmt.Sprintf("转发[%s]节点不存在", fw.Name))
 				continue
 			}
-			available, err := s.GetAvailablePorts(nodeID)
-			if err != nil {
-				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]分配端口失败: %s", fw.Name, n.Name, err.Error()))
+			available := availByNode[nodeID]
+			if msg, bad := availErr[nodeID]; bad {
+				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]分配端口失败: %s", fw.Name, n.Name, msg))
 				continue
+			}
+			if consumed[nodeID] != nil {
+				filtered := available[:0]
+				for _, p := range available {
+					if _, used := consumed[nodeID][p]; !used {
+						filtered = append(filtered, p)
+					}
+				}
+				available = filtered
 			}
 			if len(available) == 0 {
 				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]分配端口失败: 节点端口已满，无可用端口", fw.Name, n.Name))
@@ -826,14 +935,99 @@ func (s *TunnelService) migrateForwardServices(
 				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]保存端口失败: %s", fw.Name, n.Name, err.Error()))
 				continue
 			}
-			msg := fwSvc.addOrUpdateService(base, limiter, n, fw, fp, tunnel, "AddService")
-			if !gost.IsOK(msg) {
-				*failures = append(*failures, fmt.Sprintf("转发[%s]在节点[%s]创建失败: %s", fw.Name, n.Name, gost.NormalizeOK(msg)))
-			} else if fw.Status == 0 {
-				_ = s.Hub.SendMsg(nodeID, gost.PauseResumePayload(base), "PauseService")
+			if consumed[nodeID] == nil {
+				consumed[nodeID] = make(map[int]struct{})
 			}
+			consumed[nodeID][port] = struct{}{}
+			addTasks = append(addTasks, addTask{fwIndex: fi, base: base, limiter: limiter,
+				fp: fp, node: n, paused: fw.Status == 0})
 		}
 	}
+
+	// 新增服务下发限并发并行（DB 已串行落库，端口无竞争）
+	addFails := make([]string, len(addTasks))
+	_ = parallelEach(len(addTasks), batchConcurrency, func(i int) string {
+		t := addTasks[i]
+		fw := &forwards[t.fwIndex]
+		msg := fwSvc.addOrUpdateService(t.base, t.limiter, t.node, fw, t.fp, tunnel, "AddService")
+		if !gost.IsOK(msg) {
+			addFails[i] = fmt.Sprintf("转发[%s]在节点[%s]创建失败: %s", fw.Name, t.node.Name, gost.NormalizeOK(msg))
+			return addFails[i]
+		}
+		if t.paused {
+			_ = s.Hub.SendMsg(t.fp.NodeID, gost.PauseResumePayload(t.base), "PauseService")
+		}
+		return ""
+	})
+	for _, f := range addFails {
+		if f != "" {
+			*failures = append(*failures, f)
+		}
+	}
+}
+
+// batchAvailablePorts 一次算出多个节点的可用端口（对齐 GetAvailablePorts 逻辑）
+// 返回可用端口映射与计算失败的节点错误文案
+func (s *TunnelService) batchAvailablePorts(nodeIDs []int64) (map[int64][]int, map[int64]string) {
+	out := make(map[int64][]int, len(nodeIDs))
+	failed := make(map[int64]string)
+	if len(nodeIDs) == 0 {
+		return out, failed
+	}
+	nodes, err := s.Node.ListByIDs(nodeIDs)
+	if err != nil {
+		for _, id := range nodeIDs {
+			failed[id] = err.Error()
+		}
+		return out, failed
+	}
+	nodeMap := make(map[int64]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	cts, _ := s.Chain.ListByNodeIDs(nodeIDs)
+	usedByChain := make(map[int64]map[int]struct{})
+	for _, ct := range cts {
+		if ct.Port == nil {
+			continue
+		}
+		if usedByChain[ct.NodeID] == nil {
+			usedByChain[ct.NodeID] = make(map[int]struct{})
+		}
+		usedByChain[ct.NodeID][*ct.Port] = struct{}{}
+	}
+	fps, _ := s.Port.ListByNodeIDs(nodeIDs)
+	usedByForward := make(map[int64]map[int]struct{})
+	for _, fp := range fps {
+		if usedByForward[fp.NodeID] == nil {
+			usedByForward[fp.NodeID] = make(map[int]struct{})
+		}
+		usedByForward[fp.NodeID][fp.Port] = struct{}{}
+	}
+	for _, id := range nodeIDs {
+		n := nodeMap[id]
+		if n == nil {
+			failed[id] = "节点不存在"
+			continue
+		}
+		parsed, err := repo.ParsePorts(n.Port)
+		if err != nil {
+			failed[id] = err.Error()
+			continue
+		}
+		avail := make([]int, 0)
+		for _, p := range parsed {
+			if _, ok := usedByChain[id][p]; ok {
+				continue
+			}
+			if _, ok := usedByForward[id][p]; ok {
+				continue
+			}
+			avail = append(avail, p)
+		}
+		out[id] = avail
+	}
+	return out, failed
 }
 
 // ---- delete ----
@@ -942,26 +1136,56 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 	results := make([]DiagnosisResult, 0)
 	fwSvc := NewForwardService(s.DB, s.Hub)
 
+	// 诊断涉及的节点一次查回（替代循环内逐个 GetByID）
+	diagNodeSet := make(map[int64]struct{})
+	for _, ct := range chainTunnels {
+		diagNodeSet[ct.NodeID] = struct{}{}
+	}
+	diagNodeIDs := make([]int64, 0, len(diagNodeSet))
+	for id := range diagNodeSet {
+		diagNodeIDs = append(diagNodeIDs, id)
+	}
+	diagNodes, _ := s.Node.ListByIDs(diagNodeIDs)
+	diagNodeMap := make(map[int64]*model.Node, len(diagNodes))
+	for i := range diagNodes {
+		diagNodeMap[diagNodes[i].ID] = &diagNodes[i]
+	}
+
+	// 先按原顺序组装探测任务，再限并发执行 TcpPing（单次最长 10s，串行是主要耗时）
+	type pingTask struct {
+		node          *model.Node
+		targetIP      string
+		targetPort    int
+		description   string
+		fromChainType *int
+		fromInx       *int
+		toChainType   *int
+		toInx         *int
+	}
+	tasks := make([]pingTask, 0)
+	addTask := func(node *model.Node, ip string, port int, desc string, ft, fi, tt, ti *int) {
+		tasks = append(tasks, pingTask{node: node, targetIP: ip, targetPort: port, description: desc,
+			fromChainType: ft, fromInx: fi, toChainType: tt, toInx: ti})
+	}
+	intPtr := func(v int) *int { p := v; return &p }
+
 	if tunnel.Type == 1 {
 		for _, inNode := range entries {
-			n, _ := s.Node.GetByID(inNode.NodeID)
+			n := diagNodeMap[inNode.NodeID]
 			if n == nil {
 				continue
 			}
-			r := fwSvc.performTcpPing(n, "www.google.com", 443, "入口("+n.Name+")->外网")
-			ft := 1
-			r.FromChainType = &ft
-			results = append(results, r)
+			addTask(n, "www.google.com", 443, "入口("+n.Name+")->外网", intPtr(1), nil, nil, nil)
 		}
 	} else if tunnel.Type == 2 {
 		for _, inNode := range entries {
-			from, _ := s.Node.GetByID(inNode.NodeID)
+			from := diagNodeMap[inNode.NodeID]
 			if from == nil {
 				continue
 			}
 			if len(chains) > 0 {
 				for _, first := range chains[0] {
-					to, _ := s.Node.GetByID(first.NodeID)
+					to := diagNodeMap[first.NodeID]
 					if to == nil {
 						continue
 					}
@@ -969,19 +1193,15 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 					if first.Port != nil {
 						port = *first.Port
 					}
-					r := fwSvc.performTcpPing(from, to.ServerIP, port,
-						fmt.Sprintf("入口(%s)->第1跳(%s)", from.Name, to.Name))
-					ft, tt := 1, 2
-					r.FromChainType = &ft
-					r.ToChainType = &tt
-					r.ToInx = first.Inx
-					results = append(results, r)
+					addTask(from, to.ServerIP, port,
+						fmt.Sprintf("入口(%s)->第1跳(%s)", from.Name, to.Name),
+						intPtr(1), nil, intPtr(2), first.Inx)
 				}
 			} else {
 				// 根据入口的 ExitNodeIDs 过滤出口节点
 				targetOuts := filterExitsByEntry(outs, inNode)
 				for _, out := range targetOuts {
-					to, _ := s.Node.GetByID(out.NodeID)
+					to := diagNodeMap[out.NodeID]
 					if to == nil {
 						continue
 					}
@@ -989,25 +1209,22 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 					if out.Port != nil {
 						port = *out.Port
 					}
-					r := fwSvc.performTcpPing(from, to.ServerIP, port,
-						fmt.Sprintf("入口(%s)->出口(%s)", from.Name, to.Name))
-					ft, tt := 1, 3
-					r.FromChainType = &ft
-					r.ToChainType = &tt
-					results = append(results, r)
+					addTask(from, to.ServerIP, port,
+						fmt.Sprintf("入口(%s)->出口(%s)", from.Name, to.Name),
+						intPtr(1), nil, intPtr(3), nil)
 				}
 			}
 		}
 
 		for i := range chains {
 			for _, current := range chains[i] {
-				from, _ := s.Node.GetByID(current.NodeID)
+				from := diagNodeMap[current.NodeID]
 				if from == nil {
 					continue
 				}
 				if i+1 < len(chains) {
 					for _, next := range chains[i+1] {
-						to, _ := s.Node.GetByID(next.NodeID)
+						to := diagNodeMap[next.NodeID]
 						if to == nil {
 							continue
 						}
@@ -1015,18 +1232,13 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 						if next.Port != nil {
 							port = *next.Port
 						}
-						r := fwSvc.performTcpPing(from, to.ServerIP, port,
-							fmt.Sprintf("第%d跳(%s)->第%d跳(%s)", i+1, from.Name, i+2, to.Name))
-						ft, tt := 2, 2
-						r.FromChainType = &ft
-						r.FromInx = current.Inx
-						r.ToChainType = &tt
-						r.ToInx = next.Inx
-						results = append(results, r)
+						addTask(from, to.ServerIP, port,
+							fmt.Sprintf("第%d跳(%s)->第%d跳(%s)", i+1, from.Name, i+2, to.Name),
+							intPtr(2), current.Inx, intPtr(2), next.Inx)
 					}
 				} else {
 					for _, out := range outs {
-						to, _ := s.Node.GetByID(out.NodeID)
+						to := diagNodeMap[out.NodeID]
 						if to == nil {
 							continue
 						}
@@ -1034,26 +1246,36 @@ func (s *TunnelService) Diagnose(tunnelID int64) (map[string]any, error) {
 						if out.Port != nil {
 							port = *out.Port
 						}
-						r := fwSvc.performTcpPing(from, to.ServerIP, port,
-							fmt.Sprintf("第%d跳(%s)->出口(%s)", i+1, from.Name, to.Name))
-						ft, tt := 2, 3
-						r.FromChainType = &ft
-						r.FromInx = current.Inx
-						r.ToChainType = &tt
-						results = append(results, r)
+						addTask(from, to.ServerIP, port,
+							fmt.Sprintf("第%d跳(%s)->出口(%s)", i+1, from.Name, to.Name),
+							intPtr(2), current.Inx, intPtr(3), nil)
 					}
 				}
 			}
 		}
 
 		for _, out := range outs {
-			n, _ := s.Node.GetByID(out.NodeID)
+			n := diagNodeMap[out.NodeID]
 			if n == nil {
 				continue
 			}
-			r := fwSvc.performTcpPing(n, "www.google.com", 443, "出口("+n.Name+")->外网")
-			ft := 3
-			r.FromChainType = &ft
+			addTask(n, "www.google.com", 443, "出口("+n.Name+")->外网", intPtr(3), nil, nil, nil)
+		}
+	}
+
+	if len(tasks) > 0 {
+		pinged := make([]DiagnosisResult, len(tasks))
+		_ = parallelEach(len(tasks), 8, func(i int) string {
+			t := tasks[i]
+			pinged[i] = fwSvc.performTcpPing(t.node, t.targetIP, t.targetPort, t.description)
+			return ""
+		})
+		for i := range tasks {
+			r := pinged[i]
+			r.FromChainType = tasks[i].fromChainType
+			r.FromInx = tasks[i].fromInx
+			r.ToChainType = tasks[i].toChainType
+			r.ToInx = tasks[i].toInx
 			results = append(results, r)
 		}
 	}

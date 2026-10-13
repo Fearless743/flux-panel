@@ -3,6 +3,7 @@ package repo
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Fearless743/flux-panel/go-backend/internal/model"
@@ -112,6 +113,152 @@ func (r *ForwardRepo) UpdateInx(id int64, inx int) error {
 func (r *ForwardRepo) Delete(id int64) error {
 	_, err := r.DB.Exec(`DELETE FROM forward WHERE id=?`, id)
 	return err
+}
+
+// chunkInt64IDs 按 size 切分 ID 列表（避开 SQLite 变量数上限 999）
+func chunkInt64IDs(ids []int64, size int) [][]int64 {
+	if size <= 0 {
+		size = 500
+	}
+	out := make([][]int64, 0, (len(ids)+size-1)/size)
+	for i := 0; i < len(ids); i += size {
+		end := i + size
+		if end > len(ids) {
+			end = len(ids)
+		}
+		out = append(out, ids[i:end])
+	}
+	return out
+}
+
+// ListByIDs 批量按 ID 查询转发（批量操作预取，避免 N+1）
+func (r *ForwardRepo) ListByIDs(ids []int64) ([]model.Forward, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var out []model.Forward
+	for _, chunk := range chunkInt64IDs(ids, 500) {
+		q, args, err := sqlx.In(`SELECT id, user_id, user_name, name, tunnel_id, remote_addr, strategy,
+			in_flow, out_flow, created_time, updated_time, status, inx FROM forward WHERE id IN (?)`, chunk)
+		if err != nil {
+			return nil, err
+		}
+		q = r.DB.Rebind(q)
+		var list []model.Forward
+		if err := r.DB.Select(&list, q, args...); err != nil {
+			return nil, err
+		}
+		out = append(out, list...)
+	}
+	return out, nil
+}
+
+// ListTunnelsByIDs 批量查询隧道（用于 N+1 优化）
+func (r *ForwardRepo) ListTunnelsByIDs(ids []int64) ([]model.Tunnel, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT id, name, traffic_ratio, type, protocol, flow,
+		created_time, updated_time, status, in_ip FROM tunnel WHERE id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.Tunnel
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// ListNodesByIDs 批量查询节点（用于 N+1 优化）
+func (r *ForwardRepo) ListNodesByIDs(ids []int64) ([]model.Node, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT id, name, secret, server_ip, port, interface_name, version,
+		http, tls, socks, created_time, updated_time, status, tcp_listen_addr, udp_listen_addr
+		FROM node WHERE id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.Node
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// DeleteByIDs 批量删除转发（分片单语句 IN，替代逐条 Delete）
+func (r *ForwardRepo) DeleteByIDs(ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, chunk := range chunkInt64IDs(ids, 500) {
+		q, args, err := sqlx.In(`DELETE FROM forward WHERE id IN (?)`, chunk)
+		if err != nil {
+			return err
+		}
+		q = r.DB.Rebind(q)
+		if _, err := r.DB.Exec(q, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateStatusByIDs 批量更新转发状态（分片单语句 IN，替代逐条 UpdateStatus）
+func (r *ForwardRepo) UpdateStatusByIDs(ids []int64, status int, updatedTime int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, chunk := range chunkInt64IDs(ids, 500) {
+		q, args, err := sqlx.In(`UPDATE forward SET status=?, updated_time=? WHERE id IN (?)`, status, updatedTime, chunk)
+		if err != nil {
+			return err
+		}
+		q = r.DB.Rebind(q)
+		if _, err := r.DB.Exec(q, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateInxBatch 单语句 CASE WHEN 批量更新排序（替代逐条 UpdateInx）
+func (r *ForwardRepo) UpdateInxBatch(inxByID map[int64]int) error {
+	if len(inxByID) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(inxByID))
+	for id := range inxByID {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	// 每行占 3 个变量（WHEN/THEN/IN），分片 250 → 750 变量 < 999 上限
+	for _, chunk := range chunkInt64IDs(ids, 250) {
+		var sb strings.Builder
+		args := make([]any, 0, len(chunk)*3)
+		sb.WriteString(`UPDATE forward SET inx = CASE id `)
+		for _, id := range chunk {
+			sb.WriteString(`WHEN ? THEN ? `)
+			args = append(args, id, inxByID[id])
+		}
+		sb.WriteString(`END WHERE id IN (`)
+		for i, id := range chunk {
+			if i > 0 {
+				sb.WriteString(`,`)
+			}
+			sb.WriteString(`?`)
+			args = append(args, id)
+		}
+		sb.WriteString(`)`)
+		if _, err := r.DB.Exec(sb.String(), args...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *ForwardRepo) ListByTunnelID(tunnelID int64) ([]model.Forward, error) {
@@ -248,6 +395,24 @@ func (r *ForwardRepo) ListChainTunnelsByNode(nodeID int64) ([]model.ChainTunnel,
 	err := r.DB.Select(&list, `SELECT id, tunnel_id, chain_type, node_id, port, strategy, inx, protocol
 		FROM chain_tunnel WHERE node_id=?`, nodeID)
 	return list, err
+}
+
+// ListEntriesByTunnelIDs 批量查询多个隧道的入口节点（批量操作预取，避免 N+1）
+func (r *ForwardRepo) ListEntriesByTunnelIDs(tunnelIDs []int64) ([]model.ChainTunnel, error) {
+	if len(tunnelIDs) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT id, tunnel_id, chain_type, node_id, port, strategy, inx, protocol
+		FROM chain_tunnel WHERE tunnel_id IN (?) AND chain_type = '1' ORDER BY id`, tunnelIDs)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.ChainTunnel
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // ParsePorts 解析节点端口配置："1000-2000,3000"
