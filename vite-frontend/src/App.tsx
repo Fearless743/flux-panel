@@ -7,6 +7,7 @@ import DashboardPage from "@/pages/dashboard";
 import ForwardPage from "@/pages/forward";
 import TunnelPage from "@/pages/tunnel";
 import NodePage from "@/pages/node";
+import NodeStatusPage from "@/pages/node-status";
 import UserPage from "@/pages/user";
 import ProfilePage from "@/pages/profile";
 import LimitPage from "@/pages/limit";
@@ -186,6 +187,14 @@ function App() {
         element={
           <ProtectedRoute>
             <NodePage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/node-status" 
+        element={
+          <ProtectedRoute>
+            <NodeStatusPage />
           </ProtectedRoute>
         } 
       />
