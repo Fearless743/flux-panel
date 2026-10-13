@@ -16,24 +16,24 @@ func NewUserTunnelRepo(db *sqlx.DB) *UserTunnelRepo {
 }
 
 type UserTunnelDetail struct {
-	ID            int     `db:"id" json:"id"`
-	UserID        int     `db:"user_id" json:"userId"`
-	TunnelID      int     `db:"tunnel_id" json:"tunnelId"`
-	Flow          int64   `db:"flow" json:"flow"`
-	InFlow        int64   `db:"in_flow" json:"inFlow"`
-	OutFlow       int64   `db:"out_flow" json:"outFlow"`
-	Num           int     `db:"num" json:"num"`
-	FlowResetTime int64   `db:"flow_reset_time" json:"flowResetTime"`
-	ExpTime       int64   `db:"exp_time" json:"expTime"`
-	SpeedID       *int    `db:"speed_id" json:"speedId"`
-	Status        int     `db:"status" json:"status"`
-	TunnelName    *string `db:"tunnel_name" json:"tunnelName"`
-	TunnelFlow    *int    `db:"tunnel_flow" json:"tunnelFlow"`
-	InIP          *string `db:"in_ip" json:"inIp"`
-	Type          *int    `db:"type" json:"type"`
-	Protocol      *string `db:"protocol" json:"protocol"`
+	ID             int     `db:"id" json:"id"`
+	UserID         int     `db:"user_id" json:"userId"`
+	TunnelID       int     `db:"tunnel_id" json:"tunnelId"`
+	Flow           int64   `db:"flow" json:"flow"`
+	InFlow         int64   `db:"in_flow" json:"inFlow"`
+	OutFlow        int64   `db:"out_flow" json:"outFlow"`
+	Num            int     `db:"num" json:"num"`
+	FlowResetTime  int64   `db:"flow_reset_time" json:"flowResetTime"`
+	ExpTime        int64   `db:"exp_time" json:"expTime"`
+	SpeedID        *int    `db:"speed_id" json:"speedId"`
+	Status         int     `db:"status" json:"status"`
+	TunnelName     *string `db:"tunnel_name" json:"tunnelName"`
+	TunnelFlow     *int    `db:"tunnel_flow" json:"tunnelFlow"`
+	InIP           *string `db:"in_ip" json:"inIp"`
+	Type           *int    `db:"type" json:"type"`
+	Protocol       *string `db:"protocol" json:"protocol"`
 	SpeedLimitName *string `db:"speed_limit_name" json:"speedLimitName"`
-	Speed         *int    `db:"speed" json:"speed"`
+	Speed          *int    `db:"speed" json:"speed"`
 }
 
 func (r *UserTunnelRepo) CountByUserAndTunnel(userID, tunnelID int) (int, error) {
@@ -64,6 +64,48 @@ func (r *UserTunnelRepo) GetByUserAndTunnel(userID, tunnelID int) (*model.UserTu
 		return nil, err
 	}
 	return &ut, nil
+}
+
+// ListByTunnelIDs 批量查询多个隧道下的用户权限（批量操作预取，避免 N+1）
+func (r *UserTunnelRepo) ListByTunnelIDs(tunnelIDs []int64) ([]model.UserTunnel, error) {
+	if len(tunnelIDs) == 0 {
+		return nil, nil
+	}
+	var out []model.UserTunnel
+	for _, chunk := range chunkInt64IDs(tunnelIDs, 500) {
+		q, args, err := sqlx.In(`SELECT * FROM user_tunnel WHERE tunnel_id IN (?)`, chunk)
+		if err != nil {
+			return nil, err
+		}
+		q = r.DB.Rebind(q)
+		var list []model.UserTunnel
+		if err := r.DB.Select(&list, q, args...); err != nil {
+			return nil, err
+		}
+		out = append(out, list...)
+	}
+	return out, nil
+}
+
+// ListByUserAndTunnelIDs 批量查询某用户在多个隧道上的权限（批量操作预取）
+func (r *UserTunnelRepo) ListByUserAndTunnelIDs(userID int64, tunnelIDs []int64) ([]model.UserTunnel, error) {
+	if len(tunnelIDs) == 0 {
+		return nil, nil
+	}
+	var out []model.UserTunnel
+	for _, chunk := range chunkInt64IDs(tunnelIDs, 500) {
+		q, args, err := sqlx.In(`SELECT * FROM user_tunnel WHERE user_id = ? AND tunnel_id IN (?)`, userID, chunk)
+		if err != nil {
+			return nil, err
+		}
+		q = r.DB.Rebind(q)
+		var list []model.UserTunnel
+		if err := r.DB.Select(&list, q, args...); err != nil {
+			return nil, err
+		}
+		out = append(out, list...)
+	}
+	return out, nil
 }
 
 func (r *UserTunnelRepo) ListByUserID(userID int) ([]model.UserTunnel, error) {

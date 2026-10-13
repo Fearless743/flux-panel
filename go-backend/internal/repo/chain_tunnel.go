@@ -64,6 +64,40 @@ func (r *ChainTunnelRepo) ListByNodeID(nodeID int64) ([]model.ChainTunnel, error
 	return list, err
 }
 
+// ListEntriesByTunnelIDs 批量查询多个隧道的入口节点（批量操作预取，避免 N+1）
+func (r *ChainTunnelRepo) ListEntriesByTunnelIDs(tunnelIDs []int64) ([]model.ChainTunnel, error) {
+	if len(tunnelIDs) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT * FROM chain_tunnel WHERE tunnel_id IN (?) AND chain_type = '1' ORDER BY id`, tunnelIDs)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.ChainTunnel
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// ListByNodeIDs 批量查询多个节点的链隧道（N+1 优化）
+func (r *ChainTunnelRepo) ListByNodeIDs(nodeIDs []int64) ([]model.ChainTunnel, error) {
+	if len(nodeIDs) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT * FROM chain_tunnel WHERE node_id IN (?)`, nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	q = r.DB.Rebind(q)
+	var list []model.ChainTunnel
+	if err := r.DB.Select(&list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *ChainTunnelRepo) ListByNodeIDWithPort(nodeID int64) ([]model.ChainTunnel, error) {
 	var list []model.ChainTunnel
 	err := r.DB.Select(&list, `SELECT * FROM chain_tunnel WHERE node_id = ? AND port IS NOT NULL`, nodeID)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,24 +16,27 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// 批量操作并发度：受节点 WS 往返（最长 10s）主导，并发可显著缩短总耗时
-const batchConcurrency = 8
+// 批量操作并发度：受节点 WS 往返（最长 10s）主导，IO 等待期间不占 DB 连接，
+// 提高并发可显著缩短批量删除/暂停/恢复/迁移的总耗时
+const batchConcurrency = 16
 
 const forwardBytesToGB = 1024 * 1024 * 1024
 
 type ForwardService struct {
-	DB   *sqlx.DB
-	Hub  *ws.Hub
-	Repo *repo.ForwardRepo
-	Port *repo.ForwardPortRepo
+	DB       *sqlx.DB
+	Hub      *ws.Hub
+	Repo     *repo.ForwardRepo
+	Port     *repo.ForwardPortRepo
+	UserTunn *repo.UserTunnelRepo
 }
 
 func NewForwardService(db *sqlx.DB, hub *ws.Hub) *ForwardService {
 	return &ForwardService{
-		DB:   db,
-		Hub:  hub,
-		Repo: repo.NewForwardRepo(db),
-		Port: repo.NewForwardPortRepo(db),
+		DB:       db,
+		Hub:      hub,
+		Repo:     repo.NewForwardRepo(db),
+		Port:     repo.NewForwardPortRepo(db),
+		UserTunn: repo.NewUserTunnelRepo(db),
 	}
 }
 
@@ -43,21 +47,21 @@ type CurrentUser struct {
 }
 
 type ForwardCreateReq struct {
-	Name       string  `json:"name"`
-	TunnelID   int     `json:"tunnelId"`
-	RemoteAddr string  `json:"remoteAddr"`
-	Strategy   string  `json:"strategy"`
-	InPort     *int    `json:"inPort"`
+	Name       string `json:"name"`
+	TunnelID   int    `json:"tunnelId"`
+	RemoteAddr string `json:"remoteAddr"`
+	Strategy   string `json:"strategy"`
+	InPort     *int   `json:"inPort"`
 }
 
 type ForwardUpdateReq struct {
-	ID         int64   `json:"id"`
-	UserID     int     `json:"userId"`
-	Name       string  `json:"name"`
-	TunnelID   *int    `json:"tunnelId"`
-	RemoteAddr string  `json:"remoteAddr"`
-	Strategy   string  `json:"strategy"`
-	InPort     *int    `json:"inPort"`
+	ID         int64  `json:"id"`
+	UserID     int    `json:"userId"`
+	Name       string `json:"name"`
+	TunnelID   *int   `json:"tunnelId"`
+	RemoteAddr string `json:"remoteAddr"`
+	Strategy   string `json:"strategy"`
+	InPort     *int   `json:"inPort"`
 }
 
 type BatchForwardReq struct {
@@ -81,20 +85,20 @@ type userPermissionResult struct {
 }
 
 type DiagnosisResult struct {
-	NodeID        int64    `json:"nodeId"`
-	NodeName      string   `json:"nodeName"`
-	TargetIP      string   `json:"targetIp"`
-	TargetPort    int      `json:"targetPort"`
-	Description   string   `json:"description"`
-	Success       bool     `json:"success"`
-	Message       string   `json:"message"`
-	AverageTime   float64  `json:"averageTime"`
-	PacketLoss    float64  `json:"packetLoss"`
-	Timestamp     int64    `json:"timestamp"`
-	FromChainType *int     `json:"fromChainType,omitempty"`
-	FromInx       *int     `json:"fromInx,omitempty"`
-	ToChainType   *int     `json:"toChainType,omitempty"`
-	ToInx         *int     `json:"toInx,omitempty"`
+	NodeID        int64   `json:"nodeId"`
+	NodeName      string  `json:"nodeName"`
+	TargetIP      string  `json:"targetIp"`
+	TargetPort    int     `json:"targetPort"`
+	Description   string  `json:"description"`
+	Success       bool    `json:"success"`
+	Message       string  `json:"message"`
+	AverageTime   float64 `json:"averageTime"`
+	PacketLoss    float64 `json:"packetLoss"`
+	Timestamp     int64   `json:"timestamp"`
+	FromChainType *int    `json:"fromChainType,omitempty"`
+	FromInx       *int    `json:"fromInx,omitempty"`
+	ToChainType   *int    `json:"toChainType,omitempty"`
+	ToInx         *int    `json:"toInx,omitempty"`
 }
 
 // ---- list ----
@@ -114,10 +118,132 @@ func (s *ForwardService) List(user CurrentUser) ([]repo.ForwardWithTunnel, error
 		list = []repo.ForwardWithTunnel{}
 	}
 
+	if len(list) > 0 {
+		if err := s.FillInIPBatch(list); err != nil {
+			return nil, err
+		}
+	}
+	return list, nil
+}
+
+// FillInIPBatch 批量填充转发列表的 inIp / inPort。
+// 原逐条 fillInIP 每条转发 2 次查询 + 每端口 1 次节点查询（2N+M+...）；
+// 现固定 3 条语句（隧道/端口/节点各一次），内存 map 组装。预取失败时回落
+// 逐条路径，保证错误语义不变。
+func (s *ForwardService) FillInIPBatch(list []repo.ForwardWithTunnel) error {
+	tunnelIDSet := make(map[int64]struct{}, len(list))
+	forwardIDs := make([]int64, 0, len(list))
+	for _, f := range list {
+		tunnelIDSet[int64(f.TunnelID)] = struct{}{}
+		forwardIDs = append(forwardIDs, f.ID)
+	}
+	tunnelIDs := make([]int64, 0, len(tunnelIDSet))
+	for id := range tunnelIDSet {
+		tunnelIDs = append(tunnelIDs, id)
+	}
+	tunnels, err := s.Repo.ListTunnelsByIDs(tunnelIDs)
+	if err != nil {
+		return s.fillInIPLegacy(list)
+	}
+	portsMap, err := s.Port.ListByForwardIDs(forwardIDs)
+	if err != nil {
+		return s.fillInIPLegacy(list)
+	}
+	nodeIDSet := make(map[int64]struct{})
+	for _, fps := range portsMap {
+		for _, fp := range fps {
+			nodeIDSet[fp.NodeID] = struct{}{}
+		}
+	}
+	nodeIDs := make([]int64, 0, len(nodeIDSet))
+	for id := range nodeIDSet {
+		nodeIDs = append(nodeIDs, id)
+	}
+	nodes, err := s.Repo.ListNodesByIDs(nodeIDs)
+	if err != nil {
+		return s.fillInIPLegacy(list)
+	}
+	tunnelMap := make(map[int64]*model.Tunnel, len(tunnels))
+	for i := range tunnels {
+		tunnelMap[tunnels[i].ID] = &tunnels[i]
+	}
+	nodeMap := make(map[int64]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	for i := range list {
+		s.fillInIPLocal(&list[i], tunnelMap, portsMap, nodeMap)
+	}
+	return nil
+}
+
+// fillInIPLegacy 逐条回填（预取失败时的回落路径，与原 List 行为一致）
+func (s *ForwardService) fillInIPLegacy(list []repo.ForwardWithTunnel) error {
 	for i := range list {
 		s.fillInIP(&list[i])
 	}
-	return list, nil
+	return nil
+}
+
+func (s *ForwardService) fillInIPLocal(f *repo.ForwardWithTunnel,
+	tunnelMap map[int64]*model.Tunnel,
+	portsMap map[int64][]model.ForwardPort,
+	nodeMap map[int64]*model.Node,
+) {
+	tunnel := tunnelMap[int64(f.TunnelID)]
+	ports := portsMap[f.ID]
+	if tunnel == nil || len(ports) == 0 {
+		return
+	}
+
+	useTunnelInIP := tunnel.InIP != nil && strings.TrimSpace(*tunnel.InIP) != ""
+	ipPortSet := make([]string, 0)
+	seen := make(map[string]struct{})
+
+	if useTunnelInIP {
+		ipList := make([]string, 0)
+		for _, ip := range strings.Split(*tunnel.InIP, ",") {
+			ip = strings.TrimSpace(ip)
+			if ip != "" {
+				ipList = append(ipList, ip)
+			}
+		}
+		// distinct ips
+		uniqIP := uniqueStrings(ipList)
+		uniqPorts := uniqueInts(portsToInts(ports))
+		for _, ip := range uniqIP {
+			for _, p := range uniqPorts {
+				key := fmt.Sprintf("%s:%d", ip, p)
+				if _, ok := seen[key]; !ok {
+					seen[key] = struct{}{}
+					ipPortSet = append(ipPortSet, key)
+				}
+			}
+		}
+		if len(uniqPorts) > 0 {
+			p := uniqPorts[0]
+			f.InPort = &p
+		}
+	} else {
+		for _, fp := range ports {
+			node := nodeMap[fp.NodeID]
+			if node == nil || node.ServerIP == "" {
+				continue
+			}
+			key := fmt.Sprintf("%s:%d", node.ServerIP, fp.Port)
+			if _, ok := seen[key]; !ok {
+				seen[key] = struct{}{}
+				ipPortSet = append(ipPortSet, key)
+			}
+		}
+		if len(ports) > 0 {
+			p := ports[0].Port
+			f.InPort = &p
+		}
+	}
+	if len(ipPortSet) > 0 {
+		f.InIP = strings.Join(ipPortSet, ",")
+	}
 }
 
 func (s *ForwardService) fillInIP(f *repo.ForwardWithTunnel) {
@@ -742,12 +868,54 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 		chainNodesList = append(chainNodesList, chainNodesMap[k])
 	}
 
+	// 诊断涉及的节点一次查回（替代循环内逐个 GetNode）
+	nodeIDSet := make(map[int64]struct{})
+	for _, ct := range inNodes {
+		nodeIDSet[ct.NodeID] = struct{}{}
+	}
+	for _, hop := range chainNodesList {
+		for _, ct := range hop {
+			nodeIDSet[ct.NodeID] = struct{}{}
+		}
+	}
+	for _, ct := range outNodes {
+		nodeIDSet[ct.NodeID] = struct{}{}
+	}
+	nodeIDs := make([]int64, 0, len(nodeIDSet))
+	for id := range nodeIDSet {
+		nodeIDs = append(nodeIDs, id)
+	}
+	diagNodes, _ := s.Repo.ListNodesByIDs(nodeIDs)
+	nodeMap := make(map[int64]*model.Node, len(diagNodes))
+	for i := range diagNodes {
+		cp := diagNodes[i]
+		nodeMap[diagNodes[i].ID] = &cp
+	}
+
+	// 先按原顺序组装探测任务，再限并发执行 TcpPing（单次最长 10s，串行是主要耗时）
+	type pingTask struct {
+		node          *model.Node
+		targetIP      string
+		targetPort    int
+		description   string
+		fromChainType *int
+		fromInx       *int
+		toChainType   *int
+		toInx         *int
+	}
+	tasks := make([]pingTask, 0)
+	addTask := func(node *model.Node, ip string, port int, desc string, ft, fi, tt, ti *int) {
+		tasks = append(tasks, pingTask{node: node, targetIP: ip, targetPort: port, description: desc,
+			fromChainType: ft, fromInx: fi, toChainType: tt, toInx: ti})
+	}
+	intPtr := func(v int) *int { p := v; return &p }
+
 	results := make([]DiagnosisResult, 0)
 	remoteAddresses := strings.Split(forward.RemoteAddr, ",")
 
 	if tunnel.Type == 1 {
 		for _, inNode := range inNodes {
-			node, _ := s.Repo.GetNode(inNode.NodeID)
+			node := nodeMap[inNode.NodeID]
 			if node == nil {
 				continue
 			}
@@ -756,93 +924,75 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 				targetIP := extractIPFromAddress(ra)
 				targetPort := extractPortFromAddress(ra)
 				if targetIP != "" && targetPort != -1 {
-					r := s.performTcpPing(node, targetIP, targetPort, "入口("+node.Name+")->目标("+ra+")")
-					ft := 1
-					r.FromChainType = &ft
-					results = append(results, r)
+					addTask(node, targetIP, targetPort, "入口("+node.Name+")->目标("+ra+")",
+						intPtr(1), nil, nil, nil)
 				}
 			}
 		}
 	} else if tunnel.Type == 2 {
 		// 入口 -> 第一跳/出口
 		for _, inNode := range inNodes {
-			fromNode, _ := s.Repo.GetNode(inNode.NodeID)
+			fromNode := nodeMap[inNode.NodeID]
 			if fromNode == nil {
 				continue
 			}
 			if len(chainNodesList) > 0 {
 				for _, first := range chainNodesList[0] {
-					toNode, _ := s.Repo.GetNode(first.NodeID)
+					toNode := nodeMap[first.NodeID]
 					if toNode == nil {
 						continue
 					}
 					port := derefInt(first.Port)
-					r := s.performTcpPing(fromNode, toNode.ServerIP, port, "入口("+fromNode.Name+")->第1跳("+toNode.Name+")")
-					ft, tt := 1, 2
-					r.FromChainType = &ft
-					r.ToChainType = &tt
-					r.ToInx = first.Inx
-					results = append(results, r)
+					addTask(fromNode, toNode.ServerIP, port, "入口("+fromNode.Name+")->第1跳("+toNode.Name+")",
+						intPtr(1), nil, intPtr(2), first.Inx)
 				}
 			} else if len(outNodes) > 0 {
 				for _, out := range outNodes {
-					toNode, _ := s.Repo.GetNode(out.NodeID)
+					toNode := nodeMap[out.NodeID]
 					if toNode == nil {
 						continue
 					}
 					port := derefInt(out.Port)
-					r := s.performTcpPing(fromNode, toNode.ServerIP, port, "入口("+fromNode.Name+")->出口("+toNode.Name+")")
-					ft, tt := 1, 3
-					r.FromChainType = &ft
-					r.ToChainType = &tt
-					results = append(results, r)
+					addTask(fromNode, toNode.ServerIP, port, "入口("+fromNode.Name+")->出口("+toNode.Name+")",
+						intPtr(1), nil, intPtr(3), nil)
 				}
 			}
 		}
 		// 链路
 		for i, currentHop := range chainNodesList {
 			for _, current := range currentHop {
-				fromNode, _ := s.Repo.GetNode(current.NodeID)
+				fromNode := nodeMap[current.NodeID]
 				if fromNode == nil {
 					continue
 				}
 				if i+1 < len(chainNodesList) {
 					for _, next := range chainNodesList[i+1] {
-						toNode, _ := s.Repo.GetNode(next.NodeID)
+						toNode := nodeMap[next.NodeID]
 						if toNode == nil {
 							continue
 						}
 						port := derefInt(next.Port)
 						desc := fmt.Sprintf("第%d跳(%s)->第%d跳(%s)", i+1, fromNode.Name, i+2, toNode.Name)
-						r := s.performTcpPing(fromNode, toNode.ServerIP, port, desc)
-						ft, tt := 2, 2
-						r.FromChainType = &ft
-						r.FromInx = current.Inx
-						r.ToChainType = &tt
-						r.ToInx = next.Inx
-						results = append(results, r)
+						addTask(fromNode, toNode.ServerIP, port, desc,
+							intPtr(2), current.Inx, intPtr(2), next.Inx)
 					}
 				} else if len(outNodes) > 0 {
 					for _, out := range outNodes {
-						toNode, _ := s.Repo.GetNode(out.NodeID)
+						toNode := nodeMap[out.NodeID]
 						if toNode == nil {
 							continue
 						}
 						port := derefInt(out.Port)
 						desc := fmt.Sprintf("第%d跳(%s)->出口(%s)", i+1, fromNode.Name, toNode.Name)
-						r := s.performTcpPing(fromNode, toNode.ServerIP, port, desc)
-						ft, tt := 2, 3
-						r.FromChainType = &ft
-						r.FromInx = current.Inx
-						r.ToChainType = &tt
-						results = append(results, r)
+						addTask(fromNode, toNode.ServerIP, port, desc,
+							intPtr(2), current.Inx, intPtr(3), nil)
 					}
 				}
 			}
 		}
 		// 出口 -> 目标
 		for _, out := range outNodes {
-			node, _ := s.Repo.GetNode(out.NodeID)
+			node := nodeMap[out.NodeID]
 			if node == nil {
 				continue
 			}
@@ -851,12 +1001,27 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 				targetIP := extractIPFromAddress(ra)
 				targetPort := extractPortFromAddress(ra)
 				if targetIP != "" && targetPort != -1 {
-					r := s.performTcpPing(node, targetIP, targetPort, "出口("+node.Name+")->目标("+ra+")")
-					ft := 3
-					r.FromChainType = &ft
-					results = append(results, r)
+					addTask(node, targetIP, targetPort, "出口("+node.Name+")->目标("+ra+")",
+						intPtr(3), nil, nil, nil)
 				}
 			}
+		}
+	}
+
+	if len(tasks) > 0 {
+		pinged := make([]DiagnosisResult, len(tasks))
+		_ = parallelEach(len(tasks), 8, func(i int) string {
+			t := tasks[i]
+			pinged[i] = s.performTcpPing(t.node, t.targetIP, t.targetPort, t.description)
+			return ""
+		})
+		for i := range tasks {
+			r := pinged[i]
+			r.FromChainType = tasks[i].fromChainType
+			r.FromInx = tasks[i].fromInx
+			r.ToChainType = tasks[i].toChainType
+			r.ToInx = tasks[i].toInx
+			results = append(results, r)
 		}
 	}
 
@@ -947,15 +1112,91 @@ func (s *ForwardService) UpdateOrder(user CurrentUser, items []OrderItem) error 
 			return fmt.Errorf("只能更新自己的转发排序")
 		}
 	}
+	// 单语句 CASE WHEN 批量更新，替代逐条 UpdateInx（N 次往返 → 1 次）
+	inxByID := make(map[int64]int, len(items))
 	for _, it := range items {
-		if err := s.Repo.UpdateInx(it.ID, it.Inx); err != nil {
-			return err
+		inxByID[it.ID] = it.Inx
+	}
+	return s.Repo.UpdateInxBatch(inxByID)
+}
+
+// ---- batch ----
+
+// utKey 归属权限映射键："userID:tunnelID"
+func utKey(userID, tunnelID int) string {
+	return fmt.Sprintf("%d:%d", userID, tunnelID)
+}
+
+// batchLoadForwards 一次查询取回 ids 对应的转发并按权限过滤（替代逐条 GetByID）。
+// 不存在或无权限的 ID 不在返回 map 中，调用方按原单条语义补错误文案。
+func (s *ForwardService) batchLoadForwards(user CurrentUser, ids []int64) (map[int64]*model.Forward, error) {
+	list, err := s.Repo.ListByIDs(dedupInt64s(ids))
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]*model.Forward, len(list))
+	for i := range list {
+		f := list[i]
+		if user.RoleID != 0 && int64(f.UserID) != user.UserID {
+			continue
+		}
+		cp := f
+		out[f.ID] = &cp
+	}
+	return out, nil
+}
+
+// batchTunnelMap 一次查询取回多个隧道
+func (s *ForwardService) batchTunnelMap(tunnelIDs []int64) (map[int64]*model.Tunnel, error) {
+	list, err := s.Repo.ListTunnelsByIDs(tunnelIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]*model.Tunnel, len(list))
+	for i := range list {
+		t := list[i]
+		out[t.ID] = &t
+	}
+	return out, nil
+}
+
+// distinctTargetTunnelIDs 按顺序收集目标转发涉及的去重隧道 ID
+func distinctTargetTunnelIDs(targets []*model.Forward) []int64 {
+	seen := make(map[int]struct{}, len(targets))
+	out := make([]int64, 0, len(targets))
+	for _, f := range targets {
+		if _, dup := seen[f.TunnelID]; !dup {
+			seen[f.TunnelID] = struct{}{}
+			out = append(out, int64(f.TunnelID))
+		}
+	}
+	return out
+}
+
+// assembleBatchMsg 按输入顺序拼装批量结果文案（与原 runBatch 格式一致）
+func assembleBatchMsg(okVerb string, ids []int64, errByID map[int64]string, success int) string {
+	var errs []string
+	for _, id := range ids {
+		if msg, ok := errByID[id]; ok {
+			errs = append(errs, fmt.Sprintf("ID-%d: %s", id, msg))
+		}
+	}
+	msg := fmt.Sprintf("成功%s%d个转发", okVerb, success)
+	if len(errs) > 0 {
+		msg += fmt.Sprintf("，失败%d个: %s", len(errs), strings.Join(errs, "; "))
+	}
+	return msg
+}
+
+// findForwardPort 在预取的端口列表中找某节点的记录
+func findForwardPort(fps []model.ForwardPort, nodeID int64) *model.ForwardPort {
+	for i := range fps {
+		if fps[i].NodeID == nodeID {
+			return &fps[i]
 		}
 	}
 	return nil
 }
-
-// ---- batch ----
 
 // runBatch 对 ids 有限并发执行 fn，汇总成功/失败文案（与原先串行语义一致）。
 func (s *ForwardService) runBatch(ids []int64, emptyMsg, okVerb string, fn func(id int64) error) (string, bool) {
@@ -1015,41 +1256,584 @@ func (s *ForwardService) runBatch(ids []int64, emptyMsg, okVerb string, fn func(
 }
 
 func (s *ForwardService) BatchDelete(user CurrentUser, ids []int64) (string, bool) {
+	if len(ids) == 0 {
+		return "请选择要删除的转发", false
+	}
+	if msg, ok, fallback := s.batchDeleteFast(user, ids); !fallback {
+		return msg, ok
+	}
 	return s.runBatch(ids, "请选择要删除的转发", "删除", func(id int64) error {
 		return s.Delete(user, id)
 	})
 }
 
-func (s *ForwardService) BatchPause(user CurrentUser, ids []int64) (string, bool) {
-	return s.runBatch(ids, "请选择要暂停的转发", "暂停", func(id int64) error {
-		return s.Pause(user, id)
+// batchDeleteFast 批量删除快路径：一次预取校验 + 按节点合并下发 + 两条语句删库。
+// 原逐条路径每条转发约 9 次 DB 查询 + E 次 WS 往返；快路径固定约 8 次查询、
+// 每节点 1 次 WS、下发失败自动回落逐条补发。fallback=true 表示预取阶段 DB
+// 出错，调用方回落逐条路径以保留原错误语义。
+func (s *ForwardService) batchDeleteFast(user CurrentUser, ids []int64) (string, bool, bool) {
+	uniq := dedupInt64s(ids)
+	forwards, err := s.batchLoadForwards(user, uniq)
+	if err != nil {
+		return "", false, true
+	}
+	errByID := make(map[int64]string, len(uniq))
+	var targets []*model.Forward
+	for _, id := range uniq {
+		f, ok := forwards[id]
+		if !ok {
+			errByID[id] = "转发不存在"
+			continue
+		}
+		targets = append(targets, f)
+	}
+	if len(targets) == 0 {
+		return assembleBatchMsg("删除", uniq, errByID, 0), false, false
+	}
+
+	now := time.Now().UnixMilli()
+	// 操作者信息只查一次（原逐条 checkUserPermissions 的用户部分）。
+	// 注意单条 Delete 的检查顺序是存在性→隧道→权限：隧道缺失优先于操作者异常，
+	// 因此这里只预取、把文案判定放到下面逐条循环里以保持相同优先级。
+	var opUser *model.User
+	opUserErr := ""
+	if user.RoleID != 0 {
+		var err error
+		opUser, err = s.Repo.GetUser(user.UserID)
+		if err != nil {
+			return "", false, true
+		}
+		if opUser == nil {
+			opUserErr = "用户不存在"
+		} else if opUser.ExpTime > 0 && opUser.ExpTime <= now {
+			opUserErr = "当前账号已到期"
+		}
+	}
+
+	tunnelIDs := distinctTargetTunnelIDs(targets)
+	tunnelMap, err := s.batchTunnelMap(tunnelIDs)
+	if err != nil {
+		return "", false, true
+	}
+	// 操作者在各隧道的权限 + 配额基数各查一次
+	opUTMap := make(map[int64]*model.UserTunnel)
+	var userForwardCount int64
+	tunnelForwardCount := make(map[int64]int64, len(tunnelIDs))
+	if user.RoleID != 0 {
+		var opUTs []model.UserTunnel
+		if opUTs, err = s.UserTunn.ListByUserAndTunnelIDs(user.UserID, tunnelIDs); err != nil {
+			return "", false, true
+		}
+		for i := range opUTs {
+			cp := opUTs[i]
+			opUTMap[int64(cp.TunnelID)] = &cp
+		}
+		if userForwardCount, err = s.Repo.CountByUser(int(user.UserID)); err != nil {
+			return "", false, true
+		}
+		for _, tid := range tunnelIDs {
+			var n int64
+			if n, err = s.Repo.CountByUserTunnel(int(user.UserID), int(tid), nil); err != nil {
+				return "", false, true
+			}
+			tunnelForwardCount[tid] = n
+		}
+	}
+
+	var valid []*model.Forward
+	for _, f := range targets {
+		tid := int64(f.TunnelID)
+		tunnel := tunnelMap[tid]
+		if tunnel == nil {
+			errByID[f.ID] = "隧道不存在"
+			continue
+		}
+		if user.RoleID != 0 {
+			if opUserErr != "" {
+				errByID[f.ID] = opUserErr
+				continue
+			}
+			ut := opUTMap[tid]
+			if ut == nil {
+				errByID[f.ID] = "你没有该隧道权限"
+				continue
+			}
+			if ut.Status != 1 {
+				errByID[f.ID] = "隧道被禁用"
+				continue
+			}
+			if ut.ExpTime > 0 && ut.ExpTime <= now {
+				errByID[f.ID] = "该隧道权限已到期"
+				continue
+			}
+			if !model.IsUnlimitedFlow(opUser.Flow) {
+				if opUser.Flow <= 0 || opUser.Flow*forwardBytesToGB <= opUser.InFlow+opUser.OutFlow {
+					errByID[f.ID] = "用户总流量已用完"
+					continue
+				}
+			}
+			if !model.IsUnlimitedFlow(ut.Flow) {
+				if ut.Flow <= 0 || ut.Flow*forwardBytesToGB <= ut.InFlow+ut.OutFlow {
+					errByID[f.ID] = "该隧道流量已用完"
+					continue
+				}
+			}
+			if !model.IsUnlimitedNum(opUser.Num) && userForwardCount >= int64(opUser.Num) {
+				errByID[f.ID] = fmt.Sprintf("用户总转发数量已达上限，当前限制：%d个", opUser.Num)
+				continue
+			}
+			if !model.IsUnlimitedNum(ut.Num) && tunnelForwardCount[tid] >= int64(ut.Num) {
+				errByID[f.ID] = fmt.Sprintf("该隧道转发数量已达上限，当前限制：%d个", ut.Num)
+				continue
+			}
+		}
+		valid = append(valid, f)
+	}
+	if len(valid) == 0 {
+		return assembleBatchMsg("删除", uniq, errByID, 0), false, false
+	}
+
+	validTunnelIDs := distinctTargetTunnelIDs(valid)
+	entries, err := s.Repo.ListEntriesByTunnelIDs(validTunnelIDs)
+	if err != nil {
+		return "", false, true
+	}
+	entriesByTunnel := make(map[int64][]model.ChainTunnel, len(validTunnelIDs))
+	nodeIDSet := make(map[int64]struct{})
+	for _, ct := range entries {
+		entriesByTunnel[ct.TunnelID] = append(entriesByTunnel[ct.TunnelID], ct)
+		nodeIDSet[ct.NodeID] = struct{}{}
+	}
+	nodeIDs := make([]int64, 0, len(nodeIDSet))
+	for id := range nodeIDSet {
+		nodeIDs = append(nodeIDs, id)
+	}
+	nodes, err := s.Repo.ListNodesByIDs(nodeIDs)
+	if err != nil {
+		return "", false, true
+	}
+	nodeMap := make(map[int64]*model.Node, len(nodes))
+	for i := range nodes {
+		cp := nodes[i]
+		nodeMap[nodes[i].ID] = &cp
+	}
+	ownerUTs, err := s.UserTunn.ListByTunnelIDs(validTunnelIDs)
+	if err != nil {
+		return "", false, true
+	}
+	ownerUTMap := make(map[string]*model.UserTunnel, len(ownerUTs))
+	for i := range ownerUTs {
+		cp := ownerUTs[i]
+		ownerUTMap[utKey(cp.UserID, cp.TunnelID)] = &cp
+	}
+
+	// 校验入口节点存在（原 forEachChainNodeParallel 的“部分节点不存在”），
+	// 并把各转发的待删服务名按节点合并
+	namesByNode := make(map[int64][]string)
+	entriesOf := make(map[int64][]model.ChainTunnel, len(valid))
+	var doDelete []*model.Forward
+	for _, f := range valid {
+		cts := entriesByTunnel[int64(f.TunnelID)]
+		missing := false
+		for _, ct := range cts {
+			if nodeMap[ct.NodeID] == nil {
+				missing = true
+				break
+			}
+		}
+		if missing {
+			errByID[f.ID] = "部分节点不存在"
+			continue
+		}
+		base := s.buildServiceName(f.ID, int64(f.UserID), ownerUTMap[utKey(f.UserID, f.TunnelID)])
+		for _, ct := range cts {
+			namesByNode[ct.NodeID] = append(namesByNode[ct.NodeID], base+"_tcp", base+"_udp")
+		}
+		entriesOf[f.ID] = cts
+		doDelete = append(doDelete, f)
+	}
+	if len(doDelete) == 0 {
+		return assembleBatchMsg("删除", uniq, errByID, 0), false, false
+	}
+
+	// 每节点 1 次 WS 合并删除（原 N×E 次）；整包失败的节点回落逐条补发
+	nodeList := make([]int64, 0, len(namesByNode))
+	for nid := range namesByNode {
+		nodeList = append(nodeList, nid)
+	}
+	sort.Slice(nodeList, func(i, j int) bool { return nodeList[i] < nodeList[j] })
+	nodeFailed := make([]bool, len(nodeList))
+	_ = parallelEach(len(nodeList), batchConcurrency, func(i int) string {
+		nid := nodeList[i]
+		if res := s.Hub.SendMsg(nid, gost.DeleteServicePayload(namesByNode[nid]), "DeleteService"); !gost.IsOK(res.Msg) {
+			nodeFailed[i] = true
+		}
+		return ""
 	})
+	hasFailedNode := false
+	for _, f := range nodeFailed {
+		if f {
+			hasFailedNode = true
+			break
+		}
+	}
+	if hasFailedNode {
+		failedSet := make(map[int64]struct{})
+		for i, nid := range nodeList {
+			if nodeFailed[i] {
+				failedSet[nid] = struct{}{}
+			}
+		}
+		_ = parallelEach(len(doDelete), batchConcurrency, func(i int) string {
+			f := doDelete[i]
+			for _, ct := range entriesOf[f.ID] {
+				if _, bad := failedSet[ct.NodeID]; !bad {
+					continue
+				}
+				base := s.buildServiceName(f.ID, int64(f.UserID), ownerUTMap[utKey(f.UserID, f.TunnelID)])
+				res := s.Hub.SendMsg(ct.NodeID, gost.DeleteServicePayload([]string{base + "_tcp", base + "_udp"}), "DeleteService")
+				_ = gost.NormalizeOK(res.Msg)
+			}
+			return ""
+		})
+	}
+
+	delIDs := make([]int64, 0, len(doDelete))
+	for _, f := range doDelete {
+		delIDs = append(delIDs, f.ID)
+	}
+	_ = s.Port.DeleteByForwardIDs(delIDs)
+	if err := s.Repo.DeleteByIDs(delIDs); err != nil {
+		for _, f := range doDelete {
+			errByID[f.ID] = err.Error()
+		}
+		return assembleBatchMsg("删除", uniq, errByID, 0), false, false
+	}
+	return assembleBatchMsg("删除", uniq, errByID, len(doDelete)), true, false
+}
+
+func (s *ForwardService) BatchPause(user CurrentUser, ids []int64) (string, bool) {
+	return s.batchChangeStatus(user, ids, 0, "请选择要暂停的转发", "暂停", "PauseService")
 }
 
 func (s *ForwardService) BatchResume(user CurrentUser, ids []int64) (string, bool) {
-	return s.runBatch(ids, "请选择要恢复的转发", "恢复", func(id int64) error {
+	return s.batchChangeStatus(user, ids, 1, "请选择要恢复的转发", "恢复", "ResumeService")
+}
+
+// batchChangeStatus 批量暂停/恢复：分发到快路径，预取失败回落逐条以保留原错误语义
+func (s *ForwardService) batchChangeStatus(user CurrentUser, ids []int64, targetStatus int, emptyMsg, okVerb, gostMethod string) (string, bool) {
+	if len(ids) == 0 {
+		return emptyMsg, false
+	}
+	if msg, ok, fallback := s.batchChangeStatusFast(user, ids, targetStatus, okVerb, gostMethod); !fallback {
+		return msg, ok
+	}
+	if targetStatus == 0 {
+		return s.runBatch(ids, emptyMsg, okVerb, func(id int64) error {
+			return s.Pause(user, id)
+		})
+	}
+	return s.runBatch(ids, emptyMsg, okVerb, func(id int64) error {
 		return s.Resume(user, id)
 	})
+}
+
+// batchChangeStatusFast 批量暂停/恢复快路径：一次预取校验 + 限并发 WS + 单语句状态写。
+// 原逐条路径每条转发约 8 次 DB 查询 + E 次 WS + 1 次状态写；快路径固定约 7 次
+// 查询、WS 限并发 16、成功者一次 UpdateStatusByIDs。错误文案与单条路径逐项对齐。
+func (s *ForwardService) batchChangeStatusFast(user CurrentUser, ids []int64, targetStatus int, okVerb, gostMethod string) (string, bool, bool) {
+	uniq := dedupInt64s(ids)
+	forwards, err := s.batchLoadForwards(user, uniq)
+	if err != nil {
+		return "", false, true
+	}
+	now := time.Now().UnixMilli()
+	errByID := make(map[int64]string, len(uniq))
+
+	// 非管理员先校验操作者状态（原 changeForwardStatus 首步，优先于“转发不存在”）
+	var opUser *model.User
+	if user.RoleID != 0 {
+		opUser, err = s.Repo.GetUser(user.UserID)
+		if err != nil {
+			return "", false, true
+		}
+		if opUser == nil {
+			for _, id := range uniq {
+				errByID[id] = "用户不存在"
+			}
+			return assembleBatchMsg(okVerb, uniq, errByID, 0), false, false
+		}
+		if opUser.Status == 0 {
+			for _, id := range uniq {
+				errByID[id] = "用户已到期或被禁用"
+			}
+			return assembleBatchMsg(okVerb, uniq, errByID, 0), false, false
+		}
+	}
+	var targets []*model.Forward
+	for _, id := range uniq {
+		f, ok := forwards[id]
+		if !ok {
+			errByID[id] = "转发不存在"
+			continue
+		}
+		targets = append(targets, f)
+	}
+	if len(targets) == 0 {
+		return assembleBatchMsg(okVerb, uniq, errByID, 0), false, false
+	}
+
+	tunnelIDs := distinctTargetTunnelIDs(targets)
+	tunnelMap, err := s.batchTunnelMap(tunnelIDs)
+	if err != nil {
+		return "", false, true
+	}
+	opUTMap := make(map[int64]*model.UserTunnel)
+	if user.RoleID != 0 {
+		var opUTs []model.UserTunnel
+		if opUTs, err = s.UserTunn.ListByUserAndTunnelIDs(user.UserID, tunnelIDs); err != nil {
+			return "", false, true
+		}
+		for i := range opUTs {
+			cp := opUTs[i]
+			opUTMap[int64(cp.TunnelID)] = &cp
+		}
+	}
+
+	var valid []*model.Forward
+	for _, f := range targets {
+		tid := int64(f.TunnelID)
+		tunnel := tunnelMap[tid]
+		if tunnel == nil {
+			errByID[f.ID] = "隧道不存在"
+			continue
+		}
+		if targetStatus == 1 {
+			if tunnel.Status != 1 {
+				errByID[f.ID] = "隧道已禁用，无法恢复服务"
+				continue
+			}
+			if user.RoleID != 0 {
+				// 对齐 checkUserFlowLimits 的检查顺序与文案
+				if opUser.ExpTime > 0 && opUser.ExpTime <= now {
+					errByID[f.ID] = "当前账号已到期"
+					continue
+				}
+				ut := opUTMap[tid]
+				if ut == nil {
+					errByID[f.ID] = "你没有该隧道权限"
+					continue
+				}
+				if ut.ExpTime > 0 && ut.ExpTime <= now {
+					errByID[f.ID] = "该隧道权限已到期，无法恢复服务"
+					continue
+				}
+				if !model.IsUnlimitedFlow(opUser.Flow) {
+					if opUser.Flow*forwardBytesToGB <= opUser.InFlow+opUser.OutFlow {
+						errByID[f.ID] = "用户总流量已用完，无法恢复服务"
+						continue
+					}
+				}
+				if !model.IsUnlimitedFlow(ut.Flow) {
+					if ut.Flow*forwardBytesToGB <= ut.InFlow+ut.OutFlow {
+						errByID[f.ID] = "该隧道流量已用完，无法恢复服务"
+						continue
+					}
+				}
+				if ut.Status != 1 {
+					errByID[f.ID] = "隧道被禁用"
+					continue
+				}
+			}
+		} else if user.RoleID != 0 {
+			if opUTMap[tid] == nil {
+				errByID[f.ID] = "你没有该隧道权限"
+				continue
+			}
+		}
+		valid = append(valid, f)
+	}
+	if len(valid) == 0 {
+		return assembleBatchMsg(okVerb, uniq, errByID, 0), false, false
+	}
+
+	validTunnelIDs := distinctTargetTunnelIDs(valid)
+	entries, err := s.Repo.ListEntriesByTunnelIDs(validTunnelIDs)
+	if err != nil {
+		return "", false, true
+	}
+	entriesByTunnel := make(map[int64][]model.ChainTunnel, len(validTunnelIDs))
+	nodeIDSet := make(map[int64]struct{})
+	for _, ct := range entries {
+		entriesByTunnel[ct.TunnelID] = append(entriesByTunnel[ct.TunnelID], ct)
+		nodeIDSet[ct.NodeID] = struct{}{}
+	}
+	nodeIDs := make([]int64, 0, len(nodeIDSet))
+	for id := range nodeIDSet {
+		nodeIDs = append(nodeIDs, id)
+	}
+	nodes, err := s.Repo.ListNodesByIDs(nodeIDs)
+	if err != nil {
+		return "", false, true
+	}
+	nodeMap := make(map[int64]*model.Node, len(nodes))
+	for i := range nodes {
+		cp := nodes[i]
+		nodeMap[nodes[i].ID] = &cp
+	}
+	ownerUTs, err := s.UserTunn.ListByTunnelIDs(validTunnelIDs)
+	if err != nil {
+		return "", false, true
+	}
+	ownerUTMap := make(map[string]*model.UserTunnel, len(ownerUTs))
+	for i := range ownerUTs {
+		cp := ownerUTs[i]
+		ownerUTMap[utKey(cp.UserID, cp.TunnelID)] = &cp
+	}
+	// 恢复时节点缺服务需按端口重建，端口一次查回（暂停路径不需要）
+	var portsMap map[int64][]model.ForwardPort
+	if targetStatus == 1 {
+		validIDs := make([]int64, 0, len(valid))
+		for _, f := range valid {
+			validIDs = append(validIDs, f.ID)
+		}
+		if portsMap, err = s.Port.ListByForwardIDs(validIDs); err != nil {
+			return "", false, true
+		}
+	}
+
+	type statusWork struct {
+		fw      *model.Forward
+		tunnel  *model.Tunnel
+		entries []model.ChainTunnel
+		base    string
+		limiter *int
+	}
+	works := make([]statusWork, 0, len(valid))
+	for _, f := range valid {
+		tid := int64(f.TunnelID)
+		cts := entriesByTunnel[tid]
+		missing := false
+		for _, ct := range cts {
+			if nodeMap[ct.NodeID] == nil {
+				missing = true
+				break
+			}
+		}
+		if missing {
+			errByID[f.ID] = "部分节点不存在"
+			continue
+		}
+		var ut *model.UserTunnel
+		if user.RoleID != 0 {
+			ut = opUTMap[tid]
+		} else {
+			ut = ownerUTMap[utKey(f.UserID, f.TunnelID)]
+		}
+		var limiter *int
+		if ut != nil {
+			limiter = ut.SpeedID
+		}
+		works = append(works, statusWork{
+			fw:      f,
+			tunnel:  tunnelMap[tid],
+			entries: cts,
+			base:    s.buildServiceName(f.ID, int64(f.UserID), ut),
+			limiter: limiter,
+		})
+	}
+	if len(works) == 0 {
+		return assembleBatchMsg(okVerb, uniq, errByID, 0), false, false
+	}
+
+	// 限并发下发 WS（暂停缺服务视为已达成；恢复缺服务按端口重建）
+	failMsgs := make([]string, len(works))
+	_ = parallelEach(len(works), batchConcurrency, func(i int) string {
+		w := works[i]
+		for _, ct := range w.entries {
+			node := nodeMap[ct.NodeID]
+			res := s.Hub.SendMsg(node.ID, gost.PauseResumePayload(w.base), gostMethod)
+			if gost.IsOK(res.Msg) {
+				continue
+			}
+			if gost.IsMissing(res.Msg) {
+				if targetStatus == 0 {
+					continue
+				}
+				fp := findForwardPort(portsMap[w.fw.ID], node.ID)
+				if fp == nil {
+					failMsgs[i] = fmt.Sprintf("节点 %s 缺少端口记录，无法重建服务", node.Name)
+					return failMsgs[i]
+				}
+				if msg := s.addOrUpdateService(w.base, w.limiter, node, w.fw, fp, w.tunnel, "AddService"); !gost.IsOK(msg) {
+					failMsgs[i] = fmt.Sprintf("节点 %s 重建服务失败: %s", node.Name, msg)
+					return failMsgs[i]
+				}
+				continue
+			}
+			failMsgs[i] = gost.NormalizeOK(res.Msg)
+			return failMsgs[i]
+		}
+		return ""
+	})
+	var succeeded []int64
+	for i, w := range works {
+		if failMsgs[i] != "" {
+			errByID[w.fw.ID] = failMsgs[i]
+			continue
+		}
+		succeeded = append(succeeded, w.fw.ID)
+	}
+	// 成功者一次状态写（原逐条 UpdateStatus）
+	if len(succeeded) > 0 {
+		if err := s.Repo.UpdateStatusByIDs(succeeded, targetStatus, now); err != nil {
+			for _, id := range succeeded {
+				errByID[id] = err.Error()
+			}
+			return assembleBatchMsg(okVerb, uniq, errByID, 0), false, false
+		}
+	}
+	return assembleBatchMsg(okVerb, uniq, errByID, len(succeeded)), len(succeeded) > 0, false
 }
 
 func (s *ForwardService) BatchChangeTunnel(user CurrentUser, ids []int64, tunnelID int) (string, bool) {
 	if tunnelID == 0 {
 		return "请选择目标隧道", false
 	}
+	// 预取转发存在性与原入口端口（各 1 条语句，替代 N 次 GetByID + N 次查端口）；
+	// 预取失败则回落原逐条语义。Update 内部的隧道/权限/配额校验保持不变。
+	forwards, portsMap, prefetchOK := s.prefetchChangeTunnel(user, ids)
 	return s.runBatch(ids, "请选择要更改隧道的转发", "迁移", func(id int64) error {
-		exist, err := s.validateForwardExists(id, user)
-		if err != nil {
-			return err
-		}
-		if exist == nil {
-			return fmt.Errorf("转发不存在或无权限")
+		var exist *model.Forward
+		var inPort *int
+		if prefetchOK {
+			exist = forwards[id]
+			if exist == nil {
+				return fmt.Errorf("转发不存在或无权限")
+			}
+			// 沿用原入口端口，避免重分配（对齐 resolveKeepInPort）
+			for _, fp := range portsMap[id] {
+				if fp.Port > 0 {
+					p := fp.Port
+					inPort = &p
+					break
+				}
+			}
+		} else {
+			var err error
+			exist, err = s.validateForwardExists(id, user)
+			if err != nil {
+				return err
+			}
+			if exist == nil {
+				return fmt.Errorf("转发不存在或无权限")
+			}
+			inPort, err = s.resolveKeepInPort(nil, exist.ID)
+			if err != nil {
+				return err
+			}
 		}
 		tid := tunnelID
-		// 显式带上原入口端口，保证批量改隧道不重分配
-		inPort, err := s.resolveKeepInPort(nil, exist.ID)
-		if err != nil {
-			return err
-		}
 		return s.Update(user, ForwardUpdateReq{
 			ID:         id,
 			TunnelID:   &tid,
@@ -1060,6 +1844,19 @@ func (s *ForwardService) BatchChangeTunnel(user CurrentUser, ids []int64, tunnel
 			InPort:     inPort,
 		})
 	})
+}
+
+// prefetchChangeTunnel 一次取回批量改隧道所需的转发与原端口
+func (s *ForwardService) prefetchChangeTunnel(user CurrentUser, ids []int64) (map[int64]*model.Forward, map[int64][]model.ForwardPort, bool) {
+	forwards, err := s.batchLoadForwards(user, ids)
+	if err != nil {
+		return nil, nil, false
+	}
+	portsMap, err := s.Port.ListByForwardIDs(dedupInt64s(ids))
+	if err != nil {
+		return nil, nil, false
+	}
+	return forwards, portsMap, true
 }
 
 // forEachChainNodeParallel 对入口节点并行执行 fn；任一失败返回首个错误。

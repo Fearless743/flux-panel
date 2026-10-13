@@ -87,37 +87,167 @@ func (s *FlowService) IsValidNode(secret string) bool {
 	return cnt > 0
 }
 
-// Upload 处理流量上报数组
+// Upload 处理流量上报数组：同批按解析结果聚合，转发/隧道一次查回算倍率，
+// 同一转发/用户/权限的流量合并为一次原子更新，超限检测每类只做一次。
+// 与逐条路径最终 DB 状态一致（更新均为原子 +=，暂停幂等且只处理运行中）。
 func (s *FlowService) Upload(items []FlowDto) {
+	type parsed struct {
+		forwardID, userID, utID int64
+		d, u                    int64
+	}
+	parsedItems := make([]parsed, 0, len(items))
+	fwdSet := make(map[int64]struct{})
 	for _, item := range items {
 		if item.N == "" || item.N == "web_api" {
 			continue
 		}
-		s.processFlowData(item)
+		f, u, ut, ok := parseFlowName(item.N)
+		if !ok {
+			continue
+		}
+		parsedItems = append(parsedItems, parsed{forwardID: f, userID: u, utID: ut, d: item.D, u: item.U})
+		fwdSet[f] = struct{}{}
+	}
+	if len(parsedItems) == 0 {
+		return
+	}
+	// 批量查转发所属隧道与隧道倍率（查不到时倍率为 1，与逐条路径一致）
+	tunnelOfForward := make(map[int64]int64)
+	if len(fwdSet) > 0 {
+		fwdIDs := make([]int64, 0, len(fwdSet))
+		for id := range fwdSet {
+			fwdIDs = append(fwdIDs, id)
+		}
+		q, args, err := sqlx.In(`SELECT id, tunnel_id FROM forward WHERE id IN (?)`, fwdIDs)
+		if err == nil {
+			q = s.DB.Rebind(q)
+			var rows []struct {
+				ID       int64 `db:"id"`
+				TunnelID int64 `db:"tunnel_id"`
+			}
+			if err := s.DB.Select(&rows, q, args...); err == nil {
+				for _, r := range rows {
+					tunnelOfForward[r.ID] = r.TunnelID
+				}
+			}
+		}
+	}
+	tunSet := make(map[int64]struct{})
+	for _, tid := range tunnelOfForward {
+		tunSet[tid] = struct{}{}
+	}
+	ratioOfTunnel := make(map[int64]float64)
+	if len(tunSet) > 0 {
+		tunIDs := make([]int64, 0, len(tunSet))
+		for id := range tunSet {
+			tunIDs = append(tunIDs, id)
+		}
+		q, args, err := sqlx.In(`SELECT id, traffic_ratio, flow FROM tunnel WHERE id IN (?)`, tunIDs)
+		if err == nil {
+			q = s.DB.Rebind(q)
+			var rows []struct {
+				ID           int64   `db:"id"`
+				TrafficRatio float64 `db:"traffic_ratio"`
+				Flow         int64   `db:"flow"`
+			}
+			if err := s.DB.Select(&rows, q, args...); err == nil {
+				for _, r := range rows {
+					ratio := r.TrafficRatio
+					if ratio <= 0 {
+						ratio = 1
+					}
+					tf := float64(r.Flow)
+					if tf <= 0 {
+						tf = 1
+					}
+					ratioOfTunnel[r.ID] = ratio * tf
+				}
+			}
+		}
+	}
+	type du struct{ d, u int64 }
+	fwdAgg := make(map[int64]*du)
+	userAgg := make(map[int64]*du)
+	utAgg := make(map[int64]*du)
+	addAgg := func(m map[int64]*du, id int64, d, u int64) {
+		v, ok := m[id]
+		if !ok {
+			v = &du{}
+			m[id] = v
+		}
+		v.d += d
+		v.u += u
+	}
+	checkUsers := make(map[int64]struct{})
+	utUsers := make(map[int64]int64)
+	for _, p := range parsedItems {
+		mult := 1.0
+		if tid, ok := tunnelOfForward[p.forwardID]; ok {
+			if m, ok := ratioOfTunnel[tid]; ok {
+				mult = m
+			}
+		}
+		d := int64(float64(p.d) * mult)
+		u := int64(float64(p.u) * mult)
+		addAgg(fwdAgg, p.forwardID, d, u)
+		addAgg(userAgg, p.userID, d, u)
+		// 超限检测（管理员 userTunnelId=0 跳过，与逐条路径一致）
+		if p.utID != 0 {
+			addAgg(utAgg, p.utID, d, u)
+			checkUsers[p.userID] = struct{}{}
+			if _, ok := utUsers[p.utID]; !ok {
+				utUsers[p.utID] = p.userID
+			}
+		}
+	}
+	for id, v := range fwdAgg {
+		s.updateForwardFlow(id, v.d, v.u)
+	}
+	for id, v := range userAgg {
+		s.updateUserFlow(id, v.d, v.u)
+	}
+	for id, v := range utAgg {
+		s.updateUserTunnelFlow(id, v.d, v.u)
+	}
+	for uid := range checkUsers {
+		s.checkUserRelatedLimits(uid)
+	}
+	for utID, uid := range utUsers {
+		s.checkUserTunnelRelatedLimits(utID, uid)
 	}
 }
 
+// parseFlowName 解析 "{forwardId}_{userId}_{userTunnelId}[_tcp|_udp]" 服务名
+func parseFlowName(n string) (forwardID, userID, userTunnelID int64, ok bool) {
+	forwardID, userID, userTunnelID, ok = gost.ParseForwardServiceName(n)
+	if ok {
+		return forwardID, userID, userTunnelID, true
+	}
+	// 兼容 Java split("_") 前三段
+	parts := strings.Split(n, "_")
+	if len(parts) < 3 {
+		return 0, 0, 0, false
+	}
+	var err error
+	forwardID, err = strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	userID, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	userTunnelID, err = strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return forwardID, userID, userTunnelID, true
+}
+
 func (s *FlowService) processFlowData(flow FlowDto) {
-	forwardID, userID, userTunnelID, ok := gost.ParseForwardServiceName(flow.N)
+	forwardID, userID, userTunnelID, ok := parseFlowName(flow.N)
 	if !ok {
-		// 兼容 Java split("_") 前三段
-		parts := strings.Split(flow.N, "_")
-		if len(parts) < 3 {
-			return
-		}
-		var err error
-		forwardID, err = strconv.ParseInt(parts[0], 10, 64)
-		if err != nil {
-			return
-		}
-		userID, err = strconv.ParseInt(parts[1], 10, 64)
-		if err != nil {
-			return
-		}
-		userTunnelID, err = strconv.ParseInt(parts[2], 10, 64)
-		if err != nil {
-			return
-		}
+		return
 	}
 
 	// 倍率：d/u *= trafficRatio * tunnel.flow
@@ -247,8 +377,123 @@ func (s *FlowService) pauseSpecificForward(tunnelID, userID int64) {
 	s.pauseForwards(forwards)
 }
 
-// pauseForwards 对每条 forward 用正确 serviceName 暂停
+// pauseForwards 对每条 forward 用正确 serviceName 暂停：归属权限与入口链
+// 一次查回，WS 限并发并行，状态一次批量写。
+// 原逐条路径每条转发 1 次权限查询 + 1 次链查询 + E 次 WS + 1 次状态写。
 func (s *FlowService) pauseForwards(forwards []model.Forward) {
+	if len(forwards) == 0 {
+		return
+	}
+	tunSet := make(map[int64]struct{}, len(forwards))
+	userSet := make(map[int]struct{}, len(forwards))
+	for i := range forwards {
+		tunSet[int64(forwards[i].TunnelID)] = struct{}{}
+		userSet[forwards[i].UserID] = struct{}{}
+	}
+	tunIDs := make([]int64, 0, len(tunSet))
+	for id := range tunSet {
+		tunIDs = append(tunIDs, id)
+	}
+	userIDs := make([]int, 0, len(userSet))
+	for id := range userSet {
+		userIDs = append(userIDs, id)
+	}
+	// 归属权限一次查回（超集 + 内存精确匹配）
+	utByPair := make(map[string]*model.UserTunnel)
+	{
+		q, args, err := sqlx.In(`SELECT * FROM user_tunnel WHERE tunnel_id IN (?) AND user_id IN (?)`, tunIDs, userIDs)
+		if err != nil {
+			s.pauseForwardsLegacy(forwards)
+			return
+		}
+		q = s.DB.Rebind(q)
+		var uts []model.UserTunnel
+		if err := s.DB.Select(&uts, q, args...); err != nil {
+			s.pauseForwardsLegacy(forwards)
+			return
+		}
+		for i := range uts {
+			ut := uts[i]
+			if _, ok := tunSet[int64(ut.TunnelID)]; !ok {
+				continue
+			}
+			if _, ok := userSet[ut.UserID]; !ok {
+				continue
+			}
+			cp := ut
+			utByPair[utKey(ut.UserID, ut.TunnelID)] = &cp
+		}
+	}
+	// 入口链一次查回
+	chainsByTunnel := make(map[int64][]model.ChainTunnel)
+	{
+		q, args, err := sqlx.In(`SELECT * FROM chain_tunnel WHERE tunnel_id IN (?) AND (chain_type = '1' OR chain_type = 1)`, tunIDs)
+		if err != nil {
+			s.pauseForwardsLegacy(forwards)
+			return
+		}
+		q = s.DB.Rebind(q)
+		var chains []model.ChainTunnel
+		if err := s.DB.Select(&chains, q, args...); err != nil {
+			s.pauseForwardsLegacy(forwards)
+			return
+		}
+		for _, ct := range chains {
+			chainsByTunnel[ct.TunnelID] = append(chainsByTunnel[ct.TunnelID], ct)
+		}
+	}
+	type pauseTask struct {
+		fwID     int64
+		baseName string
+		nodeIDs  []int64
+	}
+	tasks := make([]pauseTask, 0, len(forwards))
+	ids := make([]int64, 0, len(forwards))
+	for i := range forwards {
+		fw := &forwards[i]
+		var utID int64
+		if ut := utByPair[utKey(fw.UserID, fw.TunnelID)]; ut != nil {
+			utID = int64(ut.ID)
+		}
+		base := gost.ForwardServiceBase(fw.ID, int64(fw.UserID), utID)
+		var nodeIDs []int64
+		for _, ct := range chainsByTunnel[int64(fw.TunnelID)] {
+			nodeIDs = append(nodeIDs, ct.NodeID)
+		}
+		tasks = append(tasks, pauseTask{fwID: fw.ID, baseName: base, nodeIDs: nodeIDs})
+		ids = append(ids, fw.ID)
+	}
+	_ = parallelEach(len(tasks), batchConcurrency, func(i int) string {
+		t := tasks[i]
+		payload := gost.PauseResumePayload(t.baseName)
+		for _, nodeID := range t.nodeIDs {
+			if s.Hub == nil {
+				continue
+			}
+			res := s.Hub.SendMsg(nodeID, payload, "PauseService")
+			if !gost.IsOK(res.Msg) {
+				slog.Info("PauseService", "node", nodeID, "name", t.baseName, "msg", res.Msg)
+			}
+		}
+		return ""
+	})
+	// 状态一次批量写（分片单语句 IN；原逐条 UPDATE）
+	for start := 0; start < len(ids); start += 500 {
+		end := start + 500
+		if end > len(ids) {
+			end = len(ids)
+		}
+		q, args, err := sqlx.In(`UPDATE forward SET status = 0 WHERE id IN (?)`, ids[start:end])
+		if err != nil {
+			continue
+		}
+		q = s.DB.Rebind(q)
+		_, _ = s.DB.Exec(q, args...)
+	}
+}
+
+// pauseForwardsLegacy 逐条暂停（批量预取失败时的回落路径，与原语义一致）
+func (s *FlowService) pauseForwardsLegacy(forwards []model.Forward) {
 	for i := range forwards {
 		fw := &forwards[i]
 		serviceName := s.serviceNameForForward(fw)
