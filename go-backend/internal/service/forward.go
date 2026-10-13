@@ -649,12 +649,33 @@ func (s *ForwardService) changeForwardStatus(user CurrentUser, id int64, targetS
 		return err
 	}
 	serviceName := s.buildServiceName(forward.ID, int64(forward.UserID), userTunnel)
+	var limiter *int
+	if userTunnel != nil {
+		limiter = userTunnel.SpeedID
+	}
 	if err := s.forEachChainNodeParallel(chainTunnels, func(node *model.Node) error {
 		res := s.Hub.SendMsg(node.ID, gost.PauseResumePayload(serviceName), gostMethod)
-		if !gost.IsOK(res.Msg) {
-			return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
+		if gost.IsOK(res.Msg) {
+			return nil
 		}
-		return nil
+		// 节点上服务不存在：暂停视为已达成；恢复则重建服务（Update 路径同理回落 Add）
+		if gost.IsMissing(res.Msg) {
+			if targetStatus == 0 {
+				return nil
+			}
+			fp, err := s.Port.GetByForwardAndNode(forward.ID, node.ID)
+			if err != nil {
+				return err
+			}
+			if fp == nil {
+				return fmt.Errorf("节点 %s 缺少端口记录，无法重建服务", node.Name)
+			}
+			if msg := s.addOrUpdateService(serviceName, limiter, node, forward, fp, tunnel, "AddService"); !gost.IsOK(msg) {
+				return fmt.Errorf("节点 %s 重建服务失败: %s", node.Name, msg)
+			}
+			return nil
+		}
+		return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
 	}); err != nil {
 		return err
 	}
