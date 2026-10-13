@@ -92,6 +92,10 @@ export const getConfigByName = (name: string) => Network.post("/config/get", { n
 export const updateConfigs = (configMap: Record<string, string>) => Network.post("/config/update", configMap);
 export const updateConfig = (name: string, value: string) => Network.post("/config/update-single", { name, value });
 
+// 数据备份相关接口（管理员，全量导入导出）
+export const exportBackup = () => Network.post<any>("/backup/export", {});
+export const importBackup = (data: any) => Network.post("/backup/import", data);
+
 
 // 验证码相关接口
 export const checkCaptcha = () => Network.post("/captcha/check");
