@@ -78,6 +78,72 @@ func (r *ForwardRepo) ListByUserID(userID int64) ([]ForwardWithTunnel, error) {
 	return list, err
 }
 
+// ForwardListFilter 分页列表的服务端过滤条件（高性能分页：WHERE 下推 + LIMIT/OFFSET）。
+// UserID 为 nil 表示管理员（不过滤归属）；Keyword 匹配 name/remote_addr/user_name。
+type ForwardListFilter struct {
+	UserID   *int64
+	TunnelID *int
+	Status   *int
+	Keyword  string
+}
+
+// buildFilteredWhere 组装 WHERE 子句与参数（Count 与 List 共用，保证总数与分页一致）。
+// Keyword 中的 LIKE 通配符（% _ \）做转义，查询统一加 ESCAPE '\'。
+func (f ForwardListFilter) buildFilteredWhere() (string, []any) {
+	var sb strings.Builder
+	args := make([]any, 0, 8)
+	sb.WriteString("1=1")
+	if f.UserID != nil {
+		sb.WriteString(" AND f.user_id = ?")
+		args = append(args, *f.UserID)
+	}
+	if f.TunnelID != nil {
+		sb.WriteString(" AND f.tunnel_id = ?")
+		args = append(args, *f.TunnelID)
+	}
+	if f.Status != nil {
+		sb.WriteString(" AND f.status = ?")
+		args = append(args, *f.Status)
+	}
+	if kw := strings.TrimSpace(f.Keyword); kw != "" {
+		esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(kw)
+		like := "%" + esc + "%"
+		sb.WriteString(" AND (f.name LIKE ? ESCAPE '\\' OR f.remote_addr LIKE ? ESCAPE '\\' OR f.user_name LIKE ? ESCAPE '\\')")
+		args = append(args, like, like, like)
+	}
+	return sb.String(), args
+}
+
+// CountFiltered 分页总数（与 ListFiltered 同一 WHERE，保证 total 准确）。
+func (r *ForwardRepo) CountFiltered(f ForwardListFilter) (int64, error) {
+	where, args := f.buildFilteredWhere()
+	var n int64
+	err := r.DB.Get(&n, `SELECT COUNT(1) FROM forward f WHERE `+where, args...)
+	return n, err
+}
+
+// ListFiltered 分页取一页（只查一页行 + JOIN 隧道名，inIp/inPort 由上层 FillInIPBatch 按页填充）。
+// 排序固定 inx ASC, created_time DESC, id DESC：与前端拖拽排序语义一致，
+// 全 0 inx 时退化为 created_time DESC（兼容历史顺序），且排序列均有索引覆盖。
+func (r *ForwardRepo) ListFiltered(f ForwardListFilter, limit, offset int) ([]ForwardWithTunnel, error) {
+	where, args := f.buildFilteredWhere()
+	args = append(args, limit, offset)
+	var list []ForwardWithTunnel
+	err := r.DB.Select(&list, `
+		SELECT f.id, f.user_id, f.name, f.tunnel_id, f.remote_addr, f.status,
+			f.created_time, f.updated_time, f.user_name, f.in_flow, f.strategy,
+			f.out_flow, f.inx, t.name AS tunnel_name, t.type
+		FROM forward f
+		LEFT JOIN tunnel t ON f.tunnel_id = t.id
+		WHERE `+where+`
+		ORDER BY f.inx ASC, f.created_time DESC, f.id DESC
+		LIMIT ? OFFSET ?`, args...)
+	if list == nil {
+		list = []ForwardWithTunnel{}
+	}
+	return list, err
+}
+
 func (r *ForwardRepo) Insert(f *model.Forward) (int64, error) {
 	res, err := r.DB.Exec(`
 		INSERT INTO forward (user_id, user_name, name, tunnel_id, remote_addr, strategy,
@@ -132,8 +198,7 @@ func chunkInt64IDs(ids []int64, size int) [][]int64 {
 }
 
 // ListByIDs 批量按 ID 查询转发（批量操作预取，避免 N+1）
-func (r *ForwardRepo) ListByIDs(ids []int64) ([]model.Forward, error) {
-	if len(ids) == 0 {
+func (r *ForwardRepo) ListByIDs(ids []int64) ([]model.Forward, error) {	if len(ids) == 0 {
 		return nil, nil
 	}
 	var out []model.Forward

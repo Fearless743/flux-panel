@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@heroui/button";
 import { Input, Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
+import { Pagination } from "@heroui/pagination";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
@@ -46,7 +47,6 @@ import {
   batchResumeForward,
   batchChangeTunnelForward
 } from "@/api";
-import { JwtUtil } from "@/utils/jwt";
 
 interface Forward {
   id: number;
@@ -114,10 +114,16 @@ interface DiagnosisResult {
 
 export default function ForwardPage() {
   const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(false);
   const [forwards, setForwards] = useState<Forward[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
-  
-  // 筛选状态
+
+  // 分页状态（服务端分页：每页只拉一页数据，高性能）
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
+
+  // 筛选状态（均下推服务端 WHERE，避免全量拉取后前端过滤）
   const [filterTunnelId, setFilterTunnelId] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState<number | null>(null);
   const [filterUserName, setFilterUserName] = useState<string>('');
@@ -191,80 +197,106 @@ export default function ForwardPage() {
   const [batchTargetTunnelId, setBatchTargetTunnelId] = useState<number | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
 
+  // fetchForwards 闭包快照：防抖 effect 内的调用用 ref 取最新筛选值，避免 stale 闭包漏条件
+  const pageRef = useRef({ page: 1, pageSize: 20, tunnelId: null as number | null, status: null as number | null, keyword: '' });
+  pageRef.current = { page, pageSize, tunnelId: filterTunnelId, status: filterStatus, keyword: filterUserName };
+  const firstLoadRef = useRef(true);
+  const skipKeywordEffect = useRef(true);
+
   useEffect(() => {
-    loadData();
+    loadTunnels();
+    fetchForwards();
+    skipKeywordEffect.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 加载所有数据
-  const loadData = async (lod = true) => {
-    setLoading(lod);
+  // 搜索关键字防抖：输入停止 400ms 后回第 1 页服务端搜索（名称/目标地址/用户名）
+  useEffect(() => {
+    if (skipKeywordEffect.current) return;
+    const t = setTimeout(() => {
+      fetchForwards({ page: 1, keyword: filterUserName });
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterUserName]);
+
+  // 分页拉取：只取当前页（COUNT + 单页 LIMIT/OFFSET + 页内填充），与总量无关恒定 ~5 请求
+  const fetchForwards = async (opts?: {
+    page?: number;
+    pageSize?: number;
+    tunnelId?: number | null;
+    status?: number | null;
+    keyword?: string;
+    silent?: boolean;
+  }) => {
+    const p = opts?.page ?? pageRef.current.page;
+    const ps = opts?.pageSize ?? pageRef.current.pageSize;
+    const tid = opts?.tunnelId !== undefined ? opts.tunnelId : pageRef.current.tunnelId;
+    const st = opts?.status !== undefined ? opts.status : pageRef.current.status;
+    const kw = (opts?.keyword !== undefined ? opts.keyword : pageRef.current.keyword).trim();
+    setPage(p);
+    setPageSize(ps);
+    if (!opts?.silent) {
+      if (firstLoadRef.current) setLoading(true);
+      else setPageLoading(true);
+    }
     try {
-      const [forwardsRes, tunnelsRes] = await Promise.all([
-        getForwardList(),
-        userTunnel()
-      ]);
-      
-      if (forwardsRes.code === 0) {
-        const forwardsData = forwardsRes.data?.map((forward: any) => ({
+      let cur = p;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const params: Record<string, unknown> = { page: cur, pageSize: ps };
+        if (tid !== null && tid !== undefined) params.tunnelId = tid;
+        if (st !== null && st !== undefined) params.status = st;
+        if (kw) params.keyword = kw;
+        const res = await getForwardList(params);
+        if (res.code !== 0) {
+          toast.error(res.msg || '获取转发列表失败');
+          return;
+        }
+        const d: any = res.data;
+        // 兼容后端 legacy 数组返回（无分页字段时）
+        const rawList: any[] = Array.isArray(d) ? d : (d?.list || []);
+        const mapped: Forward[] = rawList.map((forward: any) => ({
           ...forward,
           serviceRunning: forward.status === 1
-        })) || [];
-        setForwards(forwardsData);
-        
-        // 初始化拖拽排序顺序
-        const currentUserId = JwtUtil.getUserIdFromToken();
-        let userForwards = forwardsData;
-        if (currentUserId !== null) {
-          userForwards = forwardsData.filter((f: Forward) => f.userId === currentUserId);
+        }));
+        const tot: number = Array.isArray(d) ? mapped.length : (d?.total ?? mapped.length);
+        // 删除后当前页变空且不是首页时自动退一页
+        if (mapped.length === 0 && cur > 1 && !Array.isArray(d)) {
+          cur -= 1;
+          setPage(cur);
+          continue;
         }
-        
-        const hasDbOrdering = userForwards.some((f: Forward) => f.inx !== undefined && f.inx !== 0);
-        
-        if (hasDbOrdering) {
-          const dbOrder = userForwards
-            .sort((a: Forward, b: Forward) => (a.inx ?? 0) - (b.inx ?? 0))
-            .map((f: Forward) => f.id);
-          setForwardOrder(dbOrder);
-          try {
-            localStorage.setItem('forward-order', JSON.stringify(dbOrder));
-          } catch (error) {
-            console.warn('无法保存排序到localStorage:', error);
-          }
-        } else {
-          const savedOrder = localStorage.getItem('forward-order');
-          if (savedOrder) {
-            try {
-              const orderIds = JSON.parse(savedOrder);
-              const validOrder = orderIds.filter((id: number) => 
-                userForwards.some((f: Forward) => f.id === id)
-              );
-              userForwards.forEach((forward: Forward) => {
-                if (!validOrder.includes(forward.id)) {
-                  validOrder.push(forward.id);
-                }
-              });
-              setForwardOrder(validOrder);
-            } catch {
-              setForwardOrder(userForwards.map((f: Forward) => f.id));
-            }
-          } else {
-            setForwardOrder(userForwards.map((f: Forward) => f.id));
-          }
-        }
-      } else {
-        toast.error(forwardsRes.msg || '获取转发列表失败');
+        setForwards(mapped);
+        setTotal(tot);
+        setForwardOrder(mapped.map((f: Forward) => f.id));
+        return;
       }
-      
+    } catch (error) {
+      console.error('加载数据失败:', error);
+      toast.error('加载数据失败');
+    } finally {
+      firstLoadRef.current = false;
+      setLoading(false);
+      setPageLoading(false);
+    }
+  };
+
+  // 兼容旧调用点的别名（loadData() = 拉当前页，loadData(false) = 静默拉当前页）
+  const loadData = async (lod = true) => {
+    if (lod) await fetchForwards();
+    else await fetchForwards({ silent: true });
+  };
+
+  const loadTunnels = async () => {
+    try {
+      const tunnelsRes = await userTunnel();
       if (tunnelsRes.code === 0) {
         setTunnels(tunnelsRes.data || []);
       } else {
         console.warn('获取隧道列表失败:', tunnelsRes.msg);
       }
     } catch (error) {
-      console.error('加载数据失败:', error);
-      toast.error('加载数据失败');
-    } finally {
-      setLoading(false);
+      console.warn('获取隧道列表失败:', error);
     }
   };
 
@@ -397,38 +429,9 @@ export default function ForwardPage() {
     });
   };
 
-  // 静默同步转发列表：不触发全屏 loading，将新数据合并替换到老数据
+  // 静默同步转发列表：重拉当前页（单页 ~5 请求，无全屏 loading 闪烁）
   const syncForwardsSilently = async () => {
-    try {
-      const forwardsRes = await getForwardList();
-      if (forwardsRes.code !== 0) return;
-      const freshData: Forward[] = forwardsRes.data?.map((forward: any) => ({
-        ...forward,
-        serviceRunning: forward.status === 1
-      })) || [];
-      const freshMap = new Map(freshData.map((f: Forward) => [f.id, f]));
-      setForwards(prev => {
-        // 老数据中仍存在的用新数据替换，已删除的去掉
-        const merged = prev
-          .filter(f => freshMap.has(f.id))
-          .map(f => freshMap.get(f.id)!);
-        // 新数据中多出来的追加（新建的转发）
-        const prevIds = new Set(prev.map(f => f.id));
-        const added = freshData.filter((f: Forward) => !prevIds.has(f.id));
-        return [...merged, ...added];
-      });
-      // 新转发补进排序，避免覆盖本地拖拽顺序
-      setForwardOrder(prevOrder => {
-        const freshIds = new Set(freshData.map((f: Forward) => f.id));
-        const kept = (prevOrder || []).filter(id => freshIds.has(id));
-        const addedIds = freshData
-          .map((f: Forward) => f.id)
-          .filter(id => !kept.includes(id));
-        return [...kept, ...addedIds];
-      });
-    } catch (error) {
-      console.warn('静默同步转发列表失败:', error);
-    }
+    await fetchForwards({ silent: true });
   };
 
   // 提交表单
@@ -475,37 +478,11 @@ export default function ForwardPage() {
         toast.success(isEdit ? '修改成功' : '创建成功');
         setModalOpen(false);
         if (isEdit) {
-          // 编辑：将新数据直接替换到老数据，不全量刷新
-          const tunnelName = tunnels.find(t => t.id === form.tunnelId)?.name;
-          setForwards(prev => prev.map(f =>
-            f.id === form.id
-              ? {
-                  ...f,
-                  name: form.name,
-                  tunnelId: form.tunnelId!,
-                  tunnelName: tunnelName ?? f.tunnelName,
-                  remoteAddr: processedRemoteAddr,
-                  strategy: finalStrategy,
-                  inPort: form.inPort ?? f.inPort,
-                  status: 1,
-                  serviceRunning: true,
-                }
-              : f
-          ));
-          // 后台静默同步一次，校准服务端分配的端口/入口等字段（无 loading 闪烁）
+          // 编辑：静默重拉当前页校准服务端字段（无 loading 闪烁）
           syncForwardsSilently();
         } else {
-          // 新建：后端不返回完整对象，静默拉取后只合并增量，不重置 loading
-          if (res.data && (res.data as any).id) {
-            const created = {
-              ...(res.data as any),
-              serviceRunning: (res.data as any).status === 1,
-            } as Forward;
-            setForwards(prev => [...prev, created]);
-            setForwardOrder(prevOrder => [...(prevOrder || []), created.id]);
-          } else {
-            syncForwardsSilently();
-          }
+          // 新建：回第 1 页（默认 created_time 倒序，新记录在前）
+          fetchForwards({ page: 1 });
         }
       } else {
         toast.error(res.msg || '操作失败');
@@ -785,29 +762,29 @@ export default function ForwardPage() {
     setExportModalOpen(true);
   };
 
-  // 执行导出
-  const executeExport = () => {
+  // 执行导出（循环拉页取全量筛选结果，每页 200 条，避免单次大 LIMIT）
+  const executeExport = async () => {
     if (!selectedTunnelForExport) {
       toast.error('请选择要导出的隧道');
       return;
     }
 
     setExportLoading(true);
-    
+
     try {
-      const forwardsToExport = getSortedForwards().filter(forward => forward.tunnelId === selectedTunnelForExport);
-      
+      const forwardsToExport = await fetchAllFiltered(selectedTunnelForExport);
+
       if (forwardsToExport.length === 0) {
         toast.error('所选隧道没有转发数据');
         setExportLoading(false);
         return;
       }
-      
+
       // 格式化导出数据：remoteAddr|name|inPort
       const exportLines = forwardsToExport.map(forward => {
         return `${forward.remoteAddr}|${forward.name}|${forward.inPort}`;
       });
-      
+
       const exportText = exportLines.join('\n');
       setExportData(exportText);
     } catch (error) {
@@ -816,6 +793,33 @@ export default function ForwardPage() {
     } finally {
       setExportLoading(false);
     }
+  };
+
+  // 拉取全部筛选结果（导出用）：按 tunnelId + 当前状态/关键字逐页取，最多 50 页（1 万条）兜底
+  const fetchAllFiltered = async (tunnelId: number | null): Promise<Forward[]> => {
+    const all: Forward[] = [];
+    const ps = 200;
+    for (let p = 1; p <= 50; p++) {
+      const params: Record<string, unknown> = { page: p, pageSize: ps };
+      if (tunnelId !== null) params.tunnelId = tunnelId;
+      if (filterStatus !== null) params.status = filterStatus;
+      if (filterUserName.trim()) params.keyword = filterUserName.trim();
+      const res = await getForwardList(params);
+      if (res.code !== 0) {
+        throw new Error(res.msg || '获取转发列表失败');
+      }
+      const d: any = res.data;
+      const rawList: any[] = Array.isArray(d) ? d : (d?.list || []);
+      const mapped: Forward[] = rawList.map((forward: any) => ({
+        ...forward,
+        serviceRunning: forward.status === 1
+      }));
+      all.push(...mapped);
+      if (Array.isArray(d)) break;
+      const tot: number = d?.total ?? mapped.length;
+      if (all.length >= tot || mapped.length < ps) break;
+    }
+    return all;
   };
 
   // 复制导出数据
@@ -961,11 +965,16 @@ export default function ForwardPage() {
     return addresses.length;
   };
 
-  // 处理拖拽结束
+  // 处理拖拽结束（仅单页无筛选时允许：inx 为全局排序，跨页/筛选子集拖拽会破坏全局顺序）
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    
+
     if (!active || !over || active.id === over.id) return;
+
+    if (total > pageSize || filterTunnelId !== null || filterStatus !== null || filterUserName.trim() !== '') {
+      toast.error('多页或筛选模式下暂不支持拖拽排序，请清除筛选并将每页数量调大后重试');
+      return;
+    }
     
     // 确保 forwardOrder 存在且有效
     if (!forwardOrder || forwardOrder.length === 0) return;
@@ -1144,30 +1153,10 @@ export default function ForwardPage() {
     })
   );
 
-  // 获取筛选后的转发列表（已排序）
+  // 获取筛选后的转发列表（服务端已按隧道/状态/关键字过滤，此处直接返回当前页）
   const getFilteredForwards = (): Forward[] => {
     if (!forwards || forwards.length === 0) return [];
-
-    let filtered = forwards;
-
-    // 按用户筛选
-    if (filterUserName.trim()) {
-      filtered = filtered.filter(f =>
-        f.userName?.toLowerCase().includes(filterUserName.toLowerCase())
-      );
-    }
-
-    // 按隧道筛选
-    if (filterTunnelId !== null) {
-      filtered = filtered.filter(f => f.tunnelId === filterTunnelId);
-    }
-
-    // 按状态筛选
-    if (filterStatus !== null) {
-      filtered = filtered.filter(f => f.status === filterStatus);
-    }
-
-    return filtered;
+    return forwards;
   };
 
   // 根据排序顺序获取转发列表
@@ -1347,10 +1336,10 @@ export default function ForwardPage() {
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Input
               size="sm"
-              placeholder="搜索用户..."
+              placeholder="搜索名称/目标/用户..."
               value={filterUserName}
               onChange={(e) => setFilterUserName(e.target.value)}
-              className="w-36"
+              className="w-44"
               variant="bordered"
               startContent={
                 <svg className="w-3.5 h-3.5 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1365,7 +1354,9 @@ export default function ForwardPage() {
               selectedKeys={filterTunnelId !== null ? [filterTunnelId.toString()] : []}
               onSelectionChange={(keys) => {
                 const key = Array.from(keys)[0] as string | undefined;
-                setFilterTunnelId(key && key !== 'all' ? parseInt(key) : null);
+                const v = key && key !== 'all' ? parseInt(key) : null;
+                setFilterTunnelId(v);
+                fetchForwards({ page: 1, tunnelId: v });
               }}
               className="w-36"
               classNames={{ value: "text-xs" }}
@@ -1380,7 +1371,9 @@ export default function ForwardPage() {
               selectedKeys={filterStatus !== null ? [filterStatus.toString()] : []}
               onSelectionChange={(keys) => {
                 const key = Array.from(keys)[0] as string | undefined;
-                setFilterStatus(key && key !== 'all' ? parseInt(key) : null);
+                const v = key && key !== 'all' ? parseInt(key) : null;
+                setFilterStatus(v);
+                fetchForwards({ page: 1, status: v });
               }}
               className="w-28"
               classNames={{ value: "text-xs" }}
@@ -1457,6 +1450,7 @@ export default function ForwardPage() {
 
         {/* 转发列表（直接显示模式） */}
         {getSortedForwards().length > 0 ? (
+          <>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -1496,6 +1490,43 @@ export default function ForwardPage() {
               </div>
             </SortableContext>
           </DndContext>
+          {/* 分页条：服务端分页，每页只渲染当前页行 */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
+            <div className="text-xs text-default-500">
+              共 {total} 条{total > pageSize ? ` · 第 ${page} / ${Math.max(1, Math.ceil(total / pageSize))} 页` : ''}
+              {pageLoading && ' · 加载中...'}
+            </div>
+            <div className="flex items-center gap-3">
+              <Select
+                size="sm"
+                aria-label="每页数量"
+                variant="bordered"
+                className="w-28"
+                classNames={{ value: "text-xs" }}
+                selectedKeys={[pageSize.toString()]}
+                onSelectionChange={(keys) => {
+                  const key = Array.from(keys)[0] as string | undefined;
+                  const ps = key ? parseInt(key) : 20;
+                  fetchForwards({ page: 1, pageSize: ps });
+                }}
+                isDisabled={pageLoading}
+              >
+                <SelectItem key="10">10 / 页</SelectItem>
+                <SelectItem key="20">20 / 页</SelectItem>
+                <SelectItem key="50">50 / 页</SelectItem>
+                <SelectItem key="100">100 / 页</SelectItem>
+              </Select>
+              <Pagination
+                size="sm"
+                showControls
+                page={page}
+                total={Math.max(1, Math.ceil(total / pageSize))}
+                onChange={(p) => fetchForwards({ page: p })}
+                isDisabled={pageLoading}
+              />
+            </div>
+          </div>
+          </>
         ) : (
           <div className="text-center py-16">
             <div className="flex flex-col items-center gap-4">

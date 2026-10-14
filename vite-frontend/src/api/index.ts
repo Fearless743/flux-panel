@@ -53,7 +53,8 @@ export const userTunnel = () => Network.post("/tunnel/user/tunnel");
 
 // 转发CRUD操作 - 全部使用POST请求
 export const createForward = (data: any) => Network.post("/forward/create", data);
-export const getForwardList = () => Network.post("/forward/list");
+// 分页列表：params 可含 page/pageSize/tunnelId/status/keyword；空参时后端兼容返回全量数组
+export const getForwardList = (params: any = {}) => Network.post("/forward/list", params);
 export const updateForward = (data: any) => Network.post("/forward/update", data);
 export const deleteForward = (id: number) => Network.post("/forward/delete", { id });
 export const forceDeleteForward = (id: number) => Network.post("/forward/force-delete", { id });

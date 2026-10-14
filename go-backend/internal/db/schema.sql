@@ -125,3 +125,14 @@ CREATE TABLE IF NOT EXISTS vite_config (
   time INTEGER NOT NULL
 );
 
+-- 转发分页索引（高性能多页：COUNT/分页/过滤均走索引，避免全表扫描+全量回填）
+CREATE INDEX IF NOT EXISTS idx_forward_user_created ON forward(user_id, created_time DESC);
+CREATE INDEX IF NOT EXISTS idx_forward_created ON forward(created_time DESC);
+CREATE INDEX IF NOT EXISTS idx_forward_tunnel ON forward(tunnel_id);
+CREATE INDEX IF NOT EXISTS idx_forward_status ON forward(status);
+CREATE INDEX IF NOT EXISTS idx_forward_order ON forward(inx ASC, created_time DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_forward_user_order ON forward(user_id, inx ASC, created_time DESC);
+CREATE INDEX IF NOT EXISTS idx_forward_port_forward ON forward_port(forward_id);
+CREATE INDEX IF NOT EXISTS idx_forward_port_node ON forward_port(node_id);
+CREATE INDEX IF NOT EXISTS idx_chain_tunnel_tunnel_type ON chain_tunnel(tunnel_id, chain_type);
+
