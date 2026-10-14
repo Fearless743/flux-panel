@@ -437,6 +437,13 @@ func (s *ForwardService) Create(user CurrentUser, req ForwardCreateReq) error {
 
 	success := make([]forwardSuccessItem, 0)
 
+	// 先串行落库（端口与节点依赖），再并行下发，重叠多入口节点的 WS 往返
+	type createTask struct {
+		node *model.Node
+		fp   *model.ForwardPort
+		name string
+	}
+	tasks := make([]createTask, 0, len(chainTunnels))
 	for _, ct := range chainTunnels {
 		fp := &model.ForwardPort{
 			ForwardID: forward.ID,
@@ -457,13 +464,31 @@ func (s *ForwardService) Create(user CurrentUser, req ForwardCreateReq) error {
 			s.rollbackCreate(forward.ID, success)
 			return fmt.Errorf("部分节点不存在")
 		}
-		msg := s.addOrUpdateService(serviceName, perm.limiter, node, forward, fp, tunnel, "AddService")
-		if gost.IsOK(msg) {
-			success = append(success, forwardSuccessItem{nodeID: node.ID, name: serviceName})
-		} else {
-			s.rollbackCreate(forward.ID, success)
-			return fmt.Errorf("%s", gost.NormalizeOK(msg))
+		tasks = append(tasks, createTask{node: node, fp: fp, name: serviceName})
+	}
+
+	okFlags := make([]bool, len(tasks))
+	errs := make([]string, len(tasks))
+	parallelEach(len(tasks), batchConcurrency, func(i int) string {
+		msg := s.addOrUpdateService(tasks[i].name, perm.limiter, tasks[i].node, forward, tasks[i].fp, tunnel, "AddService")
+		if !gost.IsOK(msg) {
+			errs[i] = gost.NormalizeOK(msg)
+			return errs[i]
 		}
+		okFlags[i] = true
+		return ""
+	})
+	failMsg := ""
+	for i := range tasks {
+		if okFlags[i] {
+			success = append(success, forwardSuccessItem{nodeID: tasks[i].node.ID, name: tasks[i].name})
+		} else if failMsg == "" {
+			failMsg = errs[i]
+		}
+	}
+	if failMsg != "" {
+		s.rollbackCreate(forward.ID, success)
+		return fmt.Errorf("%s", failMsg)
 	}
 	return nil
 }
@@ -554,6 +579,13 @@ func (s *ForwardService) Update(user CurrentUser, req ForwardUpdateReq) error {
 		return err
 	}
 
+	// 先串行读/写库，再并行下发更新（原逐节点串行 WS）
+	type updTask struct {
+		node *model.Node
+		fp   *model.ForwardPort
+		name string
+	}
+	tasks := make([]updTask, 0, len(chainTunnels))
 	for _, ct := range chainTunnels {
 		serviceName := s.buildServiceName(exist.ID, int64(exist.UserID), userTunnel)
 		node, err := s.Repo.GetNode(ct.NodeID)
@@ -574,10 +606,16 @@ func (s *ForwardService) Update(user CurrentUser, req ForwardUpdateReq) error {
 		if err := s.Port.UpdatePort(fp.ID, fp.Port); err != nil {
 			return err
 		}
-		msg := s.addOrUpdateService(serviceName, perm.limiter, node, exist, fp, tunnel, "UpdateService")
+		tasks = append(tasks, updTask{node: node, fp: fp, name: serviceName})
+	}
+	if errs := parallelEach(len(tasks), batchConcurrency, func(i int) string {
+		msg := s.addOrUpdateService(tasks[i].name, perm.limiter, tasks[i].node, exist, tasks[i].fp, tunnel, "UpdateService")
 		if !gost.IsOK(msg) {
-			return fmt.Errorf("%s", gost.NormalizeOK(msg))
+			return gost.NormalizeOK(msg)
 		}
+		return ""
+	}); len(errs) > 0 {
+		return fmt.Errorf("%s", errs[0])
 	}
 	return nil
 }

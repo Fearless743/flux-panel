@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -104,6 +105,26 @@ func (h *Hub) SendMsgTimeout(nodeID int64, data any, typ string, timeout time.Du
 	case <-time.After(timeout):
 		return GostResult{Msg: "等待响应超时"}
 	}
+}
+
+// SendNoWait 面板 → 节点，只发送不注册 pending、不等待响应。
+// 用于删除/清理等“结果不可用”的场景，避免节点慢响应时被 10s 超时拖住整条请求链。
+// 节点若回包，因无 pending 注册会被 HandleIncoming 直接丢弃。
+func (h *Hub) SendNoWait(nodeID int64, data any, typ string) {
+	h.mu.RLock()
+	conn := h.nodeSessions[nodeID]
+	meta := h.nodeMeta[nodeID]
+	h.mu.RUnlock()
+	if conn == nil {
+		return
+	}
+	payload := map[string]any{
+		"type":      typ,
+		"data":      data,
+		"requestId": uuid.NewString(),
+	}
+	raw, _ := json.Marshal(payload)
+	_ = h.writeConn(conn, meta.NodeSecret, raw)
 }
 
 func (h *Hub) writeConn(conn *websocket.Conn, secret string, plain []byte) error {
@@ -211,12 +232,12 @@ func (h *Hub) HandleIncoming(conn *websocket.Conn, secret string, raw []byte) {
 	}
 
 	s := string(payload)
-	if contains(s, "memory_usage") {
+	if strings.Contains(s, "memory_usage") {
 		_ = h.writeConn(conn, secret, []byte(`{"type":"call"}`))
 		return
 	}
 
-	if contains(s, "requestId") {
+	if strings.Contains(s, "requestId") {
 		var resp struct {
 			RequestID string          `json:"requestId"`
 			Message   string          `json:"message"`
@@ -245,19 +266,6 @@ func (h *Hub) HandleIncoming(conn *websocket.Conn, secret string, raw []byte) {
 		return
 	}
 	slog.Info("ws message", "payload", truncate(s, 200))
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || indexOf(s, sub) >= 0)
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 func truncate(s string, n int) string {
