@@ -42,9 +42,8 @@ func createChain(req createChainRequest) error {
 func updateChain(req updateChainRequest) error {
 
 	name := strings.TrimSpace(req.Chain)
-
-	if !registry.ChainRegistry().IsRegistered(name) {
-		return errors.New("chain " + name + " not found")
+	if name == "" {
+		return errors.New("chain name is required")
 	}
 
 	req.Data.Name = name
@@ -54,6 +53,9 @@ func updateChain(req updateChainRequest) error {
 		return errors.New("create chain " + name + " failed: " + err.Error())
 	}
 
+	// upsert：不存在则新建、存在则替换。
+	// 面板对链/服务采用“先 Update，not found 再 Add”的两次往返；节点侧就近 upsert
+	// 可让首次下发一次成型，省掉第二次往返（旧面板的回落分支依旧可用）。
 	registry.ChainRegistry().Unregister(name)
 
 	if err := registry.ChainRegistry().Register(name, v); err != nil {
@@ -64,9 +66,10 @@ func updateChain(req updateChainRequest) error {
 		for i := range c.Chains {
 			if c.Chains[i].Name == name {
 				c.Chains[i] = &req.Data
-				break
+				return nil
 			}
 		}
+		c.Chains = append(c.Chains, &req.Data)
 		return nil
 	})
 

@@ -36,15 +36,15 @@ func createLimiter(req createLimiterRequest) error {
 func updateLimiter(req updateLimiterRequest) error {
 
 	name := strings.TrimSpace(req.Limiter)
-
-	if !registry.TrafficLimiterRegistry().IsRegistered(name) {
-		return errors.New("limiter " + name + " not found")
+	if name == "" {
+		return errors.New("limiter name is required")
 	}
 
 	req.Data.Name = name
 
 	v := parser.ParseTrafficLimiter(&req.Data)
 
+	// upsert：不存在则新建、存在则替换，省去面板 not found 后的第二次往返
 	registry.TrafficLimiterRegistry().Unregister(name)
 
 	if err := registry.TrafficLimiterRegistry().Register(name, v); err != nil {
@@ -55,9 +55,10 @@ func updateLimiter(req updateLimiterRequest) error {
 		for i := range c.Limiters {
 			if c.Limiters[i].Name == name {
 				c.Limiters[i] = &req.Data
-				break
+				return nil
 			}
 		}
+		c.Limiters = append(c.Limiters, &req.Data)
 		return nil
 	})
 

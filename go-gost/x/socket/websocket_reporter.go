@@ -51,9 +51,10 @@ type MemoryInfo struct {
 
 // CommandMessage 命令消息结构体
 type CommandMessage struct {
-	Type      string      `json:"type"`
-	Data      interface{} `json:"data"`
-	RequestId string      `json:"requestId,omitempty"`
+	Type string `json:"type"`
+	// Data 保留原始 JSON 字节，避免解析为 interface{} 后再序列化的往返开销
+	Data      json.RawMessage `json:"data"`
+	RequestId string          `json:"requestId,omitempty"`
 }
 
 // CommandResponse 命令响应结构体
@@ -100,6 +101,7 @@ type WebSocketReporter struct {
 	connected      bool
 	connecting     bool              // 新增：正在连接状态
 	connMutex      sync.Mutex        // 新增：连接状态锁
+	writeMu        sync.Mutex        // 序列化 socket 写入（gorilla/websocket 仅允许单写者）
 	aesCrypto      *crypto.AESCrypto // 新增：AES加密器
 }
 
@@ -320,52 +322,63 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 // sendSystemInfo 发送系统信息
 func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 	w.connMutex.Lock()
-	defer w.connMutex.Unlock()
+	conn := w.conn
+	connected := w.connected
+	w.connMutex.Unlock()
 
-	if w.conn == nil || !w.connected {
+	if conn == nil || !connected {
 		return fmt.Errorf("连接未建立")
 	}
 
-	// 转换为JSON
+	// 序列化与加密放在状态锁之外，避免 ping 上报与命令响应在同一锁上相互阻塞
 	jsonData, err := json.Marshal(sysInfo)
 	if err != nil {
 		return fmt.Errorf("序列化系统信息失败: %v", err)
 	}
+	messageData := w.encryptPayload(jsonData)
 
-	var messageData []byte
+	// 单写者：与 sendResponse 共用 writeMu 串行化写
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
 
-	// 如果有加密器，则加密数据
-	if w.aesCrypto != nil {
-		encryptedData, err := w.aesCrypto.Encrypt(jsonData)
-		if err != nil {
-			fmt.Printf("⚠️ 加密失败，发送原始数据: %v\n", err)
-			messageData = jsonData
-		} else {
-			// 创建加密消息包装器
-			encryptedMessage := map[string]interface{}{
-				"encrypted": true,
-				"data":      encryptedData,
-				"timestamp": time.Now().Unix(),
-			}
-			messageData, err = json.Marshal(encryptedMessage)
-			if err != nil {
-				fmt.Printf("⚠️ 序列化加密消息失败，发送原始数据: %v\n", err)
-				messageData = jsonData
-			}
-		}
-	} else {
-		messageData = jsonData
-	}
-
-	// 设置写入超时
-	w.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-
-	if err := w.conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
-		w.connected = false // 标记连接已断开
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err := conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
+		w.markDisconnected(conn)
 		return fmt.Errorf("写入消息失败: %v", err)
 	}
 
 	return nil
+}
+
+// encryptPayload 按需把载荷包装为加密消息；无加密器或加密失败时返回原始载荷。
+func (w *WebSocketReporter) encryptPayload(jsonData []byte) []byte {
+	if w.aesCrypto == nil {
+		return jsonData
+	}
+	encryptedData, err := w.aesCrypto.Encrypt(jsonData)
+	if err != nil {
+		fmt.Printf("⚠️ 加密失败，发送原始数据: %v\n", err)
+		return jsonData
+	}
+	wrapped, err := json.Marshal(map[string]interface{}{
+		"encrypted": true,
+		"data":      encryptedData,
+		"timestamp": time.Now().Unix(),
+	})
+	if err != nil {
+		fmt.Printf("⚠️ 序列化加密消息失败，发送原始数据: %v\n", err)
+		return jsonData
+	}
+	return wrapped
+}
+
+// markDisconnected 仅在当前连接仍是该 conn 时标记断开，避免误伤已重连的新连接。
+func (w *WebSocketReporter) markDisconnected(conn *websocket.Conn) {
+	w.connMutex.Lock()
+	if w.conn == conn {
+		w.connected = false
+	}
+	w.connMutex.Unlock()
 }
 
 // receiveMessages 接收服务端发送的消息
@@ -501,15 +514,20 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 	}
 }
 
+// wsDebug 控制是否为每条命令打印完整载荷。默认关闭，避免高频配置下发时的
+// 额外序列化与 stdout 开销；置 GOST_WS_DEBUG=1 可开启。
+var wsDebug = func() bool {
+	v := os.Getenv("GOST_WS_DEBUG")
+	return v == "1" || strings.EqualFold(v, "true")
+}()
+
 // routeCommand 路由命令到对应的处理函数
 func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
-	jsonBytes, errs := json.Marshal(cmd)
-	if errs != nil {
-		fmt.Println("Error marshaling JSON:", errs)
-		return
+	if wsDebug {
+		if b, err := json.Marshal(cmd); err == nil {
+			fmt.Println("🔔 收到命令: ", string(b))
+		}
 	}
-
-	fmt.Println("🔔 收到命令: ", string(jsonBytes))
 	var err error
 	var response CommandResponse
 
@@ -933,9 +951,11 @@ func (w *WebSocketReporter) handleCall(data interface{}) error {
 // sendResponse 发送响应消息到服务端
 func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 	w.connMutex.Lock()
-	defer w.connMutex.Unlock()
+	conn := w.conn
+	connected := w.connected
+	w.connMutex.Unlock()
 
-	if w.conn == nil || !w.connected {
+	if conn == nil || !connected {
 		fmt.Printf("❌ 无法发送响应：连接未建立\n")
 		return
 	}
@@ -946,30 +966,8 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 		return
 	}
 
-	var messageData []byte
-
-	// 如果有加密器，则加密数据
-	if w.aesCrypto != nil {
-		encryptedData, err := w.aesCrypto.Encrypt(jsonData)
-		if err != nil {
-			fmt.Printf("⚠️ 加密响应失败，发送原始数据: %v\n", err)
-			messageData = jsonData
-		} else {
-			// 创建加密消息包装器
-			encryptedMessage := map[string]interface{}{
-				"encrypted": true,
-				"data":      encryptedData,
-				"timestamp": time.Now().Unix(),
-			}
-			messageData, err = json.Marshal(encryptedMessage)
-			if err != nil {
-				fmt.Printf("⚠️ 序列化加密响应失败，发送原始数据: %v\n", err)
-				messageData = jsonData
-			}
-		}
-	} else {
-		messageData = jsonData
-	}
+	// 序列化与加密在状态锁外完成
+	messageData := w.encryptPayload(jsonData)
 
 	// 检查消息大小，如果超过10MB则记录警告
 	if len(messageData) > 10*1024*1024 {
@@ -982,10 +980,14 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 		timeout = 30 * time.Second
 	}
 
-	w.conn.SetWriteDeadline(time.Now().Add(timeout))
-	if err := w.conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
+	// 单写者：与 sendSystemInfo 共用 writeMu 串行化写
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+
+	conn.SetWriteDeadline(time.Now().Add(timeout))
+	if err := conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
 		fmt.Printf("❌ 发送响应失败: %v\n", err)
-		w.connected = false
+		w.markDisconnected(conn)
 	}
 }
 
@@ -1037,7 +1039,8 @@ func getCPUInfo() CPUInfo {
 	var cpuInfo CPUInfo
 
 	// 获取CPU使用率
-	percentages, err := cpu.Percent(time.Second, false)
+	// interval=0 返回距上次调用以来的增量，避免每 2s 上报时阻塞 1s
+	percentages, err := cpu.Percent(0, false)
 	if err == nil && len(percentages) > 0 {
 		cpuInfo.Usage = percentages[0]
 	}
