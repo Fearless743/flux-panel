@@ -337,14 +337,16 @@ func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 	}
 	messageData := w.encryptPayload(jsonData)
 
-	// 单写者：与 sendResponse 共用 writeMu 串行化写
+	// 单写者：与 sendResponse 共用 writeMu 串行化写。
+	// writeMu 与 connMutex 不做嵌套（先放开 writeMu 再 markDisconnected），保持单一加锁方向。
 	w.writeMu.Lock()
-	defer w.writeMu.Unlock()
-
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if err := conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
+	werr := conn.WriteMessage(websocket.TextMessage, messageData)
+	w.writeMu.Unlock()
+
+	if werr != nil {
 		w.markDisconnected(conn)
-		return fmt.Errorf("写入消息失败: %v", err)
+		return fmt.Errorf("写入消息失败: %v", werr)
 	}
 
 	return nil
@@ -980,13 +982,15 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 		timeout = 30 * time.Second
 	}
 
-	// 单写者：与 sendSystemInfo 共用 writeMu 串行化写
+	// 单写者：与 sendSystemInfo 共用 writeMu 串行化写。
+	// 先放开 writeMu 再 markDisconnected，避免两把锁嵌套（保持单一加锁方向）。
 	w.writeMu.Lock()
-	defer w.writeMu.Unlock()
-
 	conn.SetWriteDeadline(time.Now().Add(timeout))
-	if err := conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
-		fmt.Printf("❌ 发送响应失败: %v\n", err)
+	werr := conn.WriteMessage(websocket.TextMessage, messageData)
+	w.writeMu.Unlock()
+
+	if werr != nil {
+		fmt.Printf("❌ 发送响应失败: %v\n", werr)
 		w.markDisconnected(conn)
 	}
 }

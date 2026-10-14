@@ -3,6 +3,7 @@ package ws
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -106,5 +107,65 @@ func TestHandleIncomingCallDoesNotBlock(t *testing.T) {
 	}
 	if string(msg) != `{"type":"call"}` {
 		t.Fatalf("unexpected call payload: %s", msg)
+	}
+}
+
+// 回归：SendNoWait 为即发即弃。并发调用不得死锁（writeConn 在 h.mu 之外），
+// 且不注册 pending（节点回包也不会让调用方等待）。
+func TestSendNoWaitConcurrentNoDeadlock(t *testing.T) {
+	up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	var serverConn *websocket.Conn
+	ready := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := up.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		serverConn = c
+		close(ready)
+		for {
+			if _, _, err := c.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := "ws" + srv.URL[len("http"):]
+	client, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer client.Close()
+	<-ready
+
+	h := NewHub()
+	h.RegisterNode(1, serverConn, "", "")
+
+	done := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		for i := 0; i < 50; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				h.SendNoWait(1, map[string]any{"services": []string{"x_tcp"}}, "DeleteService")
+			}()
+		}
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SendNoWait deadlocked / blocked")
+	}
+
+	h.mu.RLock()
+	n := len(h.pending)
+	h.mu.RUnlock()
+	if n != 0 {
+		t.Fatalf("SendNoWait should not register pending, got %d", n)
 	}
 }
