@@ -1,8 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Noto Sans SC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+  /* 字号阶梯：全站统一，页面内禁止再写 text-[x.xxrem] 魔数 */
+  --text-t2xs: 0.6875rem;   /* 11px 角标 / 辅助说明 */
+  --text-t2xs--line-height: 1.5;
+  --text-txs: 0.75rem;      /* 12px 标签 / 表格附属信息 */
+  --text-txs--line-height: 1.5;
+  --text-tsm: 0.8125rem;    /* 13px 次要正文 / 描述 */
+  --text-tsm--line-height: 1.5;
+  --text-tbase: 0.875rem;   /* 14px 正文基线 */
+  --text-tbase--line-height: 1.5;
+  --text-tmd: 0.9375rem;    /* 15px 卡片标题 / 强调行 */
+  --text-tmd--line-height: 1.45;
+  --text-tlg: 1rem;         /* 16px 区块标题 */
+  --text-tlg--line-height: 1.4;
+  --text-txl: 1.125rem;     /* 18px 统计数字 */
+  --text-txl--line-height: 1.35;
+  --text-t2xl: 1.375rem;    /* 22px 页面主标题 */
+  --text-t2xl--line-height: 1.3;
+  --text-t3xl: 1.875rem;    /* 30px 登录页大标题 */
+  --text-t3xl--line-height: 1.25;
+
+  /* 字体与 index.html 预加载保持一致，避免加载后跳变 */
+  --font-sans: "IBM Plex Sans", "Noto Sans SC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
   --animate-fade-up: fade-up 0.3s ease both;
   --animate-fade-in: fade-in 0.2s ease both;
@@ -52,32 +73,39 @@ body {
     #0b0e13;
 }
 
-/* flat card */
-.glass {
-  background: #12161d;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* flat card：底色明显亮于页面背景，边框 10% 白，hover 轻微抬升 */
+.card {
+  background: #151a23;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   border-radius: 0.75rem;
 }
-.glass-hover {
-  transition: border-color 0.15s ease;
+.card-hover {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.glass-hover:hover {
-  border-color: rgba(255, 255, 255, 0.16);
+.card-hover:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
 }
 
+/* 真实渐变文字（白 → 浅蓝），仅用于页面大标题 */
 .text-gradient {
-  color: #f1f5f9;
+  background: linear-gradient(180deg, #ffffff 25%, #9db9e8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.btn-primary-glow {
+.btn-primary {
   background: #2563eb;
-  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.35);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
-.btn-primary-glow:hover {
+.btn-primary:hover {
   background: #1d4ed8;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.5);
 }
-.btn-primary-glow:active { background: #1e40af; }
+.btn-primary:active { background: #1e40af; }
 
 /* nav */
 .navlink {
@@ -88,7 +116,7 @@ body {
   width: 100%;
   padding: 0.55rem 0.75rem;
   border-radius: 0.6rem;
-  font-size: 0.855rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: #8b98ad;
   border: 1px solid transparent;
@@ -115,7 +143,7 @@ body {
 }
 
 /* table */
-.flux-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.86rem; }
+.flux-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
 .flux-table thead th {
   text-align: left;
   font-size: 0.7rem;
@@ -126,9 +154,9 @@ body {
   padding: 0.65rem 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   white-space: nowrap;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
 }
-.flux-table tbody td { padding: 0.75rem 1rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
+.flux-table tbody td { padding: 0.75rem 1rem; border-bottom: 1px solid rgba(255, 255, 255, 0.06); vertical-align: middle; }
 .flux-table tbody tr { transition: background 0.12s ease; }
 .flux-table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
 .flux-table tbody tr:last-child td { border-bottom: none; }
@@ -147,8 +175,8 @@ body {
 .flux-input { padding: 0.6rem 0.8rem; height: 2.6rem; }
 .flux-textarea { padding: 0.6rem 0.8rem; min-height: 5.5rem; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
 .flux-select { padding: 0.6rem 0.8rem; height: 2.6rem; appearance: none; }
-.flux-select option { background: #12161d; color: #e6edf7; }
-.flux-input::placeholder, .flux-textarea::placeholder { color: #54617a; }
+.flux-select option { background: #151a23; color: #e6edf7; }
+.flux-input::placeholder, .flux-textarea::placeholder { color: #7d8aa0; }
 .flux-input:focus, .flux-select:focus, .flux-textarea:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);

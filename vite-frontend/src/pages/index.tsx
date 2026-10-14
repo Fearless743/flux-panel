@@ -260,15 +260,15 @@ export default function IndexPage() {
       <section className="flex min-h-[calc(100dvh-120px)] items-center justify-center py-8 sm:min-h-[calc(100dvh-160px)]">
         <div className="grid w-full max-w-4xl items-stretch gap-5 lg:grid-cols-2">
           {/* 左侧品牌展示（大屏） */}
-          <div className="glass relative hidden overflow-hidden p-8 lg:flex lg:flex-col lg:justify-between">
+          <div className="card relative hidden overflow-hidden p-8 lg:flex lg:flex-col lg:justify-between">
             <div className="relative">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600">
                 <Zap size={22} className="text-white" />
               </div>
-              <h1 className="text-gradient mt-5 text-[1.9rem] font-bold leading-tight tracking-tight">
+              <h1 className="text-gradient mt-5 text-t3xl font-bold leading-tight tracking-tight">
                 {siteConfig.name}
               </h1>
-              <p className="mt-2 text-[0.86rem] leading-relaxed text-slate-400">
+              <p className="mt-2 text-tbase leading-relaxed text-slate-400">
                 高性能端口转发与内网穿透管理面板，一个地址掌控所有节点与隧道。
               </p>
             </div>
@@ -279,8 +279,8 @@ export default function IndexPage() {
                     {f.icon}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[0.84rem] font-semibold text-white">{f.title}</p>
-                    <p className="truncate text-[0.75rem] text-slate-400">{f.desc}</p>
+                    <p className="text-tsm font-semibold text-white">{f.title}</p>
+                    <p className="truncate text-txs text-slate-400">{f.desc}</p>
                   </div>
                 </div>
               ))}
@@ -293,8 +293,8 @@ export default function IndexPage() {
               <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-400/20 bg-blue-400/10 text-blue-300 lg:hidden">
                 <Zap size={20} />
               </div>
-              <h2 className="text-gradient text-[1.4rem] font-bold tracking-tight">欢迎回来</h2>
-              <p className="mt-1 text-[0.82rem] text-slate-400">请输入您的账号信息登录面板</p>
+              <h2 className="text-gradient text-t2xl font-bold tracking-tight">欢迎回来</h2>
+              <p className="mt-1 text-tsm text-slate-400">请输入您的账号信息登录面板</p>
 
               <div className="mt-6 flex flex-col gap-4">
                 <Field label="用户名">
@@ -309,7 +309,7 @@ export default function IndexPage() {
                       className="!pl-10"
                     />
                   </div>
-                  {errors.username && <p className="mt-1 text-[0.72rem] text-red-400">{errors.username}</p>}
+                  {errors.username && <p className="mt-1 text-txs text-red-400">{errors.username}</p>}
                 </Field>
 
                 <Field label="密码">
@@ -325,7 +325,7 @@ export default function IndexPage() {
                       className="!pl-10"
                     />
                   </div>
-                  {errors.password && <p className="mt-1 text-[0.72rem] text-red-400">{errors.password}</p>}
+                  {errors.password && <p className="mt-1 text-txs text-red-400">{errors.password}</p>}
                 </Field>
 
                 <Button
@@ -357,7 +357,7 @@ export default function IndexPage() {
               flux-panel
             </a>
           </p>
-          <p className="mono mt-1 text-xs text-slate-600">
+          <p className="mono mt-1 text-xs text-slate-500">
             v{isWebView ? siteConfig.app_version : siteConfig.version}
           </p>
         </div>

@@ -267,14 +267,14 @@ function SortableTableRow({
             <GripVertical size={15} />
           </span>
           <div className="min-w-0">
-            <div className="truncate text-[0.86rem] font-medium text-white">{forward.name}</div>
-            <div className="truncate text-[0.72rem] text-slate-500">{forward.tunnelName}</div>
+            <div className="truncate text-tbase font-medium text-white">{forward.name}</div>
+            <div className="truncate text-txs text-slate-500">{forward.tunnelName}</div>
           </div>
         </div>
       </td>
       <td>
         <span
-          className={`font-mono text-[0.76rem] text-blue-300 ${hasMultipleAddresses(forward.inIp) ? "cursor-pointer hover:underline" : ""}`}
+          className={`font-mono text-txs text-blue-300 ${hasMultipleAddresses(forward.inIp) ? "cursor-pointer hover:underline" : ""}`}
           onClick={() => hasMultipleAddresses(forward.inIp) && onShowAddr(forward.inIp, forward.inPort, "入口地址")}
           title={formatInAddress(forward.inIp, forward.inPort)}
         >
@@ -283,7 +283,7 @@ function SortableTableRow({
       </td>
       <td>
         <span
-          className={`font-mono text-[0.76rem] text-blue-300 ${hasMultipleAddresses(forward.remoteAddr) ? "cursor-pointer hover:underline" : ""}`}
+          className={`font-mono text-txs text-blue-300 ${hasMultipleAddresses(forward.remoteAddr) ? "cursor-pointer hover:underline" : ""}`}
           onClick={() => hasMultipleAddresses(forward.remoteAddr) && onShowAddr(forward.remoteAddr, null, "目标地址")}
           title={formatRemoteAddress(forward.remoteAddr)}
         >
@@ -1159,7 +1159,7 @@ export default function ForwardPage() {
       {selectedIds.size > 0 && (
         <Card className="mb-4 border-blue-400/25 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-[0.82rem] text-slate-300">
+            <span className="mr-1 text-tsm text-slate-300">
               已选择 <span className="font-semibold text-blue-300">{selectedIds.size}</span> 项
             </span>
             <Button size="sm" variant="danger" onClick={handleBatchDelete} loading={batchLoading}>
@@ -1238,12 +1238,12 @@ export default function ForwardPage() {
                       <div className="flex items-start gap-2.5">
                         <input type="checkbox" checked={checked} onChange={() => toggleSelect(forward.id)} className="mt-1 h-4 w-4 shrink-0 accent-blue-400" aria-label={`选择 ${forward.name}`} />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-[0.9rem] font-semibold text-white">{forward.name}</div>
-                          <div className="mt-0.5 truncate text-[0.74rem] text-slate-500">{forward.tunnelName}</div>
+                          <div className="truncate text-tmd font-semibold text-white">{forward.name}</div>
+                          <div className="mt-0.5 truncate text-txs text-slate-500">{forward.tunnelName}</div>
                         </div>
                         <Switch checked={forward.serviceRunning} disabled={forward.status !== 1 && forward.status !== 0} onChange={() => handleServiceToggle(forward)} />
                       </div>
-                      <div className="mt-2.5 space-y-1.5 font-mono text-[0.74rem]">
+                      <div className="mt-2.5 space-y-1.5 font-mono text-txs">
                         <div className="truncate text-slate-400">
                           入口 <span className="text-blue-300">{formatInAddress(forward.inIp, forward.inPort)}</span>
                         </div>
@@ -1275,7 +1275,7 @@ export default function ForwardPage() {
 
             {/* 分页条 */}
             <div className="flex flex-col items-center justify-between gap-3 border-t border-white/[0.06] px-4 py-3.5 sm:flex-row">
-              <div className="text-[0.76rem] text-slate-500">
+              <div className="text-txs text-slate-500">
                 共 {total} 条{total > pageSize ? ` · 第 ${page} / ${totalPages} 页` : ""}
                 {pageLoading && " · 加载中…"}
               </div>
@@ -1301,7 +1301,7 @@ export default function ForwardPage() {
                       key={p}
                       onClick={() => fetchForwards({ page: p })}
                       disabled={pageLoading}
-                      className={`h-8 min-w-8 rounded-lg px-2 text-[0.8rem] font-medium transition-colors ${p === page ? "bg-blue-400/15 text-blue-200 border border-blue-400/25" : "text-slate-400 hover:bg-white/[0.06] hover:text-white"}`}
+                      className={`h-9 min-w-9 rounded-lg px-2 text-tsm font-medium transition-colors ${p === page ? "bg-blue-400/15 text-blue-200 border border-blue-400/25" : "text-slate-400 hover:bg-white/[0.06] hover:text-white"}`}
                     >
                       {p}
                     </button>
@@ -1358,7 +1358,7 @@ export default function ForwardPage() {
                 </option>
               ))}
             </Select>
-            {!isEdit && errors.tunnelId && <span className="mt-1 block text-[0.72rem] text-red-400">{errors.tunnelId}</span>}
+            {!isEdit && errors.tunnelId && <span className="mt-1 block text-txs text-red-400">{errors.tunnelId}</span>}
           </Field>
           <Field label="入口端口" hint="留空则从节点可用端口中自动分配">
             <Input
@@ -1367,7 +1367,7 @@ export default function ForwardPage() {
               value={form.inPort !== null ? String(form.inPort) : ""}
               onChange={(e) => setForm((prev) => ({ ...prev, inPort: e.target.value ? parseInt(e.target.value) : null }))}
             />
-            {errors.inPort && <span className="mt-1 block text-[0.72rem] text-red-400">{errors.inPort}</span>}
+            {errors.inPort && <span className="mt-1 block text-txs text-red-400">{errors.inPort}</span>}
           </Field>
           <Field label="远程地址" hint="格式: IP:端口 或 域名:端口，多个地址每行一个">
             <Textarea
@@ -1376,7 +1376,7 @@ export default function ForwardPage() {
               value={form.remoteAddr}
               onChange={(e) => setForm((prev) => ({ ...prev, remoteAddr: e.target.value }))}
             />
-            {errors.remoteAddr && <span className="mt-1 block text-[0.72rem] text-red-400">{errors.remoteAddr}</span>}
+            {errors.remoteAddr && <span className="mt-1 block text-txs text-red-400">{errors.remoteAddr}</span>}
           </Field>
           {getAddressCount(form.remoteAddr) > 1 && (
             <Field label="负载策略" hint="多个目标地址的负载均衡策略">
@@ -1408,7 +1408,7 @@ export default function ForwardPage() {
           </>
         }
       >
-        <p className="text-[0.86rem] text-slate-300">
+        <p className="text-tbase text-slate-300">
           确定要删除转发 <span className="font-semibold text-white">“{forwardToDelete?.name}”</span> 吗？删除后该转发将永久消失。
         </p>
       </Modal>
@@ -1418,7 +1418,7 @@ export default function ForwardPage() {
         <div className="max-h-60 space-y-2 overflow-y-auto">
           {addressList.map((item) => (
             <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-              <code className="mr-3 flex-1 break-all font-mono text-[0.8rem] text-slate-200">{item.address}</code>
+              <code className="mr-3 flex-1 break-all font-mono text-tsm text-slate-200">{item.address}</code>
               <Button size="sm" variant="ghost" loading={item.copying} onClick={() => copyAddress(item)}>
                 <Copy size={13} /> 复制
               </Button>
@@ -1469,7 +1469,7 @@ export default function ForwardPage() {
               <Download size={14} /> {exportData ? "重新生成" : "生成导出数据"}
             </Button>
           </div>
-          {exportData && <Textarea readOnly rows={10} value={exportData} className="font-mono text-[0.8rem]" placeholder="暂无数据" />}
+          {exportData && <Textarea readOnly rows={10} value={exportData} className="font-mono text-tsm" placeholder="暂无数据" />}
         </div>
       </Modal>
 
@@ -1492,7 +1492,7 @@ export default function ForwardPage() {
         }
       >
         <div className="space-y-4">
-          <p className="-mt-1 text-[0.76rem] text-slate-500">目标地址支持单个地址（如 example.com:8080）或多个地址用逗号分隔（如 3.3.3.3:3,4.4.4.4:4）</p>
+          <p className="-mt-1 text-txs text-slate-500">目标地址支持单个地址（如 example.com:8080）或多个地址用逗号分隔（如 3.3.3.3:3,4.4.4.4:4）</p>
           <Field label="选择导入隧道">
             <Select value={selectedTunnelForImport ? String(selectedTunnelForImport) : ""} onChange={(e) => setSelectedTunnelForImport(e.target.value ? parseInt(e.target.value) : null)}>
               <option value="" disabled>
@@ -1506,13 +1506,13 @@ export default function ForwardPage() {
             </Select>
           </Field>
           <Field label="导入数据">
-            <Textarea rows={8} placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口" value={importData} onChange={(e) => setImportData(e.target.value)} className="font-mono text-[0.8rem]" />
+            <Textarea rows={8} placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口" value={importData} onChange={(e) => setImportData(e.target.value)} className="font-mono text-tsm" />
           </Field>
           {importResults.length > 0 && (
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-[0.9rem] font-semibold text-white">导入结果</h3>
-                <span className="text-[0.76rem] text-slate-500">
+                <h3 className="text-tmd font-semibold text-white">导入结果</h3>
+                <span className="text-txs text-slate-500">
                   成功：{importResults.filter((r) => r.success).length} / 总计：{importResults.length}
                 </span>
               </div>
@@ -1520,11 +1520,11 @@ export default function ForwardPage() {
                 {importResults.map((result, index) => (
                   <div key={index} className={`rounded-lg border p-2 ${result.success ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-red-400/25 bg-red-400/[0.07]"}`}>
                     <div className="flex items-center gap-2">
-                      <span className={`text-[0.76rem] font-medium ${result.success ? "text-emerald-300" : "text-red-300"}`}>{result.success ? "成功" : "失败"}</span>
-                      <span className="text-[0.76rem] text-slate-500">|</span>
-                      <code className="truncate font-mono text-[0.74rem] text-slate-400">{result.line}</code>
+                      <span className={`text-txs font-medium ${result.success ? "text-emerald-300" : "text-red-300"}`}>{result.success ? "成功" : "失败"}</span>
+                      <span className="text-txs text-slate-500">|</span>
+                      <code className="truncate font-mono text-txs text-slate-400">{result.line}</code>
                     </div>
-                    <div className={`mt-0.5 text-[0.76rem] ${result.success ? "text-emerald-400/90" : "text-red-400/90"}`}>{result.message}</div>
+                    <div className={`mt-0.5 text-txs ${result.success ? "text-emerald-400/90" : "text-red-400/90"}`}>{result.message}</div>
                   </div>
                 ))}
               </div>
@@ -1559,16 +1559,16 @@ export default function ForwardPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 text-center">
-                <div className="text-[1.4rem] font-bold text-white">{diagnosisResult.results.length}</div>
-                <div className="mt-1 text-[0.74rem] text-slate-500">总测试数</div>
+                <div className="text-t2xl font-bold text-white">{diagnosisResult.results.length}</div>
+                <div className="mt-1 text-txs text-slate-500">总测试数</div>
               </div>
               <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] p-3 text-center">
-                <div className="text-[1.4rem] font-bold text-emerald-300">{diagnosisResult.results.filter((r) => r.success).length}</div>
-                <div className="mt-1 text-[0.74rem] text-emerald-400/80">成功</div>
+                <div className="text-t2xl font-bold text-emerald-300">{diagnosisResult.results.filter((r) => r.success).length}</div>
+                <div className="mt-1 text-txs text-emerald-400/80">成功</div>
               </div>
               <div className="rounded-xl border border-red-400/25 bg-red-400/[0.07] p-3 text-center">
-                <div className="text-[1.4rem] font-bold text-red-300">{diagnosisResult.results.filter((r) => !r.success).length}</div>
-                <div className="mt-1 text-[0.74rem] text-red-400/80">失败</div>
+                <div className="text-t2xl font-bold text-red-300">{diagnosisResult.results.filter((r) => !r.success).length}</div>
+                <div className="mt-1 text-txs text-red-400/80">失败</div>
               </div>
             </div>
 
@@ -1591,7 +1591,7 @@ export default function ForwardPage() {
                   {sections.map((sec) => (
                     <div key={sec.title} className="overflow-hidden rounded-xl border border-white/[0.08]">
                       <div className="border-b border-white/[0.06] bg-blue-400/[0.07] px-3 py-2">
-                        <h3 className="text-[0.82rem] font-semibold text-blue-200">{sec.title}</h3>
+                        <h3 className="text-tsm font-semibold text-blue-200">{sec.title}</h3>
                       </div>
                       <div className="hidden overflow-x-auto md:block">
                         <table className="flux-table">
@@ -1611,12 +1611,12 @@ export default function ForwardPage() {
                                 <tr key={index}>
                                   <td>
                                     <div className="flex items-center gap-2">
-                                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.7rem] ${result.success ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
+                                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-t2xs ${result.success ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
                                         {result.success ? "✓" : "✗"}
                                       </span>
                                       <div className="min-w-0 flex-1">
                                         <div className="truncate font-medium text-slate-100">{result.description}</div>
-                                        <div className="truncate font-mono text-[0.72rem] text-slate-500">
+                                        <div className="truncate font-mono text-txs text-slate-500">
                                           {result.targetIp}:{result.targetPort}
                                         </div>
                                       </div>
@@ -1626,17 +1626,17 @@ export default function ForwardPage() {
                                     <Badge tone={result.success ? "green" : "red"}>{result.success ? "成功" : "失败"}</Badge>
                                   </td>
                                   <td className="text-center">
-                                    {result.success ? <span className="font-semibold text-blue-300">{result.averageTime?.toFixed(0)}</span> : <span className="text-slate-600">-</span>}
+                                    {result.success ? <span className="font-semibold text-blue-300">{result.averageTime?.toFixed(0)}</span> : <span className="text-slate-500">-</span>}
                                   </td>
                                   <td className="text-center">
                                     {result.success ? (
                                       <span className={`font-semibold ${(result.packetLoss || 0) > 0 ? "text-amber-300" : "text-emerald-300"}`}>{result.packetLoss?.toFixed(1)}%</span>
                                     ) : (
-                                      <span className="text-slate-600">-</span>
+                                      <span className="text-slate-500">-</span>
                                     )}
                                   </td>
                                   <td className="text-center">
-                                    {result.success && q ? <Badge tone={q.tone}>{q.text}</Badge> : <span className="text-slate-600">-</span>}
+                                    {result.success && q ? <Badge tone={q.tone}>{q.text}</Badge> : <span className="text-slate-500">-</span>}
                                   </td>
                                 </tr>
                               );
@@ -1650,12 +1650,12 @@ export default function ForwardPage() {
                           return (
                             <div key={index} className={`rounded-lg border p-3 ${result.success ? "border-white/[0.08] bg-white/[0.03]" : "border-red-400/25 bg-red-400/[0.06]"}`}>
                               <div className="mb-2 flex items-start gap-2">
-                                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.72rem] ${result.success ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
+                                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-txs ${result.success ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
                                   {result.success ? "✓" : "✗"}
                                 </span>
                                 <div className="min-w-0 flex-1">
-                                  <div className="break-words text-[0.84rem] font-semibold text-slate-100">{result.description}</div>
-                                  <div className="mt-0.5 break-all font-mono text-[0.72rem] text-slate-500">
+                                  <div className="break-words text-tsm font-semibold text-slate-100">{result.description}</div>
+                                  <div className="mt-0.5 break-all font-mono text-txs text-slate-500">
                                     {result.targetIp}:{result.targetPort}
                                   </div>
                                 </div>
@@ -1664,20 +1664,20 @@ export default function ForwardPage() {
                               {result.success ? (
                                 <div className="grid grid-cols-3 gap-2 border-t border-white/[0.06] pt-2 text-center">
                                   <div>
-                                    <div className="text-[1.05rem] font-bold text-blue-300">{result.averageTime?.toFixed(0)}</div>
-                                    <div className="text-[0.72rem] text-slate-500">延迟(ms)</div>
+                                    <div className="text-txl font-bold text-blue-300">{result.averageTime?.toFixed(0)}</div>
+                                    <div className="text-txs text-slate-500">延迟(ms)</div>
                                   </div>
                                   <div>
-                                    <div className={`text-[1.05rem] font-bold ${(result.packetLoss || 0) > 0 ? "text-amber-300" : "text-emerald-300"}`}>{result.packetLoss?.toFixed(1)}%</div>
-                                    <div className="text-[0.72rem] text-slate-500">丢包率</div>
+                                    <div className={`text-txl font-bold ${(result.packetLoss || 0) > 0 ? "text-amber-300" : "text-emerald-300"}`}>{result.packetLoss?.toFixed(1)}%</div>
+                                    <div className="text-txs text-slate-500">丢包率</div>
                                   </div>
                                   <div>
                                     {q && <Badge tone={q.tone}>{q.text}</Badge>}
-                                    <div className="mt-0.5 text-[0.72rem] text-slate-500">质量</div>
+                                    <div className="mt-0.5 text-txs text-slate-500">质量</div>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="border-t border-white/[0.06] pt-2 text-[0.76rem] text-red-300">{result.message || "连接失败"}</div>
+                                <div className="border-t border-white/[0.06] pt-2 text-txs text-red-300">{result.message || "连接失败"}</div>
                               )}
                             </div>
                           );
@@ -1691,12 +1691,12 @@ export default function ForwardPage() {
 
             {diagnosisResult.results.some((r) => !r.success) && (
               <div className="hidden space-y-2 md:block">
-                <h4 className="text-[0.84rem] font-semibold text-red-300">失败详情</h4>
+                <h4 className="text-tsm font-semibold text-red-300">失败详情</h4>
                 <div className="space-y-2">
                   {diagnosisResult.results
                     .filter((r) => !r.success)
                     .map((result, index) => (
-                      <div key={index} className="rounded-xl border border-red-400/25 bg-red-400/[0.06] p-3 text-[0.78rem]">
+                      <div key={index} className="rounded-xl border border-red-400/25 bg-red-400/[0.06] p-3 text-tsm">
                         <div className="font-semibold text-red-200">{result.description}</div>
                         <div className="mt-1 text-red-300/80">{result.message || "连接失败"}</div>
                       </div>
@@ -1739,7 +1739,7 @@ export default function ForwardPage() {
             ))}
           </Select>
         </Field>
-        <p className="mt-2 text-[0.74rem] text-slate-500">批量迁移将逐个处理每个转发，部分失败不影响其他转发。</p>
+        <p className="mt-2 text-txs text-slate-500">批量迁移将逐个处理每个转发，部分失败不影响其他转发。</p>
       </Modal>
     </div>
   );

@@ -167,12 +167,12 @@ export default function ProfilePage() {
               <UserRound size={26} className="text-white" />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="truncate text-[1.05rem] font-bold tracking-tight text-white">{username}</h3>
+              <h3 className="truncate text-txl font-bold tracking-tight text-white">{username}</h3>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <Badge tone={isAdmin ? "cyan" : "slate"} dot>
                   {isAdmin ? '管理员' : '普通用户'}
                 </Badge>
-                <span className="text-[0.72rem] text-slate-500">
+                <span className="text-txs text-slate-500">
                   {new Date().toLocaleDateString('zh-CN')}
                 </span>
               </div>
@@ -194,7 +194,7 @@ export default function ProfilePage() {
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-400/10 text-blue-300 transition-transform group-active:scale-95">
                   {item.icon}
                 </div>
-                <span className="text-center text-[0.76rem] font-medium text-slate-200">{item.label}</span>
+                <span className="text-center text-txs font-medium text-slate-200">{item.label}</span>
               </button>
             ))}
 
@@ -206,7 +206,7 @@ export default function ProfilePage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-400/10 text-blue-300 transition-transform group-active:scale-95">
                 <KeyRound size={19} />
               </div>
-              <span className="text-center text-[0.76rem] font-medium text-slate-200">修改密码</span>
+              <span className="text-center text-txs font-medium text-slate-200">修改密码</span>
             </button>
 
             {/* 退出登录 */}
@@ -217,7 +217,7 @@ export default function ProfilePage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-400/20 bg-red-400/10 text-red-300 transition-transform group-active:scale-95">
                 <LogOut size={19} />
               </div>
-              <span className="text-center text-[0.76rem] font-medium text-slate-200">退出登录</span>
+              <span className="text-center text-txs font-medium text-slate-200">退出登录</span>
             </button>
           </div>
         </Card>
@@ -234,7 +234,7 @@ export default function ProfilePage() {
               flux-panel
             </a>
           </p>
-          <p className="mono mt-1 text-xs text-slate-600">
+          <p className="mono mt-1 text-xs text-slate-500">
             v{isWebViewFunc() ? siteConfig.app_version : siteConfig.version}
           </p>
         </div>

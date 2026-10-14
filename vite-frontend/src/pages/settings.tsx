@@ -90,8 +90,8 @@ export const SettingsPage = () => {
             <ArrowLeft size={17} />
           </Button>
           <div>
-            <h1 className="text-gradient text-[1.35rem] font-bold tracking-tight">面板设置</h1>
-            <p className="mt-0.5 text-[0.8rem] text-slate-400">管理已保存的面板地址，随时切换当前连接</p>
+            <h1 className="text-gradient text-t2xl font-bold tracking-tight">面板设置</h1>
+            <p className="mt-0.5 text-tsm text-slate-400">管理已保存的面板地址，随时切换当前连接</p>
           </div>
         </div>
 
@@ -147,12 +147,12 @@ export const SettingsPage = () => {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate text-[0.87rem] font-semibold text-white">{panel.name}</span>
+                            <span className="truncate text-tbase font-semibold text-white">{panel.name}</span>
                             {panel.inx && (
                               <Badge tone="green" dot>当前</Badge>
                             )}
                           </div>
-                          <p className="mono mt-1 truncate text-[0.76rem] text-slate-400">{panel.address}</p>
+                          <p className="mono mt-1 truncate text-txs text-slate-400">{panel.address}</p>
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">

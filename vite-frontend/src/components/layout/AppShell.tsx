@@ -11,6 +11,7 @@ import { safeLogout } from "@/utils/logout";
 import { updatePassword } from "@/api";
 import { toast } from "react-hot-toast";
 import { Modal, Input, Field, Button } from "@/components/ui";
+import { useIsMobile } from "@/hooks/use-media-query";
 
 export interface NavItem { path: string; label: string; icon: React.ReactNode; adminOnly?: boolean; keywords?: string }
 
@@ -85,7 +86,7 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
   if (!open) return null;
   return (
     <div className="modal-overlay !items-start pt-[14vh]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-panel glass w-full max-w-xl !rounded-2xl overflow-hidden">
+      <div className="modal-panel card w-full max-w-xl !rounded-2xl overflow-hidden">
         <div className="flex items-center gap-2.5 border-b border-white/[0.07] px-4 py-3">
           <Search size={16} className="text-slate-500" />
           <input
@@ -111,11 +112,11 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
             >
               <span className={clsx(i === active ? "text-blue-300" : "text-slate-500")}>{it.icon}</span>
               <span className="flex-1">{it.label}</span>
-              <span className="mono text-[0.7rem] text-slate-500">{it.hint}</span>
+              <span className="mono text-t2xs text-slate-500">{it.hint}</span>
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-4 border-t border-white/[0.07] px-4 py-2.5 text-[0.72rem] text-slate-500">
+        <div className="flex items-center gap-4 border-t border-white/[0.07] px-4 py-2.5 text-txs text-slate-500">
           <span className="flex items-center gap-1.5"><Command size={12} /> 命令面板</span>
           <span>Flux Panel · {NAV.length} 个模块</span>
         </div>
@@ -137,7 +138,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [username] = useState(() => localStorage.getItem("name") || "Admin");
   const [pwdForm, setPwdForm] = useState({ newUsername: "", currentPassword: "", newPassword: "", confirmPassword: "" });
   const [userMenu, setUserMenu] = useState(false);
-  const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+  const isMobile = useIsMobile();
 
   const visibleNav = NAV.filter((n) => !n.adminOnly || isAdmin);
   const current = NAV.find((n) => location.pathname === n.path) ?? NAV[0];
@@ -181,7 +182,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* desktop sidebar */}
       <aside className={clsx(
-        "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-white/[0.07] bg-[#0e1218] backdrop-blur-xl transition-all duration-300 md:flex",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-white/[0.07] bg-[#0f141c] transition-all duration-300 md:flex",
         collapsed ? "w-[4.6rem]" : "w-60"
       )}>
         <div className="flex h-16 items-center gap-2.5 px-4">
@@ -190,8 +191,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[0.9rem] font-bold tracking-tight text-white">{siteConfig.name}</p>
-              <p className="mono text-[0.68rem] text-slate-500">v{siteConfig.version} · FLUX</p>
+              <p className="truncate text-tmd font-bold tracking-tight text-white">{siteConfig.name}</p>
+              <p className="mono text-t2xs text-slate-500">v{siteConfig.version} · FLUX</p>
             </div>
           )}
         </div>
@@ -199,7 +200,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {!collapsed && (
           <button
             onClick={() => setCmdOpen(true)}
-            className="mx-3 mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[0.78rem] text-slate-500 transition-colors hover:border-blue-400/30 hover:text-slate-300"
+            className="mx-3 mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-tsm text-slate-500 transition-colors hover:border-blue-400/30 hover:text-slate-300"
           >
             <Search size={14} />
             <span className="flex-1 text-left">搜索…</span>
@@ -208,7 +209,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
-          {!collapsed && <p className="px-2 pb-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-slate-600">Console</p>}
+          {!collapsed && <p className="px-2 pb-1.5 text-t2xs font-semibold uppercase tracking-[0.14em] text-slate-500">Console</p>}
           {visibleNav.map((n) => (
             <button key={n.path} onClick={() => go(n.path)} title={collapsed ? n.label : undefined}
               className={clsx("navlink", location.pathname === n.path && "active", collapsed && "justify-center px-0")}>
@@ -229,13 +230,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   {(username || "A").slice(0, 1).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[0.82rem] font-medium text-white">{username}</p>
-                  <p className="text-[0.7rem] text-slate-500">{isAdmin ? "Administrator" : "Member"}</p>
+                  <p className="truncate text-tsm font-medium text-white">{username}</p>
+                  <p className="text-t2xs text-slate-500">{isAdmin ? "Administrator" : "Member"}</p>
                 </div>
               </div>
               <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-                <button onClick={() => setPwdOpen(true)} className="rounded-lg bg-white/[0.05] py-1.5 text-[0.72rem] text-slate-300 hover:bg-white/[0.09]">改密</button>
-                <button onClick={() => { safeLogout(); navigate("/"); }} className="rounded-lg bg-red-500/10 py-1.5 text-[0.72rem] text-red-300 hover:bg-red-500/20">退出</button>
+                <button onClick={() => setPwdOpen(true)} className="rounded-lg bg-white/[0.05] py-1.5 text-txs text-slate-300 hover:bg-white/[0.09]">改密</button>
+                <button onClick={() => { safeLogout(); navigate("/"); }} className="rounded-lg bg-red-500/10 py-1.5 text-txs text-red-300 hover:bg-red-500/20">退出</button>
               </div>
             </div>
           ) : (
@@ -247,18 +248,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           )}
           <button onClick={() => setCollapsed((v) => !v)}
             className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-slate-500 hover:bg-white/[0.05] hover:text-slate-300">
-            {collapsed ? <ChevronsRight size={15} /> : <><ChevronsLeft size={15} /><span className="text-[0.72rem]">收起</span></>}
+            {collapsed ? <ChevronsRight size={15} /> : <><ChevronsLeft size={15} /><span className="text-txs">收起</span></>}
           </button>
         </div>
       </aside>
 
       {/* mobile top bar */}
-      <header className="safe-top fixed inset-x-0 top-0 z-40 border-b border-white/[0.07] bg-[#0b0e13] backdrop-blur-xl md:hidden">
+      <header className="safe-top fixed inset-x-0 top-0 z-40 border-b border-white/[0.07] bg-[#0b0e13] md:hidden">
         <div className="flex h-14 items-center gap-2.5 px-4">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
             <Zap size={15} className="text-white" />
           </div>
-          <p className="flex-1 truncate text-[0.92rem] font-bold text-white">{current.label}</p>
+          <p className="flex-1 truncate text-tmd font-bold text-white">{current.label}</p>
           <button onClick={() => setCmdOpen(true)} className="rounded-lg border border-white/10 bg-white/[0.04] p-2 text-slate-400" aria-label="搜索">
             <Search size={16} />
           </button>
@@ -280,16 +281,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* content */}
       <div className={clsx("transition-all duration-300", collapsed ? "md:pl-[4.6rem]" : "md:pl-60")}>
         {/* desktop topbar */}
-        <div className="sticky top-0 z-30 hidden border-b border-white/[0.06] bg-[#0b0e13] backdrop-blur-xl md:block">
+        <div className="sticky top-0 z-30 hidden border-b border-white/[0.06] bg-[#0b0e13] md:block">
           <div className="flex h-16 items-center gap-3 px-6">
-            <nav className="flex items-center gap-1.5 text-[0.8rem] text-slate-500">
+            <nav className="flex items-center gap-1.5 text-tsm text-slate-500">
               <Home size={13} />
               <span>/</span>
               <span className="text-slate-200 font-medium">{current.label}</span>
             </nav>
             <div className="flex-1" />
             <button onClick={() => setCmdOpen(true)}
-              className="hidden w-64 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[0.78rem] text-slate-500 transition-colors hover:border-blue-400/30 lg:flex">
+              className="hidden w-64 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-tsm text-slate-500 transition-colors hover:border-blue-400/30 lg:flex">
               <Search size={14} />
               <span className="flex-1 text-left">跳转页面 / 操作…</span>
               <kbd className="cmd-kbd">⌘K</kbd>
@@ -306,7 +307,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* mobile bottom tab */}
       {!isMobile ? null : (
-        <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.08] bg-[#0e1218] backdrop-blur-xl md:hidden">
+        <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.08] bg-[#0f141c] md:hidden">
           <div className="grid" style={{ gridTemplateColumns: `repeat(${Math.min(visibleNav.length + 1, 5)}, 1fr)` }}>
             {visibleNav.slice(0, 4).map((n) => {
               const active = location.pathname === n.path;
@@ -316,7 +317,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     "flex h-8 w-12 items-center justify-center rounded-full transition-all",
                     active ? "bg-blue-400/15 text-blue-300" : "text-slate-500"
                   )}>{n.icon}</span>
-                  <span className={clsx("text-[0.64rem] font-medium", active ? "text-blue-200" : "text-slate-500")}>{n.label}</span>
+                  <span className={clsx("text-t2xs font-medium", active ? "text-blue-200" : "text-slate-500")}>{n.label}</span>
                 </button>
               );
             })}
@@ -324,7 +325,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="flex h-8 w-12 items-center justify-center rounded-full text-slate-500">
                 <Command size={17} />
               </span>
-              <span className="text-[0.64rem] text-slate-500">更多</span>
+              <span className="text-t2xs text-slate-500">更多</span>
             </button>
           </div>
         </nav>
@@ -333,7 +334,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* mobile more sheet */}
       {mobileNav && (
         <div className="modal-overlay !items-end !p-0 md:hidden" onMouseDown={(e) => e.target === e.currentTarget && setMobileNav(false)}>
-          <div className="modal-panel glass w-full !rounded-b-none !rounded-t-3xl p-4 pb-8">
+          <div className="modal-panel card w-full !rounded-b-none !rounded-t-3xl p-4 pb-8">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/15" />
             <div className="grid grid-cols-4 gap-2">
               {visibleNav.map((n) => (
@@ -341,7 +342,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   className={clsx("flex flex-col items-center gap-1.5 rounded-2xl border p-3.5",
                     location.pathname === n.path ? "border-blue-400/30 bg-blue-400/10 text-blue-200" : "border-white/[0.07] bg-white/[0.03] text-slate-300")}>
                   {n.icon}
-                  <span className="text-[0.7rem]">{n.label}</span>
+                  <span className="text-t2xs">{n.label}</span>
                 </button>
               ))}
             </div>

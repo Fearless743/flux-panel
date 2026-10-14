@@ -21,26 +21,13 @@ import H5SimpleLayout from "@/layouts/h5-simple";
 
 import { isLoggedIn } from "@/utils/auth";
 import { siteConfig } from "@/config/site";
+import { useIsMobile } from "@/hooks/use-media-query";
 
 const useH5Mode = () => {
-  const getInitial = () => {
-    const isMobile = window.innerWidth <= 768;
-    const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const isH5Param = new URLSearchParams(window.location.search).get("h5") === "true";
-    return isMobile || isMobileBrowser || isH5Param;
-  };
-  const [isH5, setIsH5] = useState(getInitial);
-  useEffect(() => {
-    const check = () => {
-      const isMobile = window.innerWidth <= 768;
-      const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      const isH5Param = new URLSearchParams(window.location.search).get("h5") === "true";
-      setIsH5(isMobile || isMobileBrowser || isH5Param);
-    };
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-  return isH5;
+  const isMobile = useIsMobile();
+  const [isMobileBrowser] = useState(() => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+  const [isH5Param] = useState(() => new URLSearchParams(window.location.search).get("h5") === "true");
+  return isMobile || isMobileBrowser || isH5Param;
 };
 
 const LoadingScreen = () => (

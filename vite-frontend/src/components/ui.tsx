@@ -22,11 +22,11 @@ export function Button({
       className={clsx(
         "inline-flex items-center justify-center gap-1.5 font-medium rounded-[0.7rem] transition-all select-none whitespace-nowrap",
         "disabled:opacity-45 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50",
-        size === "sm" && "h-8 px-3 text-[0.8rem]",
-        size === "md" && "h-10 px-4 text-[0.86rem]",
-        size === "lg" && "h-11 px-6 text-[0.92rem]",
+        size === "sm" && "h-8 px-3 text-tsm",
+        size === "md" && "h-10 px-4 text-tbase",
+        size === "lg" && "h-11 px-6 text-tmd",
         size === "icon" && "h-9 w-9",
-        variant === "primary" && "btn-primary-glow text-white font-semibold",
+        variant === "primary" && "btn-primary text-white font-semibold",
         variant === "soft" && "bg-blue-400/10 text-blue-200 border border-blue-400/20 hover:bg-blue-400/15",
         variant === "outline" && "border border-white/12 bg-white/[0.03] text-slate-200 hover:bg-white/[0.07] hover:border-white/20",
         variant === "ghost" && "text-slate-300 hover:bg-white/[0.06] hover:text-white",
@@ -42,14 +42,14 @@ export function Button({
 
 /* ---------- Card ---------- */
 export function Card({ className, children, hover }: { className?: string; children: React.ReactNode; hover?: boolean }) {
-  return <div className={clsx("glass", hover && "glass-hover", className)}>{children}</div>;
+  return <div className={clsx("card", hover && "card-hover", className)}>{children}</div>;
 }
 export function CardHead({ title, desc, right }: { title: React.ReactNode; desc?: React.ReactNode; right?: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
       <div className="min-w-0">
-        <h3 className="text-[0.95rem] font-semibold tracking-tight text-white">{title}</h3>
-        {desc && <p className="mt-0.5 text-[0.8rem] text-slate-400">{desc}</p>}
+        <h3 className="text-tlg font-semibold tracking-tight text-white">{title}</h3>
+        {desc && <p className="mt-0.5 text-tsm text-slate-400">{desc}</p>}
       </div>
       {right && <div className="flex items-center gap-2 shrink-0">{right}</div>}
     </div>
@@ -60,9 +60,9 @@ export function CardHead({ title, desc, right }: { title: React.ReactNode; desc?
 export function Field({ label, hint, children, className }: { label?: string; hint?: string; children: React.ReactNode; className?: string }) {
   return (
     <label className={clsx("block", className)}>
-      {label && <span className="mb-1.5 block text-[0.78rem] font-medium text-slate-300">{label}</span>}
+      {label && <span className="mb-1.5 block text-tsm font-medium text-slate-300">{label}</span>}
       {children}
-      {hint && <span className="mt-1 block text-[0.72rem] text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1 block text-txs text-slate-500">{hint}</span>}
     </label>
   );
 }
@@ -100,7 +100,7 @@ export function Badge({ tone = "slate", children, className, dot }: { tone?: "sl
     amber: "bg-amber-400", cyan: "bg-blue-400", violet: "bg-blue-500",
   };
   return (
-    <span className={clsx("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[0.72rem] font-medium", tones[tone], className)}>
+    <span className={clsx("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-txs font-medium", tones[tone], className)}>
       {dot && <span className={clsx("h-1.5 w-1.5 rounded-full animate-pulse", dotColor[tone])} />}
       {children}
     </span>
@@ -131,12 +131,15 @@ export function Switch({ checked, onChange, disabled }: { checked: boolean; onCh
 }
 
 /* ---------- Progress ---------- */
-export function Progress({ value, className }: { value: number; className?: string }) {
+/* 按用量自动变色：>=95% 红、>=80% 琥珀、其余蓝，用于配额预警；tone 可强制覆盖 */
+export function Progress({ value, className, tone = "auto" }: { value: number; className?: string; tone?: "auto" | "blue" | "emerald" | "amber" | "red" }) {
   const v = Math.max(0, Math.min(100, value));
+  const auto = v >= 95 ? "bg-red-500" : v >= 80 ? "bg-amber-400" : "bg-blue-500";
+  const fixed = { blue: "bg-blue-500", emerald: "bg-emerald-400", amber: "bg-amber-400", red: "bg-red-500" };
   return (
     <div className={clsx("h-1.5 w-full overflow-hidden rounded-full bg-white/[0.07]", className)}>
       <div
-        className="h-full rounded-full bg-blue-500 transition-all duration-500"
+        className={clsx("h-full rounded-full transition-all duration-500", tone === "auto" ? auto : fixed[tone])}
         style={{ width: `${v}%` }}
       />
     </div>
@@ -160,11 +163,11 @@ export function Modal({
   if (!open) return null;
   return createPortal(
     <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={clsx("modal-panel glass w-full !rounded-2xl", width)}>
+      <div className={clsx("modal-panel card w-full !rounded-2xl", width)}>
         <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-5 py-4">
           <div>
-            <h2 className="text-[1rem] font-semibold tracking-tight text-white">{title}</h2>
-            {desc && <p className="mt-0.5 text-[0.8rem] text-slate-400">{desc}</p>}
+            <h2 className="text-tlg font-semibold tracking-tight text-white">{title}</h2>
+            {desc && <p className="mt-0.5 text-tsm text-slate-400">{desc}</p>}
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/[0.07] hover:text-white transition-colors" aria-label="关闭">
             <X size={17} />
@@ -183,8 +186,8 @@ export function PageHeader({ title, desc, actions }: { title: string; desc?: str
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-[1.45rem] font-bold tracking-tight text-white">{title}</h1>
-        {desc && <p className="mt-1 text-[0.85rem] text-slate-400">{desc}</p>}
+        <h1 className="text-t2xl font-bold tracking-tight text-white">{title}</h1>
+        {desc && <p className="mt-1 text-tsm text-slate-400">{desc}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -218,9 +221,9 @@ export function Stat({ label, value, sub, icon, accent }: { label: string; value
     <Card hover className="relative overflow-hidden p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[0.76rem] font-medium text-slate-400">{label}</p>
-          <p className="mt-1.5 truncate text-[1.5rem] font-bold tracking-tight text-white">{value}</p>
-          {sub && <div className="mt-1.5 text-[0.76rem] text-slate-500">{sub}</div>}
+          <p className="text-txs font-medium text-slate-400">{label}</p>
+          <p className="mt-1.5 truncate text-t2xl font-bold tracking-tight text-white">{value}</p>
+          {sub && <div className="mt-1.5 text-txs text-slate-500">{sub}</div>}
         </div>
         {icon && <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 text-slate-300" style={accent ? { background: accent } : undefined}>{icon}</div>}
       </div>
