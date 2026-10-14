@@ -87,58 +87,55 @@ func updateServices(req updateServicesRequest) error {
 		return errors.New("services list cannot be empty")
 	}
 
-	// 第一阶段：验证所有服务存在
-	for _, serviceConfig := range req.Data {
-		name := strings.TrimSpace(serviceConfig.Name)
+	// 第一阶段：解析全部服务；不存在的走新建，实现 upsert。
+	// 面板对服务是“先 Update，not found 再 Add”的两次往返；节点侧 upsert 后
+	// 首次下发一次成型，省掉第二次往返（旧面板的回落分支仍兼容）。
+	type parsedService struct {
+		service service.Service
+	}
+	parsed := make([]parsedService, 0, len(req.Data))
+	for i := range req.Data {
+		name := strings.TrimSpace(req.Data[i].Name)
 		if name == "" {
 			return errors.New("service name is required")
 		}
-		serviceConfig.Name = name
+		req.Data[i].Name = name
 
-		old := registry.ServiceRegistry().Get(name)
-		if old == nil {
-			return errors.New("service " + name + " not found")
-		}
-	}
-
-	// 第二阶段：按照原来的updateService逻辑，逐个更新服务
-	for _, serviceConfig := range req.Data {
-		name := strings.TrimSpace(serviceConfig.Name)
-		serviceConfig.Name = name
-
-		// 1. 获取旧服务
-		old := registry.ServiceRegistry().Get(name)
-
-		// 2. 关闭旧服务
-		old.Close()
-
-		// 3. 从注册表移除旧服务
-		registry.ServiceRegistry().Unregister(name)
-
-		// 4. 解析新服务配置
-		svc, err := parser.ParseService(&serviceConfig)
+		svc, err := parser.ParseService(&req.Data[i])
 		if err != nil {
 			return errors.New("create service " + name + " failed: " + err.Error())
 		}
+		parsed = append(parsed, parsedService{service: svc})
+	}
 
-		// 5. 注册新服务
-		if err := registry.ServiceRegistry().Register(name, svc); err != nil {
-			svc.Close()
+	// 第二阶段：逐个应用（存在则先关闭旧服务再注册启动，与单条 updateService 语义一致）
+	for i := range req.Data {
+		name := req.Data[i].Name
+
+		if old := registry.ServiceRegistry().Get(name); old != nil {
+			old.Close()
+			registry.ServiceRegistry().Unregister(name)
+		}
+
+		if err := registry.ServiceRegistry().Register(name, parsed[i].service); err != nil {
+			parsed[i].service.Close()
 			return errors.New("service " + name + " already exists")
 		}
 
-		// 6. 启动新服务
-		go svc.Serve()
+		go parsed[i].service.Serve()
 	}
 
-	// 第三阶段：更新配置
+	// 第三阶段：更新配置（用名称索引一次，避免 O(n·m) 扫描）
 	config.OnUpdate(func(c *config.Config) error {
-		for _, serviceConfig := range req.Data {
-			for i := range c.Services {
-				if c.Services[i].Name == serviceConfig.Name {
-					c.Services[i] = &serviceConfig
-					break
-				}
+		indexByName := make(map[string]int, len(c.Services))
+		for i := range c.Services {
+			indexByName[c.Services[i].Name] = i
+		}
+		for i := range req.Data {
+			if idx, ok := indexByName[req.Data[i].Name]; ok {
+				c.Services[idx] = &req.Data[i]
+			} else {
+				c.Services = append(c.Services, &req.Data[i])
 			}
 		}
 		return nil
@@ -182,22 +179,20 @@ func deleteServices(req deleteServicesRequest) error {
 		std.service.Close()
 	}
 
-	// 第三阶段：更新配置
+	// 第三阶段：更新配置（用集合一次过滤，避免 O(n·m) 扫描）
 	config.OnUpdate(func(c *config.Config) error {
-		services := c.Services
-		c.Services = nil
-		for _, s := range services {
-			shouldDelete := false
-			for _, std := range servicesToDelete {
-				if s.Name == std.name {
-					shouldDelete = true
-					break
-				}
-			}
-			if !shouldDelete {
-				c.Services = append(c.Services, s)
-			}
+		toDelete := make(map[string]struct{}, len(servicesToDelete))
+		for _, std := range servicesToDelete {
+			toDelete[std.name] = struct{}{}
 		}
+		kept := make([]*config.ServiceConfig, 0, len(c.Services))
+		for _, s := range c.Services {
+			if _, del := toDelete[s.Name]; del {
+				continue
+			}
+			kept = append(kept, s)
+		}
+		c.Services = kept
 		return nil
 	})
 
