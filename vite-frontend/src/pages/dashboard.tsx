@@ -102,13 +102,11 @@ export default function DashboardPage() {
             toast('账户将于明天过期，请及时续费', {
               icon: '⚠️',
               duration: 6000,
-              style: { background: '#f59e0b', color: '#fff' }
             });
           } else {
             toast(`账户将于${diffDays}天后过期，请及时续费`, {
               icon: '⚠️',
               duration: 6000,
-              style: { background: '#f59e0b', color: '#fff' }
             });
           }
         } else if (diffDays <= 0) {
@@ -116,7 +114,6 @@ export default function DashboardPage() {
           toast('账户已过期，请立即续费', {
             icon: '⚠️',
             duration: 8000,
-            style: { background: '#ef4444', color: '#fff' }
           });
         }
       }
@@ -138,13 +135,11 @@ export default function DashboardPage() {
               toast(`隧道"${tunnel.tunnelName}"将于明天过期`, {
                 icon: '⚠️',
                 duration: 5000,
-                style: { background: '#f59e0b', color: '#fff' }
               });
             } else {
               toast(`隧道"${tunnel.tunnelName}"将于${diffDays}天后过期`, {
                 icon: '⚠️',
                 duration: 5000,
-                style: { background: '#f59e0b', color: '#fff' }
               });
             }
           } else if (diffDays <= 0) {
@@ -152,7 +147,6 @@ export default function DashboardPage() {
             toast(`隧道"${tunnel.tunnelName}"已过期`, {
               icon: '⚠️',
               duration: 6000,
-              style: { background: '#ef4444', color: '#fff' }
             });
           }
         }
@@ -599,7 +593,7 @@ export default function DashboardPage() {
           value={<GradientNum>{formatFlow(calculateUserTotalUsedFlow())}</GradientNum>}
           sub={
             <div className="space-y-1.5">
-              <Progress value={userInfo.flow === 99999 ? 100 : flowPct} />
+              <Progress value={userInfo.flow === 99999 ? 100 : flowPct} tone={userInfo.flow === 99999 ? "blue" : "auto"} />
               <div className="flex items-center justify-between gap-2">
                 <span>{userInfo.flow === 99999 ? '无限制' : `${flowPct.toFixed(1)}%`}</span>
                 {(userInfo.flowResetTime !== undefined && userInfo.flowResetTime !== null) && (
@@ -626,7 +620,7 @@ export default function DashboardPage() {
           value={<GradientNum>{forwardList.length}</GradientNum>}
           sub={
             <div className="space-y-1.5">
-              <Progress value={userInfo.num === 99999 ? 100 : fwdPct} />
+              <Progress value={userInfo.num === 99999 ? 100 : fwdPct} tone={userInfo.num === 99999 ? "blue" : "auto"} />
               <span>{userInfo.num === 99999 ? '无限制' : `${fwdPct.toFixed(1)}%`}</span>
             </div>
           }
@@ -676,7 +670,7 @@ export default function DashboardPage() {
                     content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {
                         return (
-                          <div className="rounded-xl border border-white/10 bg-[#0b1220] px-3 py-2 shadow-xl">
+                          <div className="rounded-xl border border-white/10 bg-[#151a23] px-3 py-2 shadow-xl">
                             <p className="font-medium text-slate-200">{`时间: ${label}`}</p>
                             <p className="text-blue-300">
                               {`流量: ${formatFlow((payload[0]?.value as number) || 0)}`}
@@ -742,25 +736,25 @@ export default function DashboardPage() {
 
                       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                         <div>
-                          <p className="mb-1 text-[0.76rem] text-slate-500">流量配额</p>
+                          <p className="mb-1 text-txs text-slate-500">流量配额</p>
                           <p className="font-semibold text-white">{formatFlow(tunnel.flow, 'gb')}</p>
                         </div>
                         <div>
-                          <p className="mb-1 text-[0.76rem] text-slate-500">已用流量</p>
+                          <p className="mb-1 text-txs text-slate-500">已用流量</p>
                           <p className="font-semibold text-white">{formatFlow(calculateTunnelUsedFlow(tunnel))}</p>
                           <div className="mt-1.5">
-                            <Progress value={tunnel.flow === 99999 ? 100 : tunnelFlowPct} />
+                            <Progress value={tunnel.flow === 99999 ? 100 : tunnelFlowPct} tone={tunnel.flow === 99999 ? "blue" : "auto"} />
                           </div>
                         </div>
                         <div>
-                          <p className="mb-1 text-[0.76rem] text-slate-500">转发配额</p>
+                          <p className="mb-1 text-txs text-slate-500">转发配额</p>
                           <p className="font-semibold text-white">{formatNumber(tunnel.num)}</p>
                         </div>
                         <div>
-                          <p className="mb-1 text-[0.76rem] text-slate-500">已用转发</p>
+                          <p className="mb-1 text-txs text-slate-500">已用转发</p>
                           <p className="font-semibold text-white">{getTunnelUsedForwards(tunnel.tunnelId)}</p>
                           <div className="mt-1.5">
-                            <Progress value={tunnel.num === 99999 ? 100 : tunnelFwdPct} />
+                            <Progress value={tunnel.num === 99999 ? 100 : tunnelFwdPct} tone={tunnel.num === 99999 ? "blue" : "auto"} />
                           </div>
                         </div>
                       </div>
@@ -808,7 +802,7 @@ export default function DashboardPage() {
                             >
                               {formatInAddress(forward.inIp, forward.inPort)}
                             </code>
-                            <div className="flex justify-center text-slate-600">
+                            <div className="flex justify-center text-slate-500">
                               <ArrowDown size={13} />
                             </div>
                             <code

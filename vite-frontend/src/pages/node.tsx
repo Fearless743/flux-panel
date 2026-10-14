@@ -467,7 +467,7 @@ export default function NodePage() {
                           >
                             {node.serverIp?.trim() || "-"}
                           </div>
-                          <div className="mt-0.5 text-[11px] text-slate-500">
+                          <div className="mt-0.5 text-t2xs text-slate-500">
                             版本 {node.version || "未知"}
                           </div>
                         </div>
@@ -609,8 +609,8 @@ export default function NodePage() {
                 </div>
 
                 <div>
-                  <p className="mb-1 text-[0.78rem] font-medium text-slate-300">屏蔽协议</p>
-                  <p className="mb-2 text-[0.72rem] text-slate-500">
+                  <p className="mb-1 text-tsm font-medium text-slate-300">屏蔽协议</p>
+                  <p className="mb-2 text-txs text-slate-500">
                     开启开关以屏蔽对应协议{protocolDisabled ? `（${protocolDisabledReason}）` : ""}
                   </p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

@@ -331,7 +331,7 @@ export default function NodeStatusPage() {
                           <div className="truncate font-mono text-xs text-slate-500" title={node.serverIp?.trim() || ''}>
                             {node.serverIp?.trim() || '-'}
                           </div>
-                          <div className="mt-0.5 text-[11px] text-slate-600">
+                          <div className="mt-0.5 text-t2xs text-slate-500">
                             版本 {node.version || '未知'}
                           </div>
                         </div>

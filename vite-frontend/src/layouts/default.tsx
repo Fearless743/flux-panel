@@ -9,8 +9,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
           <Zap size={15} className="text-white" />
         </div>
-        <span className="text-[0.9rem] font-bold tracking-tight text-white">{siteConfig.name}</span>
-        <span className="mono ml-auto text-[0.7rem] text-slate-500">v{siteConfig.version}</span>
+        <span className="text-tmd font-bold tracking-tight text-white">{siteConfig.name}</span>
+        <span className="mono ml-auto text-t2xs text-slate-500">v{siteConfig.version}</span>
       </header>
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6">{children}</main>
     </div>

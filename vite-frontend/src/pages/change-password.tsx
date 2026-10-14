@@ -121,8 +121,8 @@ export default function ChangePasswordPage() {
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/25 bg-amber-400/10 text-amber-300">
                 <ShieldAlert size={22} />
               </div>
-              <h1 className="text-gradient text-[1.35rem] font-bold tracking-tight">安全提醒</h1>
-              <p className="mt-1.5 max-w-sm text-[0.8rem] leading-relaxed text-slate-400">
+              <h1 className="text-gradient text-t2xl font-bold tracking-tight">安全提醒</h1>
+              <p className="mt-1.5 max-w-sm text-tsm leading-relaxed text-slate-400">
                 检测到您使用的是默认账号密码，为了您的账户安全，请立即修改
               </p>
             </div>
@@ -144,7 +144,7 @@ export default function ChangePasswordPage() {
                       className="!pl-10"
                     />
                   </div>
-                  {errors[f.key] && <p className="mt-1 text-[0.72rem] text-red-400">{errors[f.key]}</p>}
+                  {errors[f.key] && <p className="mt-1 text-txs text-red-400">{errors[f.key]}</p>}
                 </Field>
               ))}
 
@@ -160,7 +160,7 @@ export default function ChangePasswordPage() {
                 {loading ? "修改中..." : "立即修改账号密码"}
               </Button>
 
-              <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.07] px-3.5 py-2.5 text-center text-[0.78rem] text-amber-300">
+              <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.07] px-3.5 py-2.5 text-center text-tsm text-amber-300">
                 注意：修改账号密码后需要重新登录
               </div>
             </div>

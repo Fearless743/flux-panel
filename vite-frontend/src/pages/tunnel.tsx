@@ -158,7 +158,7 @@ function NodeChipMulti({
           >
             <span
               className={clsx(
-                "flex h-3.5 w-3.5 items-center justify-center rounded border text-[10px]",
+                "flex h-3.5 w-3.5 items-center justify-center rounded border text-t2xs",
                 active
                   ? "border-blue-300 bg-blue-400 text-slate-950"
                   : "border-slate-500 text-transparent"
@@ -654,7 +654,7 @@ export default function TunnelPage() {
                       <div className="flex items-center gap-2">
                         <span
                           className={clsx(
-                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] text-white",
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-t2xs text-white",
                             result.success ? "bg-emerald-500" : "bg-red-500"
                           )}
                         >

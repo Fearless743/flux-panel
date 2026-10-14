@@ -666,7 +666,7 @@ export default function UserPage() {
                               </span>
                             </div>
                             <Progress value={isUnlimited ? 0 : flowPercent} />
-                            <div className="mt-0.5 text-[11px] text-slate-500">
+                            <div className="mt-0.5 text-t2xs text-slate-500">
                               {isUnlimited ? "已用流量" : `已用 ${flowPercent.toFixed(1)}%`}
                             </div>
                           </div>
@@ -868,7 +868,7 @@ export default function UserPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-4">
-          <span className="text-[0.78rem] font-medium text-slate-300">状态</span>
+          <span className="text-tsm font-medium text-slate-300">状态</span>
           {(["1", "0"] as const).map((v) => (
             <label key={v} className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-300">
               <input
@@ -1079,7 +1079,7 @@ export default function UserPage() {
                               <div className="truncate text-sm font-medium text-white">
                                 {userTunnel.tunnelName}
                               </div>
-                              <div className="font-mono text-[11px] text-slate-500">
+                              <div className="font-mono text-t2xs text-slate-500">
                                 #{userTunnel.tunnelId}
                               </div>
                             </div>
@@ -1281,7 +1281,7 @@ export default function UserPage() {
             </div>
 
             <div className="flex items-center gap-4">
-              <span className="text-[0.78rem] font-medium text-slate-300">状态</span>
+              <span className="text-tsm font-medium text-slate-300">状态</span>
               {(["1", "0"] as const).map((v) => (
                 <label
                   key={v}
