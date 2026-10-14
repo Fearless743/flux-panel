@@ -127,7 +127,10 @@ func (h *relayHandler) Handle(ctx context.Context, conn net.Conn, opts ...handle
 		"client": ro.ClientIP,
 	})
 
-	log.Infof("%s <> %s", conn.RemoteAddr(), conn.LocalAddr())
+	// 连接生命周期日志用 Debug：默认 Info 下每条隧道连接要产出 2 条 JSON 日志
+	// 并附带多个 WithFields map，是高连接率节点稳定的分配/CPU 来源。
+	// 需要按连接排查时设 GOST_LOG_LEVEL=info 即可恢复。
+	log.Debugf("%s <> %s", conn.RemoteAddr(), conn.LocalAddr())
 
 	pStats := xstats.Stats{}
 	conn = stats_wrapper.WrapConn(conn, &pStats)
@@ -147,7 +150,7 @@ func (h *relayHandler) Handle(ctx context.Context, conn net.Conn, opts ...handle
 			"duration":    time.Since(start),
 			"inputBytes":  ro.InputBytes,
 			"outputBytes": ro.OutputBytes,
-		}).Infof("%s >< %s", conn.RemoteAddr(), conn.LocalAddr())
+		}).Debugf("%s >< %s", conn.RemoteAddr(), conn.LocalAddr())
 	}()
 
 	if !h.checkRateLimit(conn.RemoteAddr()) {

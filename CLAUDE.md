@@ -148,6 +148,11 @@ internal/
 - WS 指令类型：`AddService`/`UpdateService`/`DeleteService`/`PauseService`/`ResumeService`、`AddChains`/`UpdateChains`/`DeleteChains`、`AddLimiters`/`UpdateLimiters`/`DeleteLimiters`、`TcpPing`、`SetProtocol`、`Upgrade`。
 - 远程升级：`Upgrade` 异步下载校验、备份替换；`upgrade-apply.sh` 健康检查失败回滚。节点必须先具备带 Upgrade 的二进制后，才能用面板一键升。
 - Release 产物名：`gost-amd64` / `gost-arm64`。
+- 内存调优（`main.go` → `internal/memtune`，`tune` 有单测）：
+  - `GOST_GOMEMLIMIT`：显式 Go 软内存上限（如 `512MiB`/`1G`）。未设置时自动读取 cgroup 内存上限并取其 90%（Docker/systemd 部署均生效），避免默认 GOGC=100 让堆涨到存活量 2 倍、小内存节点 RSS 偏高甚至 OOM。
+  - `GOST_GOGC`：覆盖 GOGC（默认 100；`off` 表示完全依赖 GOMEMLIMIT）。
+  - `GOST_LOG_LEVEL`：日志级别（默认 info）。连接生命周期日志（relay handler 的 `<>`/`><`）默认走 Debug，减小每连接的日志分配；需要按连接排查时设为 `info`。
+  - 热路径已用 `bufpool`（TCP 中转 2×64KB/连接复用）；流量经 `GlobalTrafficManager` 按 5s 批量上报。
 
 ## 前端要点（`vite-frontend/`）
 
