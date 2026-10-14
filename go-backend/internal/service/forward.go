@@ -126,6 +126,74 @@ func (s *ForwardService) List(user CurrentUser) ([]repo.ForwardWithTunnel, error
 	return list, nil
 }
 
+// ForwardListReq 分页列表请求（全部可选；全空时 handler 走 legacy 全量数组返回）。
+// page 从 1 开始；pageSize 默认 20、上限 500（导出循环取页，避免单次大 LIMIT）。
+type ForwardListReq struct {
+	Page     *int   `json:"page"`
+	PageSize *int   `json:"pageSize"`
+	TunnelID *int   `json:"tunnelId"`
+	Status   *int   `json:"status"`
+	Keyword  string `json:"keyword"`
+}
+
+// ForwardPageResult 分页结果：list 只含当前页（已填充 inIp/inPort），total 为过滤后总数。
+type ForwardPageResult struct {
+	List     []repo.ForwardWithTunnel `json:"list"`
+	Total    int64                    `json:"total"`
+	Page     int                      `json:"page"`
+	PageSize int                      `json:"pageSize"`
+}
+
+// IsPaged 是否为分页请求（任一分页/过滤字段出现即按分页语义处理）
+func (r ForwardListReq) IsPaged() bool {
+	return r.Page != nil || r.PageSize != nil || r.TunnelID != nil || r.Status != nil || strings.TrimSpace(r.Keyword) != ""
+}
+
+// ListPaged 高性能分页：COUNT + 一页 LIMIT/OFFSET + 仅对页内行填充 inIp/inPort。
+// 单次请求固定约 5 条语句（count/页/隧道/端口/节点），与总量无关。
+func (s *ForwardService) ListPaged(user CurrentUser, req ForwardListReq) (*ForwardPageResult, error) {
+	page := 1
+	if req.Page != nil && *req.Page > 0 {
+		page = *req.Page
+	}
+	pageSize := 20
+	if req.PageSize != nil && *req.PageSize > 0 {
+		pageSize = *req.PageSize
+	}
+	if pageSize > 500 {
+		pageSize = 500
+	}
+
+	filter := repo.ForwardListFilter{
+		TunnelID: req.TunnelID,
+		Status:   req.Status,
+		Keyword:  strings.TrimSpace(req.Keyword),
+	}
+	if user.RoleID != 0 {
+		uid := user.UserID
+		filter.UserID = &uid
+	}
+
+	total, err := s.Repo.CountFiltered(filter)
+	if err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return &ForwardPageResult{List: []repo.ForwardWithTunnel{}, Total: 0, Page: page, PageSize: pageSize}, nil
+	}
+	offset := (page - 1) * pageSize
+	list, err := s.Repo.ListFiltered(filter, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	if len(list) > 0 {
+		if err := s.FillInIPBatch(list); err != nil {
+			return nil, err
+		}
+	}
+	return &ForwardPageResult{List: list, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
 // FillInIPBatch 批量填充转发列表的 inIp / inPort。
 // 原逐条 fillInIP 每条转发 2 次查询 + 每端口 1 次节点查询（2N+M+...）；
 // 现固定 3 条语句（隧道/端口/节点各一次），内存 map 组装。预取失败时回落

@@ -33,12 +33,43 @@ func (a *App) ForwardCreate(c *gin.Context) {
 }
 
 func (a *App) ForwardList(c *gin.Context) {
-	list, err := a.forwardService().List(a.currentUser(c))
+	// 空 body（移动端/历史调用）走 legacy 全量数组返回，保持兼容；
+	// 带分页/过滤字段时走高性能分页（COUNT + 单页 LIMIT/OFFSET + 页内填充）。
+	if c.Request.Body == nil || c.Request.ContentLength == 0 {
+		list, err := a.forwardService().List(a.currentUser(c))
+		if err != nil {
+			response.Err(c, err.Error())
+			return
+		}
+		response.OK(c, list)
+		return
+	}
+	var req service.ForwardListReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 空对象/解析失败同样回落 legacy，避免老客户端被误伤
+		list, lerr := a.forwardService().List(a.currentUser(c))
+		if lerr != nil {
+			response.Err(c, lerr.Error())
+			return
+		}
+		response.OK(c, list)
+		return
+	}
+	if !req.IsPaged() {
+		list, err := a.forwardService().List(a.currentUser(c))
+		if err != nil {
+			response.Err(c, err.Error())
+			return
+		}
+		response.OK(c, list)
+		return
+	}
+	page, err := a.forwardService().ListPaged(a.currentUser(c), req)
 	if err != nil {
 		response.Err(c, err.Error())
 		return
 	}
-	response.OK(c, list)
+	response.OK(c, page)
 }
 
 func (a *App) ForwardUpdate(c *gin.Context) {
