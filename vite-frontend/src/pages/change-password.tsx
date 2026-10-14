@@ -1,14 +1,12 @@
-import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
-import { Card, CardBody, CardHeader } from "@heroui/card";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
+import { ShieldAlert, KeyRound, User, LockKeyhole, CheckCheck } from "lucide-react";
 
-import { title } from "@/components/primitives";
 import { updatePassword } from "@/api";
 import DefaultLayout from "@/layouts/default";
 import { safeLogout } from "@/utils/logout";
+import { Button, Card, Field, Input } from "@/components/ui";
 
 interface PasswordForm {
   newUsername: string;
@@ -74,10 +72,10 @@ export default function ChangePasswordPage() {
     setLoading(true);
     try {
       const response = await updatePassword(form);
-      
+
       if (response.code === 0) {
         toast.success(response.msg || '账号密码修改成功');
-        
+
         // 使用 toast 确认对话框的替代方案
         setTimeout(() => {
           toast.success('即将跳转到登陆页面，请重新登录');
@@ -107,94 +105,68 @@ export default function ChangePasswordPage() {
     }
   };
 
+  const fields: { key: keyof PasswordForm; label: string; placeholder: string; icon: React.ReactNode }[] = [
+    { key: 'newUsername', label: '新用户名', placeholder: '请输入新用户名（3-20 位）', icon: <User size={15} /> },
+    { key: 'currentPassword', label: '当前密码', placeholder: '请输入当前密码', icon: <LockKeyhole size={15} /> },
+    { key: 'newPassword', label: '新密码', placeholder: '请输入新密码（6-20 位）', icon: <KeyRound size={15} /> },
+    { key: 'confirmPassword', label: '确认新密码', placeholder: '请再次输入新密码', icon: <CheckCheck size={15} /> },
+  ];
+
   return (
     <DefaultLayout>
-      <section className="flex flex-col items-center justify-center gap-4 py-8 md:py-10 min-h-[calc(100dvh-200px)]">
-        <div className="w-full max-w-lg">
-          <Card className="w-full">
-            <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
-              <div className="w-12 h-12 bg-warning-100 rounded-full flex items-center justify-center mb-3">
-                <svg className="w-6 h-6 text-warning-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
+      <section className="flex min-h-[calc(100dvh-160px)] items-center justify-center py-8">
+        <Card className="relative w-full max-w-lg overflow-hidden p-6 sm:p-8">
+          <div className="relative">
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/25 bg-amber-400/10 text-amber-300">
+                <ShieldAlert size={22} />
               </div>
-              
-              <h1 className={title({ size: "sm" })}>安全提醒</h1>
-              <p className="text-small text-default-500 mt-2 text-center">检测到您使用的是默认账号密码，为了您的账户安全，请立即修改</p>
-            </CardHeader>
-            
-            <CardBody className="px-6 py-6">
-              <div className="flex flex-col gap-4">
-                <Input
-                  label="新用户名"
-                  placeholder="请输入新用户名（至少3位）"
-                  value={form.newUsername}
-                  onChange={(e) => handleInputChange('newUsername', e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  variant="bordered"
-                  isDisabled={loading}
-                  isInvalid={!!errors.newUsername}
-                  errorMessage={errors.newUsername}
-                />
-                
-                <Input
-                  label="当前密码"
-                  placeholder="请输入当前密码"
-                  type="password"
-                  value={form.currentPassword}
-                  onChange={(e) => handleInputChange('currentPassword', e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  variant="bordered"
-                  isDisabled={loading}
-                  isInvalid={!!errors.currentPassword}
-                  errorMessage={errors.currentPassword}
-                />
-                
-                <Input
-                  label="新密码"
-                  placeholder="请输入新密码（至少6位）"
-                  type="password"
-                  value={form.newPassword}
-                  onChange={(e) => handleInputChange('newPassword', e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  variant="bordered"
-                  isDisabled={loading}
-                  isInvalid={!!errors.newPassword}
-                  errorMessage={errors.newPassword}
-                />
-                
-                <Input
-                  label="确认新密码"
-                  placeholder="请再次输入新密码"
-                  type="password"
-                  value={form.confirmPassword}
-                  onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  variant="bordered"
-                  isDisabled={loading}
-                  isInvalid={!!errors.confirmPassword}
-                  errorMessage={errors.confirmPassword}
-                />
-                
-                <Button
-                  color="warning"
-                  size="lg"
-                  onClick={handleSubmit}
-                  isLoading={loading}
-                  disabled={loading}
-                  className="mt-2"
-                >
-                  {loading ? "修改中..." : "立即修改账号密码"}
-                </Button>
-                
-                <div className="bg-warning-50 border border-warning-200 text-warning-700 px-3 py-2 rounded-lg text-sm text-center">
-                  ⚠️ 注意：修改账号密码后需要重新登录
-                </div>
+              <h1 className="text-gradient text-[1.35rem] font-bold tracking-tight">安全提醒</h1>
+              <p className="mt-1.5 max-w-sm text-[0.8rem] leading-relaxed text-slate-400">
+                检测到您使用的是默认账号密码，为了您的账户安全，请立即修改
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-4">
+              {fields.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                      {f.icon}
+                    </span>
+                    <Input
+                      placeholder={f.placeholder}
+                      type={f.key === 'newUsername' ? 'text' : 'password'}
+                      value={form[f.key]}
+                      onChange={(e) => handleInputChange(f.key, e.target.value)}
+                      onKeyDown={handleKeyPress}
+                      disabled={loading}
+                      className="!pl-10"
+                    />
+                  </div>
+                  {errors[f.key] && <p className="mt-1 text-[0.72rem] text-red-400">{errors[f.key]}</p>}
+                </Field>
+              ))}
+
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={handleSubmit}
+                loading={loading}
+                disabled={loading}
+                className="mt-1 w-full"
+              >
+                {!loading && <KeyRound size={16} />}
+                {loading ? "修改中..." : "立即修改账号密码"}
+              </Button>
+
+              <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.07] px-3.5 py-2.5 text-center text-[0.78rem] text-amber-300">
+                注意：修改账号密码后需要重新登录
               </div>
-            </CardBody>
-          </Card>
-        </div>
+            </div>
+          </div>
+        </Card>
       </section>
     </DefaultLayout>
   );
-} 
+}

@@ -1,21 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Input } from "@heroui/input";
-import { Button } from "@heroui/button";
-import { Card, CardBody } from "@heroui/card";
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { ArrowLeft, Plus, Server, Trash2, Check } from "lucide-react";
 import { reinitializeBaseURL } from '@/api/network';
-import { 
-  getPanelAddresses, 
-  savePanelAddress, 
-  setCurrentPanelAddress, 
-  deletePanelAddress, 
+import {
+  getPanelAddresses,
+  savePanelAddress,
+  setCurrentPanelAddress,
+  deletePanelAddress,
   validatePanelAddress,
 } from '@/utils/panel';
+import { Button, Card, CardHead, Field, Input, Badge, Empty } from "@/components/ui";
 
 interface PanelAddress {
   name: string;
-  address: string;   
+  address: string;
   inx: boolean;
 }
 
@@ -28,7 +27,7 @@ export const SettingsPage = () => {
 
 
   const setPanelAddressesFunc = (newAddress: PanelAddress[]) => {
-    setPanelAddresses(newAddress); 
+    setPanelAddresses(newAddress);
   }
 
   // 加载面板地址列表
@@ -76,104 +75,111 @@ export const SettingsPage = () => {
     loadPanelAddresses();
   }, []);
 
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      addPanelAddress();
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black">
-      {/* 顶部导航 */}
-      <div className="bg-content1 border-b border-divider">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Button
-              isIconOnly
-              variant="light"
-              onClick={() => navigate(-1)}
-              className="text-gray-600 dark:text-gray-300"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </Button>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">面板设置</h1>
+    <div className="relative min-h-screen">
+      <div className="app-bg" />
+      <div className="relative mx-auto w-full max-w-4xl px-4 py-6">
+        <div className="mb-5 flex items-center gap-3">
+          <Button variant="outline" size="icon" onClick={() => navigate(-1)} aria-label="返回">
+            <ArrowLeft size={17} />
+          </Button>
+          <div>
+            <h1 className="text-gradient text-[1.35rem] font-bold tracking-tight">面板设置</h1>
+            <p className="mt-0.5 text-[0.8rem] text-slate-400">管理已保存的面板地址，随时切换当前连接</p>
           </div>
         </div>
-      </div>
 
-      {/* 内容区域 */}
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* 添加新地址 */}
-          <Card className="panel-card border border-divider shadow-panel">
-            <CardBody className="p-6">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">添加新面板地址</h2>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card>
+            <CardHead title="添加新面板地址" desc="保存后可在列表中一键切换" />
+            <div className="space-y-4 px-5 pb-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="名称">
                   <Input
-                    label="名称"
                     placeholder="请输入面板名称"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={handleKeyPress}
                   />
+                </Field>
+                <Field label="地址">
                   <Input
-                    label="地址"
                     placeholder="http://192.168.1.100:3000"
                     value={newAddress}
                     onChange={(e) => setNewAddress(e.target.value)}
+                    onKeyDown={handleKeyPress}
                   />
-                </div>
-                <Button color="primary" onClick={addPanelAddress}>
-                  添加
-                </Button>
+                </Field>
               </div>
-            </CardBody>
+              <Button variant="primary" onClick={addPanelAddress}>
+                <Plus size={15} />
+                添加
+              </Button>
+            </div>
           </Card>
 
           {/* 地址列表 */}
-          <Card className="panel-card border border-divider shadow-panel">
-            <CardBody className="p-6">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">已保存的面板地址</h2>
+          <Card>
+            <CardHead
+              title="已保存的面板地址"
+              desc={panelAddresses.length > 0 ? `共 ${panelAddresses.length} 个` : undefined}
+            />
+            <div className="px-5 pb-5">
               {panelAddresses.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-8">暂无保存的面板地址</p>
+                <Empty text="暂无保存的面板地址" />
               ) : (
                 <div className="space-y-3">
                   {panelAddresses.map((panel, index) => (
-                    <div key={index} className="border border-divider rounded-xl p-4 bg-content2/40">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900 dark:text-white">{panel.name}</span>
+                    <div
+                      key={index}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] p-4"
+                    >
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-blue-300">
+                          <Server size={16} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate text-[0.87rem] font-semibold text-white">{panel.name}</span>
                             {panel.inx && (
-                              <span className="px-2 py-1 bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300 text-xs rounded">
-                                当前
-                              </span>
+                              <Badge tone="green" dot>当前</Badge>
                             )}
                           </div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{panel.address}</p>
+                          <p className="mono mt-1 truncate text-[0.76rem] text-slate-400">{panel.address}</p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {!panel.inx && (
-                            <Button
-                              size="sm"
-                              color="primary"
-                              variant="flat"
-                              onClick={() => setCurrentPanel(panel.name)}
-                            >
-                              设为当前
-                            </Button>
-                          )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {!panel.inx && (
                           <Button
                             size="sm"
-                            color="danger"
-                            variant="light"
-                            onClick={() => handleDeletePanelAddress(panel.name)}
+                            variant="soft"
+                            onClick={() => setCurrentPanel(panel.name)}
                           >
-                            删除
+                            <Check size={14} />
+                            设为当前
                           </Button>
-                        </div>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => handleDeletePanelAddress(panel.name)}
+                        >
+                          <Trash2 size={14} />
+                          删除
+                        </Button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-            </CardBody>
+            </div>
           </Card>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { Route, Routes, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import IndexPage from "@/pages/index";
 import ChangePasswordPage from "@/pages/change-password";
@@ -21,219 +22,88 @@ import H5SimpleLayout from "@/layouts/h5-simple";
 import { isLoggedIn } from "@/utils/auth";
 import { siteConfig } from "@/config/site";
 
-// 检测是否为H5模式
 const useH5Mode = () => {
-  // 立即检测H5模式，避免初始渲染时的闪屏
-  const getInitialH5Mode = () => {
-    // 检测移动设备或小屏幕
+  const getInitial = () => {
     const isMobile = window.innerWidth <= 768;
-    // 检测是否为移动端浏览器
     const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    // 检测URL参数是否包含h5模式
-    const urlParams = new URLSearchParams(window.location.search);
-    const isH5Param = urlParams.get('h5') === 'true';
-    
+    const isH5Param = new URLSearchParams(window.location.search).get("h5") === "true";
     return isMobile || isMobileBrowser || isH5Param;
   };
-
-  const [isH5, setIsH5] = useState(getInitialH5Mode);
-
+  const [isH5, setIsH5] = useState(getInitial);
   useEffect(() => {
-    const checkH5Mode = () => {
-      // 检测移动设备或小屏幕
+    const check = () => {
       const isMobile = window.innerWidth <= 768;
-      // 检测是否为移动端浏览器
       const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      // 检测URL参数是否包含h5模式
-      const urlParams = new URLSearchParams(window.location.search);
-      const isH5Param = urlParams.get('h5') === 'true';
-      
+      const isH5Param = new URLSearchParams(window.location.search).get("h5") === "true";
       setIsH5(isMobile || isMobileBrowser || isH5Param);
     };
-
-    window.addEventListener('resize', checkH5Mode);
-    
-    return () => window.removeEventListener('resize', checkH5Mode);
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
-
   return isH5;
 };
 
-// 简化的路由保护组件 - 使用 React Router 导航避免循环
-const ProtectedRoute = ({ children, useSimpleLayout = false, skipLayout = false }: { children: React.ReactNode, useSimpleLayout?: boolean, skipLayout?: boolean }) => {
+const LoadingScreen = () => (
+  <div className="flex min-h-screen items-center justify-center">
+    <div className="app-bg" />
+    <Loader2 size={22} className="animate-spin text-blue-300" />
+  </div>
+);
+
+const ProtectedRoute = ({ children, useSimpleLayout = false, skipLayout = false }: { children: React.ReactNode; useSimpleLayout?: boolean; skipLayout?: boolean }) => {
   const authenticated = isLoggedIn();
   const isH5 = useH5Mode();
   const navigate = useNavigate();
-  
+
   useEffect(() => {
-    if (!authenticated) {
-      // 使用 React Router 导航，避免无限跳转
-      navigate('/', { replace: true });
-    }
+    if (!authenticated) navigate("/", { replace: true });
   }, [authenticated, navigate]);
 
-  if (!authenticated) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="text-lg text-default-600"></div>
-      </div>
-    );
-  }
+  if (!authenticated) return <LoadingScreen />;
+  if (skipLayout) return <>{children}</>;
 
-  // 如果跳过布局，直接返回子组件
-  if (skipLayout) {
-    return <>{children}</>;
-  }
-
-  // 根据模式和页面类型选择布局
-  let Layout;
-  if (isH5 && useSimpleLayout) {
-    Layout = H5SimpleLayout;
-  } else if (isH5) {
-    Layout = H5Layout;
-  } else {
-    Layout = AdminLayout;
-  }
-  
+  const Layout = isH5 ? (useSimpleLayout ? H5SimpleLayout : H5Layout) : AdminLayout;
   return <Layout>{children}</Layout>;
 };
 
-
-// 登录页面路由组件 - 已登录则重定向到dashboard
 const LoginRoute = () => {
   const authenticated = isLoggedIn();
   const navigate = useNavigate();
-  
   useEffect(() => {
-    if (authenticated) {
-      // 使用 React Router 导航，避免无限跳转
-      navigate('/dashboard', { replace: true });
-    }
+    if (authenticated) navigate("/dashboard", { replace: true });
   }, [authenticated, navigate]);
-  
-  if (authenticated) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="text-lg text-default-600"></div>
-      </div>
-    );
-  }
-  
+  if (authenticated) return <LoadingScreen />;
   return <IndexPage />;
 };
 
 function App() {
-  // 立即设置页面标题（使用已从缓存读取的配置）
   useEffect(() => {
     document.title = siteConfig.name;
-    
-    // 异步检查是否有配置更新
-    const checkTitleUpdate = async () => {
+    document.documentElement.classList.add("dark");
+    const timer = setTimeout(async () => {
       try {
-        // 引入必要的函数
-        const { getCachedConfig } = await import('@/config/site');
-        const cachedAppName = await getCachedConfig('app_name');
-        if (cachedAppName && cachedAppName !== document.title) {
-          document.title = cachedAppName;
-        }
-      } catch (error) {
-        console.warn('检查标题更新失败:', error);
-      }
-    };
-
-    // 延迟检查，避免阻塞初始渲染
-    const timer = setTimeout(checkTitleUpdate, 100);
-
+        const { getCachedConfig } = await import("@/config/site");
+        const cached = await getCachedConfig("app_name");
+        if (cached) document.title = cached;
+      } catch { /* ignore */ }
+    }, 100);
     return () => clearTimeout(timer);
   }, []);
 
   return (
     <Routes>
       <Route path="/" element={<LoginRoute />} />
-      <Route 
-        path="/change-password" 
-        element={
-          <ProtectedRoute skipLayout={true}>
-            <ChangePasswordPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/dashboard" 
-        element={
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/forward" 
-        element={
-          <ProtectedRoute>
-            <ForwardPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/tunnel" 
-        element={
-          <ProtectedRoute>
-            <TunnelPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/node" 
-        element={
-          <ProtectedRoute>
-            <NodePage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/node-status" 
-        element={
-          <ProtectedRoute>
-            <NodeStatusPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/user" 
-        element={
-          <ProtectedRoute useSimpleLayout={true}>
-            <UserPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/profile" 
-        element={
-          <ProtectedRoute>
-            <ProfilePage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/limit" 
-        element={
-          <ProtectedRoute useSimpleLayout={true}>
-            <LimitPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/config" 
-        element={
-          <ProtectedRoute useSimpleLayout={true}>
-            <ConfigPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/settings" 
-        element={<SettingsPage />}
-      />
+      <Route path="/change-password" element={<ProtectedRoute skipLayout><ChangePasswordPage /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/forward" element={<ProtectedRoute><ForwardPage /></ProtectedRoute>} />
+      <Route path="/tunnel" element={<ProtectedRoute><TunnelPage /></ProtectedRoute>} />
+      <Route path="/node" element={<ProtectedRoute><NodePage /></ProtectedRoute>} />
+      <Route path="/node-status" element={<ProtectedRoute><NodeStatusPage /></ProtectedRoute>} />
+      <Route path="/user" element={<ProtectedRoute useSimpleLayout><UserPage /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/limit" element={<ProtectedRoute useSimpleLayout><LimitPage /></ProtectedRoute>} />
+      <Route path="/config" element={<ProtectedRoute useSimpleLayout><ConfigPage /></ProtectedRoute>} />
+      <Route path="/settings" element={<SettingsPage />} />
     </Routes>
   );
 }

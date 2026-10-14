@@ -1,15 +1,21 @@
 import { useState, useEffect } from "react";
-import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
-import { Textarea } from "@heroui/input";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
-import { Chip } from "@heroui/chip";
-import { Switch } from "@heroui/switch";
-import { Spinner } from "@heroui/spinner";
-import { Alert } from "@heroui/alert";
-import { Accordion, AccordionItem } from "@heroui/accordion";
-import toast from 'react-hot-toast';
+import { Pencil, Trash2, Plus, RefreshCw, Download, ArrowUpCircle } from "lucide-react";
+import toast from "react-hot-toast";
 
+import {
+  Button,
+  Card,
+  Field,
+  Input,
+  Textarea,
+  Badge,
+  Modal,
+  PageHeader,
+  Empty,
+  Loading,
+  Switch,
+  Select,
+} from "@/components/ui";
 
 import {
   createNode,
@@ -17,7 +23,7 @@ import {
   updateNode,
   deleteNode,
   getNodeInstallCommand,
-  upgradeNode
+  upgradeNode,
 } from "@/api";
 
 interface Node {
@@ -29,11 +35,11 @@ interface Node {
   tcpListenAddr?: string;
   udpListenAddr?: string;
   version?: string;
-  http?: number; // 0 关 1 开
-  tls?: number;  // 0 关 1 开
-  socks?: number; // 0 关 1 开
-  status: number; // 1: 在线, 0: 离线
-  connectionStatus: 'online' | 'offline';
+  http?: number;
+  tls?: number;
+  socks?: number;
+  status: number;
+  connectionStatus: "online" | "offline";
   copyLoading?: boolean;
   upgradeLoading?: boolean;
 }
@@ -46,134 +52,134 @@ interface NodeForm {
   tcpListenAddr: string;
   udpListenAddr: string;
   interfaceName: string;
-  http: number; // 0 关 1 开
-  tls: number;  // 0 关 1 开
-  socks: number; // 0 关 1 开
+  http: number;
+  tls: number;
+  socks: number;
 }
 
 export default function NodePage() {
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogVisible, setDialogVisible] = useState(false);
-  const [dialogTitle, setDialogTitle] = useState('');
+  const [dialogTitle, setDialogTitle] = useState("");
   const [isEdit, setIsEdit] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [nodeToDelete, setNodeToDelete] = useState<Node | null>(null);
   const [protocolDisabled, setProtocolDisabled] = useState(false);
-  const [protocolDisabledReason, setProtocolDisabledReason] = useState('');
+  const [protocolDisabledReason, setProtocolDisabledReason] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState<NodeForm>({
     id: null,
-    name: '',
-    serverIp: '',
-    port: '1000-65535',
-    tcpListenAddr: '[::]',
-    udpListenAddr: '[::]',
-    interfaceName: '',
+    name: "",
+    serverIp: "",
+    port: "1000-65535",
+    tcpListenAddr: "[::]",
+    udpListenAddr: "[::]",
+    interfaceName: "",
     http: 0,
     tls: 0,
-    socks: 0
+    socks: 0,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  
-  // 安装命令相关状态
+
   const [installCommandModal, setInstallCommandModal] = useState(false);
-  const [installCommand, setInstallCommand] = useState('');
-  const [currentNodeName, setCurrentNodeName] = useState('');
+  const [installCommand, setInstallCommand] = useState("");
+  const [currentNodeName, setCurrentNodeName] = useState("");
 
   useEffect(() => {
     loadNodes();
   }, []);
 
-  // 加载节点列表
   const loadNodes = async () => {
     setLoading(true);
     try {
       const res = await getNodeList();
       if (res.code === 0) {
-        setNodeList(res.data.map((node: any) => ({
-          ...node,
-          connectionStatus: node.status === 1 ? 'online' : 'offline',
-          copyLoading: false
-        })));
+        setNodeList(
+          res.data.map((node: any) => ({
+            ...node,
+            connectionStatus: node.status === 1 ? "online" : "offline",
+            copyLoading: false,
+          }))
+        );
       } else {
-        toast.error(res.msg || '加载节点列表失败');
+        toast.error(res.msg || "加载节点列表失败");
       }
-    } catch (error) {
-      toast.error('网络错误，请重试');
+    } catch {
+      toast.error("网络错误，请重试");
     } finally {
       setLoading(false);
     }
   };
 
-  // 验证IP地址格式
   const validateIp = (ip: string): boolean => {
     if (!ip || !ip.trim()) return false;
-    
+
     const trimmedIp = ip.trim();
-    
-    // IPv4格式验证
-    const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    
-    // IPv6格式验证
-    const ipv6Regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
-    
-    if (ipv4Regex.test(trimmedIp) || ipv6Regex.test(trimmedIp) || trimmedIp === 'localhost') {
+
+    const ipv4Regex =
+      /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
+    const ipv6Regex =
+      /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
+
+    if (ipv4Regex.test(trimmedIp) || ipv6Regex.test(trimmedIp) || trimmedIp === "localhost") {
       return true;
     }
-    
-    // 验证域名格式
+
     if (/^\d+$/.test(trimmedIp)) return false;
-    
-    const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$/;
+
+    const domainRegex =
+      /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$/;
     const singleLabelDomain = /^[a-zA-Z][a-zA-Z0-9\-]{0,62}$/;
-    
+
     return domainRegex.test(trimmedIp) || singleLabelDomain.test(trimmedIp);
   };
 
-  // 验证端口格式：支持 80,443,100-600
   const validatePort = (portStr: string): { valid: boolean; error?: string } => {
     if (!portStr || !portStr.trim()) {
-      return { valid: false, error: '请输入端口' };
+      return { valid: false, error: "请输入端口" };
     }
 
     const trimmed = portStr.trim();
-    const parts = trimmed.split(',').map(p => p.trim()).filter(p => p);
-    
+    const parts = trimmed
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p);
+
     if (parts.length === 0) {
-      return { valid: false, error: '请输入有效的端口' };
+      return { valid: false, error: "请输入有效的端口" };
     }
 
     for (const part of parts) {
-      // 检查是否是端口范围 (如 100-600)
-      if (part.includes('-')) {
-        const range = part.split('-').map(p => p.trim());
+      if (part.includes("-")) {
+        const range = part.split("-").map((p) => p.trim());
         if (range.length !== 2) {
           return { valid: false, error: `端口范围格式错误: ${part}` };
         }
-        
+
         const start = parseInt(range[0]);
         const end = parseInt(range[1]);
-        
+
         if (isNaN(start) || isNaN(end)) {
           return { valid: false, error: `端口必须是数字: ${part}` };
         }
-        
+
         if (start < 1 || start > 65535 || end < 1 || end > 65535) {
           return { valid: false, error: `端口范围必须在 1-65535 之间: ${part}` };
         }
-        
+
         if (start >= end) {
           return { valid: false, error: `起始端口必须小于结束端口: ${part}` };
         }
       } else {
-        // 单个端口
         const port = parseInt(part);
         if (isNaN(port)) {
           return { valid: false, error: `端口必须是数字: ${part}` };
         }
-        
+
         if (port < 1 || port > 65535) {
           return { valid: false, error: `端口必须在 1-65535 之间: ${part}` };
         }
@@ -183,66 +189,64 @@ export default function NodePage() {
     return { valid: true };
   };
 
-  // 表单验证
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    
+
     if (!form.name.trim()) {
-      newErrors.name = '请输入节点名称';
+      newErrors.name = "请输入节点名称";
     } else if (form.name.trim().length < 2) {
-      newErrors.name = '节点名称长度至少2位';
+      newErrors.name = "节点名称长度至少2位";
     } else if (form.name.trim().length > 50) {
-      newErrors.name = '节点名称长度不能超过50位';
+      newErrors.name = "节点名称长度不能超过50位";
     }
-    
+
     if (!form.serverIp.trim()) {
-      newErrors.serverIp = '请输入服务器IP地址';
+      newErrors.serverIp = "请输入服务器IP地址";
     } else if (!validateIp(form.serverIp.trim())) {
-      newErrors.serverIp = '请输入有效的IPv4、IPv6地址或域名';
+      newErrors.serverIp = "请输入有效的IPv4、IPv6地址或域名";
     }
-    
+
     const portValidation = validatePort(form.port);
     if (!portValidation.valid) {
-      newErrors.port = portValidation.error || '端口格式错误';
+      newErrors.port = portValidation.error || "端口格式错误";
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // 新增节点
   const handleAdd = () => {
-    setDialogTitle('新增节点');
+    setDialogTitle("新增节点");
     setIsEdit(false);
     setDialogVisible(true);
     resetForm();
+    setShowAdvanced(false);
     setProtocolDisabled(true);
-    setProtocolDisabledReason('节点未在线，等待节点上线后再设置');
+    setProtocolDisabledReason("节点未在线，等待节点上线后再设置");
   };
 
-  // 编辑节点
   const handleEdit = (node: Node) => {
-    setDialogTitle('编辑节点');
+    setDialogTitle("编辑节点");
     setIsEdit(true);
     setForm({
       id: node.id,
       name: node.name,
-      serverIp: node.serverIp || '',
-      port: node.port || '1000-65535',
-      tcpListenAddr: node.tcpListenAddr || '[::]',
-      udpListenAddr: node.udpListenAddr || '[::]',
-      interfaceName: (node as any).interfaceName || '',
-      http: typeof node.http === 'number' ? node.http : 1,
-      tls: typeof node.tls === 'number' ? node.tls : 1,
-      socks: typeof node.socks === 'number' ? node.socks : 1
+      serverIp: node.serverIp || "",
+      port: node.port || "1000-65535",
+      tcpListenAddr: node.tcpListenAddr || "[::]",
+      udpListenAddr: node.udpListenAddr || "[::]",
+      interfaceName: (node as any).interfaceName || "",
+      http: typeof node.http === "number" ? node.http : 1,
+      tls: typeof node.tls === "number" ? node.tls : 1,
+      socks: typeof node.socks === "number" ? node.socks : 1,
     });
-    const offline = node.connectionStatus !== 'online';
+    const offline = node.connectionStatus !== "online";
     setProtocolDisabled(offline);
-    setProtocolDisabledReason(offline ? '节点未在线，等待节点上线后再设置' : '');
+    setProtocolDisabledReason(offline ? "节点未在线，等待节点上线后再设置" : "");
+    setShowAdvanced(false);
     setDialogVisible(true);
   };
 
-  // 删除节点
   const handleDelete = (node: Node) => {
     setNodeToDelete(node);
     setDeleteModalOpen(true);
@@ -250,298 +254,255 @@ export default function NodePage() {
 
   const confirmDelete = async () => {
     if (!nodeToDelete) return;
-    
+
     setDeleteLoading(true);
     try {
       const res = await deleteNode(nodeToDelete.id);
       if (res.code === 0) {
-        toast.success('删除成功');
-        setNodeList(prev => prev.filter(n => n.id !== nodeToDelete.id));
+        toast.success("删除成功");
+        setNodeList((prev) => prev.filter((n) => n.id !== nodeToDelete.id));
         setDeleteModalOpen(false);
         setNodeToDelete(null);
       } else {
-        toast.error(res.msg || '删除失败');
+        toast.error(res.msg || "删除失败");
       }
-    } catch (error) {
-      toast.error('网络错误，请重试');
+    } catch {
+      toast.error("网络错误，请重试");
     } finally {
       setDeleteLoading(false);
     }
   };
 
-  // 远程升级到 GitHub Release latest（节点侧下载校验，失败自动回滚）
   const handleUpgrade = async (node: Node) => {
-    if (node.connectionStatus !== 'online') {
-      toast.error('节点不在线，无法远程升级');
+    if (node.connectionStatus !== "online") {
+      toast.error("节点不在线，无法远程升级");
       return;
     }
-    if (!window.confirm(`确定将节点「${node.name}」升级到最新版本？\n升级过程会短暂中断转发；失败将自动回滚。`)) {
+    if (
+      !window.confirm(
+        `确定将节点「${node.name}」升级到最新版本？\n升级过程会短暂中断转发；失败将自动回滚。`
+      )
+    ) {
       return;
     }
-    setNodeList(prev => prev.map(n =>
-      n.id === node.id ? { ...n, upgradeLoading: true } : n
-    ));
+    setNodeList((prev) => prev.map((n) => (n.id === node.id ? { ...n, upgradeLoading: true } : n)));
     try {
-      const res = await upgradeNode({ id: node.id, version: 'latest' });
+      const res = await upgradeNode({ id: node.id, version: "latest" });
       if (res.code === 0) {
-        toast.success(typeof res.data === 'string' ? res.data : '升级指令已下发，节点即将重启');
-        // 重启后稍晚刷新列表以看到新版本
-        setTimeout(() => { loadNodes(); }, 8000);
+        toast.success(typeof res.data === "string" ? res.data : "升级指令已下发，节点即将重启");
+        setTimeout(() => {
+          loadNodes();
+        }, 8000);
       } else {
-        toast.error(res.msg || '升级失败');
+        toast.error(res.msg || "升级失败");
       }
-    } catch (error) {
-      toast.error('升级请求失败，请重试');
+    } catch {
+      toast.error("升级请求失败，请重试");
     } finally {
-      setNodeList(prev => prev.map(n =>
-        n.id === node.id ? { ...n, upgradeLoading: false } : n
-      ));
+      setNodeList((prev) =>
+        prev.map((n) => (n.id === node.id ? { ...n, upgradeLoading: false } : n))
+      );
     }
   };
 
-  // 复制安装命令
   const handleCopyInstallCommand = async (node: Node) => {
-    setNodeList(prev => prev.map(n =>
-      n.id === node.id ? { ...n, copyLoading: true } : n
-    ));
+    setNodeList((prev) => prev.map((n) => (n.id === node.id ? { ...n, copyLoading: true } : n)));
 
     try {
       const res = await getNodeInstallCommand(node.id);
       if (res.code === 0 && res.data) {
         try {
           await navigator.clipboard.writeText(res.data);
-          toast.success('安装命令已复制到剪贴板');
-        } catch (copyError) {
-          // 复制失败，显示安装命令模态框
+          toast.success("安装命令已复制到剪贴板");
+        } catch {
           setInstallCommand(res.data);
           setCurrentNodeName(node.name);
           setInstallCommandModal(true);
         }
       } else {
-        toast.error(res.msg || '获取安装命令失败');
+        toast.error(res.msg || "获取安装命令失败");
       }
-    } catch (error) {
-      toast.error('获取安装命令失败');
+    } catch {
+      toast.error("获取安装命令失败");
     } finally {
-      setNodeList(prev => prev.map(n => 
-        n.id === node.id ? { ...n, copyLoading: false } : n
-      ));
+      setNodeList((prev) => prev.map((n) => (n.id === node.id ? { ...n, copyLoading: false } : n)));
     }
   };
 
-  // 手动复制安装命令
   const handleManualCopy = async () => {
     try {
       await navigator.clipboard.writeText(installCommand);
-      toast.success('安装命令已复制到剪贴板');
+      toast.success("安装命令已复制到剪贴板");
       setInstallCommandModal(false);
-    } catch (error) {
-      toast.error('复制失败，请手动选择文本复制');
+    } catch {
+      toast.error("复制失败，请手动选择文本复制");
     }
   };
 
-  // 提交表单
   const handleSubmit = async () => {
     if (!validateForm()) return;
-    
+
     setSubmitLoading(true);
-    
+
     try {
       const apiCall = isEdit ? updateNode : createNode;
-      const data = { 
-        ...form
-      };
-      
+      const data = { ...form };
+
       const res = await apiCall(data);
       if (res.code === 0) {
-        toast.success(isEdit ? '更新成功' : '创建成功');
+        toast.success(isEdit ? "更新成功" : "创建成功");
         setDialogVisible(false);
-        
+
         if (isEdit) {
-          setNodeList(prev => prev.map(n => 
-            n.id === form.id ? {
-              ...n,
-              name: form.name,
-              serverIp: form.serverIp,
-              port: form.port,
-              tcpListenAddr: form.tcpListenAddr,
-              udpListenAddr: form.udpListenAddr,
-              interfaceName: form.interfaceName,
-              http: form.http,
-              tls: form.tls,
-              socks: form.socks
-            } : n
-          ));
+          setNodeList((prev) =>
+            prev.map((n) =>
+              n.id === form.id
+                ? {
+                    ...n,
+                    name: form.name,
+                    serverIp: form.serverIp,
+                    port: form.port,
+                    tcpListenAddr: form.tcpListenAddr,
+                    udpListenAddr: form.udpListenAddr,
+                    interfaceName: form.interfaceName,
+                    http: form.http,
+                    tls: form.tls,
+                    socks: form.socks,
+                  }
+                : n
+            )
+          );
         } else {
           loadNodes();
         }
       } else {
-        toast.error(res.msg || (isEdit ? '更新失败' : '创建失败'));
+        toast.error(res.msg || (isEdit ? "更新失败" : "创建失败"));
       }
-    } catch (error) {
-      toast.error('网络错误，请重试');
+    } catch {
+      toast.error("网络错误，请重试");
     } finally {
       setSubmitLoading(false);
     }
   };
 
-  // 重置表单
   const resetForm = () => {
     setForm({
       id: null,
-      name: '',
-      serverIp: '',
-      port: '1000-65535',
-      tcpListenAddr: '[::]',
-      udpListenAddr: '[::]',
-      interfaceName: '',
+      name: "",
+      serverIp: "",
+      port: "1000-65535",
+      tcpListenAddr: "[::]",
+      udpListenAddr: "[::]",
+      interfaceName: "",
       http: 0,
       tls: 0,
-      socks: 0
+      socks: 0,
     });
     setErrors({});
   };
 
-  const cellClass = "px-3 py-3 align-middle";
-  const isOnline = (node: Node) => node.connectionStatus === 'online';
-  const onlineCount = nodeList.filter((n) => n.connectionStatus === 'online').length;
+  const isOnline = (node: Node) => node.connectionStatus === "online";
+  const onlineCount = nodeList.filter((n) => n.connectionStatus === "online").length;
+
+  const protoTiles = [
+    { key: "http" as const, label: "HTTP", desc: "网页代理协议" },
+    { key: "tls" as const, label: "TLS", desc: "加密传输协议" },
+    { key: "socks" as const, label: "SOCKS", desc: "通用代理协议" },
+  ];
 
   return (
-      <div className="px-3 lg:px-6 py-8">
-        {/* 页面头部 */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-          <div className="min-w-0">
-            <h1 className="page-title">节点管理</h1>
-            <p className="page-desc">
-              共 {nodeList.length} 个节点
-              {nodeList.length > 0 && (
-                <span className="text-default-400"> · 在线 {onlineCount} · 离线 {nodeList.length - onlineCount}</span>
-              )}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button
-              size="sm"
-              variant="flat"
-              color="default"
-              onPress={loadNodes}
-              isLoading={loading}
-            >
-              刷新
+    <div>
+      <PageHeader
+        title="节点管理"
+        desc={
+          nodeList.length > 0
+            ? `共 ${nodeList.length} 个节点 · 在线 ${onlineCount} · 离线 ${nodeList.length - onlineCount}`
+            : "管理转发节点与安装升级"
+        }
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={loadNodes} loading={loading}>
+              <RefreshCw size={15} /> 刷新
             </Button>
-            <Button
-              size="sm"
-              variant="flat"
-              color="primary"
-              onPress={handleAdd}
-            >
-              新增
+            <Button variant="primary" size="sm" onClick={handleAdd}>
+              <Plus size={15} /> 新增
             </Button>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        {/* 节点列表 */}
+      <Card>
         {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="flex items-center gap-3">
-              <Spinner size="sm" />
-              <span className="text-default-500 text-sm">正在加载...</span>
-            </div>
-          </div>
+          <Loading text="正在加载..." />
         ) : nodeList.length === 0 ? (
-          <div className="text-center py-16 panel-card border border-divider shadow-panel bg-content1">
-            <div className="flex flex-col items-center gap-4">
-              <div className="empty-state-icon">
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12l4-4m-4 4l4 4" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">暂无节点配置</h3>
-                <p className="text-default-500 text-sm mt-1">还没有创建任何节点配置，点击上方按钮开始创建</p>
-              </div>
-            </div>
-          </div>
+          <Empty
+            text="暂无节点配置，点击右上按钮开始创建"
+            action={
+              <Button variant="primary" size="sm" onClick={handleAdd}>
+                <Plus size={15} /> 新增节点
+              </Button>
+            }
+          />
         ) : (
-          <div className="panel-table-wrap">
-            <table className="w-full text-sm min-w-[640px]" aria-label="节点列表">
+          <div className="overflow-x-auto">
+            <table className="flux-table min-w-[720px]" aria-label="节点列表">
               <thead>
-                <tr className="bg-default-50 text-default-600 font-medium text-xs">
-                  <th className="px-3 py-2.5 text-left">节点</th>
-                  <th className="px-3 py-2.5 text-left">状态</th>
-                  <th className="px-3 py-2.5 text-right">操作</th>
+                <tr>
+                  <th className="text-left">节点</th>
+                  <th className="text-left">状态</th>
+                  <th className="text-right">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-divider">
+              <tbody>
                 {nodeList.map((node) => {
                   const online = isOnline(node);
                   return (
-                    <tr key={node.id} className="bg-content1 hover:bg-default-50/70 transition-colors">
-                      <td className={cellClass}>
+                    <tr key={node.id}>
+                      <td>
                         <div className="min-w-0">
-                          <div className="font-medium text-foreground text-sm truncate">{node.name}</div>
-                          <div className="text-xs text-default-500 font-mono truncate" title={node.serverIp?.trim() || ''}>
-                            {node.serverIp?.trim() || '-'}
+                          <div className="truncate text-sm font-medium text-white">{node.name}</div>
+                          <div
+                            className="truncate font-mono text-xs text-slate-400"
+                            title={node.serverIp?.trim() || ""}
+                          >
+                            {node.serverIp?.trim() || "-"}
                           </div>
-                          <div className="text-[11px] text-default-400 mt-0.5">
-                            版本 {node.version || '未知'}
+                          <div className="mt-0.5 text-[11px] text-slate-500">
+                            版本 {node.version || "未知"}
                           </div>
                         </div>
                       </td>
-                      <td className={cellClass}>
-                        <Chip
-                          color={online ? 'success' : 'danger'}
-                          variant="flat"
-                          size="sm"
-                          className="text-xs"
-                          startContent={
-                            <span className={`inline-block w-1.5 h-1.5 rounded-full ml-1 ${online ? 'bg-success' : 'bg-danger'}`} />
-                          }
-                        >
-                          {online ? '在线' : '离线'}
-                        </Chip>
+                      <td>
+                        <Badge tone={online ? "green" : "red"} dot>
+                          {online ? "在线" : "离线"}
+                        </Badge>
                       </td>
-                      <td className={cellClass}>
-                        <div className="flex items-center gap-1 justify-end flex-wrap">
+                      <td>
+                        <div className="flex items-center justify-end gap-1.5">
                           <Button
                             size="sm"
-                            variant="flat"
-                            color="success"
-                            onPress={() => handleCopyInstallCommand(node)}
-                            isLoading={node.copyLoading}
-                            className="min-w-unit-14"
+                            variant="soft"
+                            onClick={() => handleCopyInstallCommand(node)}
+                            loading={node.copyLoading}
+                            title="复制安装命令"
                           >
-                            安装
+                            <Download size={14} /> 安装
                           </Button>
                           <Button
                             size="sm"
-                            variant="flat"
-                            color="secondary"
-                            onPress={() => handleUpgrade(node)}
-                            isLoading={node.upgradeLoading}
-                            isDisabled={!online}
-                            className="min-w-unit-14"
+                            variant="outline"
+                            onClick={() => handleUpgrade(node)}
+                            loading={node.upgradeLoading}
+                            disabled={!online}
+                            title={online ? "远程升级到最新版" : "节点离线不可升级"}
                           >
-                            升级
+                            <ArrowUpCircle size={14} /> 升级
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="flat"
-                            color="primary"
-                            onPress={() => handleEdit(node)}
-                            className="min-w-unit-14"
-                          >
-                            编辑
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(node)} title="编辑">
+                            <Pencil size={14} /> 编辑
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="flat"
-                            color="danger"
-                            onPress={() => handleDelete(node)}
-                            className="min-w-unit-14"
-                          >
-                            删除
+                          <Button size="sm" variant="danger" onClick={() => handleDelete(node)} title="删除">
+                            <Trash2 size={14} />
                           </Button>
                         </div>
                       </td>
@@ -552,299 +513,197 @@ export default function NodePage() {
             </table>
           </div>
         )}
+      </Card>
 
-        {/* 新增/编辑节点对话框 */}
-        <Modal 
-          isOpen={dialogVisible} 
-          onClose={() => setDialogVisible(false)}
-          size="2xl"
-          scrollBehavior="outside"
-          backdrop="blur"
-          placement="center"
-        >
-          <ModalContent>
-            <ModalHeader>{dialogTitle}</ModalHeader>
-            <ModalBody>
-              <div className="space-y-4">
-                <Input
-                  label="节点名称"
-                  placeholder="请输入节点名称"
-                  value={form.name}
-                  onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
-                  isInvalid={!!errors.name}
-                  errorMessage={errors.name}
-                  variant="bordered"
-                />
+      <Modal
+        open={dialogVisible}
+        onClose={() => setDialogVisible(false)}
+        title={dialogTitle || (isEdit ? "编辑节点" : "新增节点")}
+        desc="服务器 IP 是你要添加的服务器地址，不是面板的 IP"
+        width="max-w-2xl"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDialogVisible(false)}>
+              取消
+            </Button>
+            <Button variant="primary" onClick={handleSubmit} loading={submitLoading}>
+              {submitLoading ? "提交中..." : "确定"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="节点名称" hint={errors.name}>
+            <Input
+              placeholder="请输入节点名称"
+              value={form.name}
+              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+            />
+          </Field>
 
-                <Input
-                  label="服务器IP"
-                  placeholder="请输入服务器IP地址，如: 192.168.1.100 或 example.com"
-                  value={form.serverIp}
-                  onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))}
-                  isInvalid={!!errors.serverIp}
-                  errorMessage={errors.serverIp}
-                  variant="bordered"
-                />
+          <Field label="服务器 IP" hint={errors.serverIp}>
+            <Input
+              placeholder="如: 192.168.1.100 或 example.com"
+              value={form.serverIp}
+              onChange={(e) => setForm((prev) => ({ ...prev, serverIp: e.target.value }))}
+            />
+          </Field>
 
-                <Input
-                  label="可用端口"
-                  placeholder="例如: 80,443,1000-65535"
-                  value={form.port}
-                  onChange={(e) => setForm(prev => ({ ...prev, port: e.target.value }))}
-                  isInvalid={!!errors.port}
-                  errorMessage={errors.port}
-                  variant="bordered"
-                  description="支持单个端口(80)、多个端口(80,443)或端口范围(1000-65535)，多个可用逗号分隔"
-                  classNames={{
-                    input: "font-mono"
-                  }}
-                />
+          <Field
+            label="可用端口"
+            hint={errors.port || "支持单个端口(80)、多个端口(80,443)或端口范围(1000-65535)，逗号分隔"}
+          >
+            <Input
+              placeholder="例如: 80,443,1000-65535"
+              value={form.port}
+              onChange={(e) => setForm((prev) => ({ ...prev, port: e.target.value }))}
+              className="font-mono"
+            />
+          </Field>
 
-                {/* 高级配置 */}
-                <Accordion variant="bordered">
-                  <AccordionItem 
-                    key="advanced" 
-                    aria-label="高级配置"
-                    title="高级配置"
-                  >
-                    <div className="space-y-4 pb-2">
-                      <Input
-                        label="出口网卡名或IP"
-                        placeholder="请输入出口网卡名或IP"
-                        value={form.interfaceName}
-                        onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
-                        isInvalid={!!errors.interfaceName}
-                        errorMessage={errors.interfaceName}
-                        variant="bordered"
-                        description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
-                      />
+          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02]">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-slate-200"
+            >
+              高级配置
+              <span className="text-xs text-slate-500">{showAdvanced ? "收起 ▲" : "展开 ▼"}</span>
+            </button>
+            {showAdvanced && (
+              <div className="space-y-4 border-t border-white/[0.07] px-4 py-4">
+                <Field
+                  label="出口网卡名或 IP"
+                  hint="用于多 IP 服务器指定出口，不懂的默认为空就行"
+                >
+                  <Input
+                    placeholder="请输入出口网卡名或IP"
+                    value={form.interfaceName}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, interfaceName: e.target.value }))
+                    }
+                  />
+                </Field>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Input
-                          label="TCP监听地址"
-                          placeholder="请输入TCP监听地址"
-                          value={form.tcpListenAddr}
-                          onChange={(e) => setForm(prev => ({ ...prev, tcpListenAddr: e.target.value }))}
-                          isInvalid={!!errors.tcpListenAddr}
-                          errorMessage={errors.tcpListenAddr}
-                          variant="bordered"
-                          startContent={
-                            <div className="pointer-events-none flex items-center">
-                              <span className="text-default-400 text-small">TCP</span>
-                            </div>
-                          }
-                        />
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field label="TCP 监听地址">
+                    <Input
+                      placeholder="如 [::]"
+                      value={form.tcpListenAddr}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, tcpListenAddr: e.target.value }))
+                      }
+                      className="font-mono"
+                    />
+                  </Field>
+                  <Field label="UDP 监听地址">
+                    <Input
+                      placeholder="如 [::]"
+                      value={form.udpListenAddr}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, udpListenAddr: e.target.value }))
+                      }
+                      className="font-mono"
+                    />
+                  </Field>
+                </div>
 
-                        <Input
-                          label="UDP监听地址"
-                          placeholder="请输入UDP监听地址"
-                          value={form.udpListenAddr}
-                          onChange={(e) => setForm(prev => ({ ...prev, udpListenAddr: e.target.value }))}
-                          isInvalid={!!errors.udpListenAddr}
-                          errorMessage={errors.udpListenAddr}
-                          variant="bordered"
-                          startContent={
-                            <div className="pointer-events-none flex items-center">
-                              <span className="text-default-400 text-small">UDP</span>
-                            </div>
-                          }
-                        />
-                      </div>
-                      {/* 屏蔽协议 */}
-                      <div>
-                        <div className="text-sm font-medium text-default-700 mb-2">屏蔽协议</div>
-                        <div className="text-xs text-default-500 mb-2">开启开关以屏蔽对应协议</div>
-                        {protocolDisabled && (
-                          <Alert
-                            color="warning"
-                            variant="flat"
-                            description={protocolDisabledReason || '等待节点上线后再设置'}
-                            className="mb-2"
+                <div>
+                  <p className="mb-1 text-[0.78rem] font-medium text-slate-300">屏蔽协议</p>
+                  <p className="mb-2 text-[0.72rem] text-slate-500">
+                    开启开关以屏蔽对应协议{protocolDisabled ? `（${protocolDisabledReason}）` : ""}
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {protoTiles.map((t) => (
+                      <div
+                        key={t.key}
+                        className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-3"
+                      >
+                        <div className="mb-1 text-sm font-medium text-slate-200">{t.label}</div>
+                        <div className="mb-2 text-xs text-slate-500">{t.desc}</div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-400">
+                            {form[t.key] === 1 ? "已开启" : "已关闭"}
+                          </span>
+                          <Switch
+                            checked={form[t.key] === 1}
+                            disabled={protocolDisabled}
+                            onChange={(v) => setForm((prev) => ({ ...prev, [t.key]: v ? 1 : 0 }))}
                           />
-                        )}
-                        <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 bg-default-50 dark:bg-default-100 p-3 rounded-md border border-default-200 dark:border-default-100/30 ${protocolDisabled ? 'opacity-70' : ''}`}>
-                          {/* HTTP tile */}
-                          <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
-                            <div className="flex items-center gap-2 mb-2">
-                              <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg>
-                              <div className="text-sm font-medium text-default-700">HTTP</div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="text-xs text-default-500">禁用/启用</div>
-                              <Switch
-                                size="sm"
-                                isSelected={form.http === 1}
-                                isDisabled={protocolDisabled}
-                                onValueChange={(v) => setForm(prev => ({ ...prev, http: v ? 1 : 0 }))}
-                              />
-                            </div>
-                            <div className="mt-1 text-xs text-default-400">{form.http === 1 ? '已开启' : '已关闭'}</div>
-                          </div>
-
-                          {/* TLS tile */}
-                          <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
-                            <div className="flex items-center gap-2 mb-2">
-                              <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 10V7a6 6 0 1 1 12 0v3"/><rect x="4" y="10" width="16" height="10" rx="2"/></svg>
-                              <div className="text-sm font-medium text-default-700">TLS</div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="text-xs text-default-500">禁用/启用</div>
-                              <Switch
-                                size="sm"
-                                isSelected={form.tls === 1}
-                                isDisabled={protocolDisabled}
-                                onValueChange={(v) => setForm(prev => ({ ...prev, tls: v ? 1 : 0 }))}
-                              />
-                            </div>
-                            <div className="mt-1 text-xs text-default-400">{form.tls === 1 ? '已开启' : '已关闭'}</div>
-                          </div>
-
-                          {/* SOCKS tile */}
-                          <div className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30 hover:border-primary-200 transition-colors">
-                            <div className="flex items-center gap-2 mb-2">
-                              <svg className="w-4 h-4 text-default-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                              <div className="text-sm font-medium text-default-700">SOCKS</div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="text-xs text-default-500">禁用/启用</div>
-                              <Switch
-                                size="sm"
-                                isSelected={form.socks === 1}
-                                isDisabled={protocolDisabled}
-                                onValueChange={(v) => setForm(prev => ({ ...prev, socks: v ? 1 : 0 }))}
-                              />
-                            </div>
-                            <div className="mt-1 text-xs text-default-400">{form.socks === 1 ? '已开启' : '已关闭'}</div>
-                          </div>
                         </div>
                       </div>
-
-                      <Alert
-                        color="danger"
-                        variant="flat"
-                        description="请不要在出口节点执行屏蔽协议，否则可能影响转发；屏蔽协议仅需在入口节点执行。"
-                      />
-                    </div>
-                  </AccordionItem>
-                </Accordion>
-
-                <Alert
-                  color="primary"
-                  variant="flat"
-                  description="服务器ip是你要添加的服务器的ip地址，不是面板的ip地址。"
-                  className="mt-4"
-                />
-                
+                    ))}
+                  </div>
+                  <p className="mt-2 rounded-xl border border-red-400/20 bg-red-400/[0.06] px-3 py-2 text-xs text-red-300">
+                    请不要在出口节点执行屏蔽协议，否则可能影响转发；屏蔽协议仅需在入口节点执行。
+                  </p>
+                  <div className="mt-3">
+                    <Field label="协议快捷设置">
+                      <Select
+                        value=""
+                        disabled={protocolDisabled}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "all") setForm((p) => ({ ...p, http: 1, tls: 1, socks: 1 }));
+                          if (v === "none") setForm((p) => ({ ...p, http: 0, tls: 0, socks: 0 }));
+                        }}
+                      >
+                        <option value="">批量设置…</option>
+                        <option value="all">全部开启</option>
+                        <option value="none">全部关闭</option>
+                      </Select>
+                    </Field>
+                  </div>
+                </div>
               </div>
-            </ModalBody>
-            <ModalFooter>
-              <Button
-                variant="flat"
-                onPress={() => setDialogVisible(false)}
-              >
-                取消
-              </Button>
-              <Button
-                color="primary"
-                onPress={handleSubmit}
-                isLoading={submitLoading}
-              >
-                {submitLoading ? '提交中...' : '确定'}
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-
-        {/* 删除确认模态框 */}
-        <Modal 
-          isOpen={deleteModalOpen}
-          onOpenChange={setDeleteModalOpen}
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="blur"
-        placement="center"
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold">确认删除</h2>
-                </ModalHeader>
-                <ModalBody>
-                  <p>确定要删除节点 <strong>"{nodeToDelete?.name}"</strong> 吗？</p>
-                  <p className="text-small text-default-500">此操作不可恢复，请谨慎操作。</p>
-                </ModalBody>
-                <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
-                    取消
-                  </Button>
-                  <Button 
-                    color="danger" 
-                    onPress={confirmDelete}
-                    isLoading={deleteLoading}
-                  >
-                    {deleteLoading ? '删除中...' : '确认删除'}
-                  </Button>
-                </ModalFooter>
-              </>
             )}
-          </ModalContent>
-        </Modal>
+          </div>
+        </div>
+      </Modal>
 
-        {/* 安装命令模态框 */}
-        <Modal 
-          isOpen={installCommandModal} 
-          onClose={() => setInstallCommandModal(false)}
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="blur"
-        placement="center"
-        >
-          <ModalContent>
-            <ModalHeader>安装命令 - {currentNodeName}</ModalHeader>
-            <ModalBody>
-              <div className="space-y-4">
-                <p className="text-sm text-default-600">
-                  请复制以下安装命令到服务器上执行：
-                </p>
-                <div className="relative">
-                  <Textarea
-                    value={installCommand}
-                    readOnly
-                    variant="bordered"
-                    minRows={6}
-                    maxRows={10}
-                    className="font-mono text-sm"
-                    classNames={{
-                      input: "font-mono text-sm"
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    color="primary"
-                    variant="flat"
-                    className="absolute top-2 right-2"
-                    onPress={handleManualCopy}
-                  >
-                    复制
-                  </Button>
-                </div>
-                <div className="text-xs text-default-500">
-                  💡 提示：如果复制按钮失效，请手动选择上方文本进行复制
-                </div>
-              </div>
-            </ModalBody>
-            <ModalFooter>
-              <Button
-                variant="flat"
-                onPress={() => setInstallCommandModal(false)}
-              >
-                关闭
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-      </div>
-    
+      <Modal
+        open={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="确认删除"
+        desc="此操作不可恢复，请谨慎操作"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteModalOpen(false)}>
+              取消
+            </Button>
+            <Button variant="danger" onClick={confirmDelete} loading={deleteLoading}>
+              {deleteLoading ? "删除中..." : "确认删除"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-300">
+          确定要删除节点 <strong className="text-white">"{nodeToDelete?.name}"</strong> 吗？
+        </p>
+      </Modal>
+
+      <Modal
+        open={installCommandModal}
+        onClose={() => setInstallCommandModal(false)}
+        title={`安装命令 - ${currentNodeName}`}
+        desc="自动复制失败，请手动复制以下命令到服务器执行"
+        width="max-w-2xl"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setInstallCommandModal(false)}>
+              关闭
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleManualCopy}>
+              复制
+            </Button>
+          </>
+        }
+      >
+        <div className="relative">
+          <Textarea value={installCommand} readOnly rows={6} className="font-mono text-xs" />
+        </div>
+        <p className="mt-2 text-xs text-slate-500">提示：如果复制按钮失效，请手动选择上方文本复制</p>
+      </Modal>
+    </div>
   );
-} 
+}
