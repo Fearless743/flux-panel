@@ -397,6 +397,40 @@ export default function ForwardPage() {
     });
   };
 
+  // 静默同步转发列表：不触发全屏 loading，将新数据合并替换到老数据
+  const syncForwardsSilently = async () => {
+    try {
+      const forwardsRes = await getForwardList();
+      if (forwardsRes.code !== 0) return;
+      const freshData: Forward[] = forwardsRes.data?.map((forward: any) => ({
+        ...forward,
+        serviceRunning: forward.status === 1
+      })) || [];
+      const freshMap = new Map(freshData.map((f: Forward) => [f.id, f]));
+      setForwards(prev => {
+        // 老数据中仍存在的用新数据替换，已删除的去掉
+        const merged = prev
+          .filter(f => freshMap.has(f.id))
+          .map(f => freshMap.get(f.id)!);
+        // 新数据中多出来的追加（新建的转发）
+        const prevIds = new Set(prev.map(f => f.id));
+        const added = freshData.filter((f: Forward) => !prevIds.has(f.id));
+        return [...merged, ...added];
+      });
+      // 新转发补进排序，避免覆盖本地拖拽顺序
+      setForwardOrder(prevOrder => {
+        const freshIds = new Set(freshData.map((f: Forward) => f.id));
+        const kept = (prevOrder || []).filter(id => freshIds.has(id));
+        const addedIds = freshData
+          .map((f: Forward) => f.id)
+          .filter(id => !kept.includes(id));
+        return [...kept, ...addedIds];
+      });
+    } catch (error) {
+      console.warn('静默同步转发列表失败:', error);
+    }
+  };
+
   // 提交表单
   const handleSubmit = async () => {
     if (!validateForm()) return;
@@ -410,6 +444,7 @@ export default function ForwardPage() {
         .join(',');
 
       const addressCount = processedRemoteAddr.split(',').length;
+      const finalStrategy = addressCount > 1 ? form.strategy : 'fifo';
       
       let res;
       if (isEdit) {
@@ -421,7 +456,7 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: finalStrategy
         };
         res = await updateForward(updateData);
       } else {
@@ -431,7 +466,7 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: finalStrategy
         };
         res = await createForward(createData);
       }
@@ -439,7 +474,39 @@ export default function ForwardPage() {
       if (res.code === 0) {
         toast.success(isEdit ? '修改成功' : '创建成功');
         setModalOpen(false);
-        loadData();
+        if (isEdit) {
+          // 编辑：将新数据直接替换到老数据，不全量刷新
+          const tunnelName = tunnels.find(t => t.id === form.tunnelId)?.name;
+          setForwards(prev => prev.map(f =>
+            f.id === form.id
+              ? {
+                  ...f,
+                  name: form.name,
+                  tunnelId: form.tunnelId!,
+                  tunnelName: tunnelName ?? f.tunnelName,
+                  remoteAddr: processedRemoteAddr,
+                  strategy: finalStrategy,
+                  inPort: form.inPort ?? f.inPort,
+                  status: 1,
+                  serviceRunning: true,
+                }
+              : f
+          ));
+          // 后台静默同步一次，校准服务端分配的端口/入口等字段（无 loading 闪烁）
+          syncForwardsSilently();
+        } else {
+          // 新建：后端不返回完整对象，静默拉取后只合并增量，不重置 loading
+          if (res.data && (res.data as any).id) {
+            const created = {
+              ...(res.data as any),
+              serviceRunning: (res.data as any).status === 1,
+            } as Forward;
+            setForwards(prev => [...prev, created]);
+            setForwardOrder(prevOrder => [...(prevOrder || []), created.id]);
+          } else {
+            syncForwardsSilently();
+          }
+        }
       } else {
         toast.error(res.msg || '操作失败');
       }
