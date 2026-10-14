@@ -16,6 +16,8 @@ import (
 	xlogger "github.com/go-gost/x/logger"
 	"github.com/go-gost/x/service"
 	"github.com/go-gost/x/socket"
+
+	"github.com/go-gost/gost/internal/memtune"
 	"github.com/judwhite/go-svc"
 )
 
@@ -69,6 +71,7 @@ func init() {
 	}
 }
 
+// worker 以子进程方式运行分段参数（gost 的 " -- " 多实例语法）。
 func worker(id int, args []string, ctx *context.Context, ret *int) {
 	cmd := exec.CommandContext(*ctx, os.Args[0], args...)
 
@@ -81,6 +84,21 @@ func worker(id int, args []string, ctx *context.Context, ret *int) {
 	}
 	if cmd.ProcessState.Exited() {
 		*ret = cmd.ProcessState.ExitCode()
+	}
+}
+
+// loggerOption 支持 GOST_LOG_LEVEL 覆盖日志级别（trace/debug/info/warn/error/fatal）。
+// 默认 info；高连接率节点可设为 warn 进一步减少每条连接的日志分配。
+func loggerOption() xlogger.Option {
+	level := strings.ToLower(strings.TrimSpace(os.Getenv("GOST_LOG_LEVEL")))
+	switch level {
+	case "trace", "debug", "info", "warn", "error", "fatal":
+		return xlogger.LevelOption(logger.LogLevel(level))
+	case "":
+		return func(*xlogger.Options) {} // 保持默认 info，不返回 nil 以免调用空选项
+	default:
+		fmt.Printf("⚠️ GOST_LOG_LEVEL 无效: %q（已忽略，使用 info）\n", level)
+		return func(*xlogger.Options) {}
 	}
 }
 
@@ -106,17 +124,21 @@ func init() {
 }
 
 func main() {
+	// 尽早调优 GC：默认 GOGC=100 会让堆涨到存活量的 2 倍才回收，
+	// 小内存节点上 RSS 长期偏高；容器内部署时按 cgroup 上限设软限制。
+	memtune.Tune()
+
 	// 加载配置文件
 	config, err := LoadConfig("config.json")
 	if err != nil {
-		fmt.Println("❌ 配置加载失败: %v\n", err)
+		fmt.Printf("❌ 配置加载失败: %v\n", err)
 		fmt.Println("请确保当前目录存在 config.json 文件")
 		os.Exit(1)
 	}
 
-	fmt.Println("✅ 配置加载成功 - addr: %s", config.Addr)
+	fmt.Printf("✅ 配置加载成功 - addr: %s\n", config.Addr)
 
-	log := xlogger.NewLogger()
+	log := xlogger.NewLogger(loggerOption())
 	logger.SetDefault(log)
 
 	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, config.Ssl, version)
