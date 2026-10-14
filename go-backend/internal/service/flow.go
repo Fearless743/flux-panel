@@ -628,24 +628,22 @@ func (s *FlowService) deleteServices(nodeID int64, names []string) {
 	if s.Hub == nil || len(names) == 0 {
 		return
 	}
-	res := s.Hub.SendMsg(nodeID, gost.DeleteServicePayload(names), "DeleteService")
-	_ = gost.NormalizeOK(res.Msg)
+	// 孤儿清理无需等待节点确认
+	s.Hub.SendNoWait(nodeID, gost.DeleteServicePayload(names), "DeleteService")
 }
 
 func (s *FlowService) deleteChains(nodeID int64, name string) {
 	if s.Hub == nil {
 		return
 	}
-	res := s.Hub.SendMsg(nodeID, map[string]any{"chain": name}, "DeleteChains")
-	_ = gost.NormalizeOK(res.Msg)
+	s.Hub.SendNoWait(nodeID, map[string]any{"chain": name}, "DeleteChains")
 }
 
 func (s *FlowService) deleteLimiters(nodeID, name int64) {
 	if s.Hub == nil {
 		return
 	}
-	res := s.Hub.SendMsg(nodeID, map[string]any{"limiter": strconv.FormatInt(name, 10)}, "DeleteLimiters")
-	_ = gost.NormalizeOK(res.Msg)
+	s.Hub.SendNoWait(nodeID, map[string]any{"limiter": strconv.FormatInt(name, 10)}, "DeleteLimiters")
 }
 
 // PauseForwardByIDs 供定时任务调用：按用户/隧道到期暂停，使用正确 serviceName

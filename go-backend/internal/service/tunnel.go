@@ -328,26 +328,26 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 		return err
 	}
 
-	// type2 下发
+	// type2 下发：按节点分组并行（同节点 chain 先于 service），任一下发失败整体回滚
 	if tunnel.Type == 2 {
-		type successRef struct {
-			nodeID int64
-			kind   string // chain / service
-			name   string
-		}
-		var success []successRef
 		rollback := func() {
 			_ = s.Tunnel.Delete(tunnel.ID)
 			_ = s.Chain.DeleteByTunnelID(tunnel.ID)
-			for _, r := range success {
-				if r.kind == "chain" {
-					deleteChains(s.Hub, r.nodeID, r.name)
-				} else {
-					deleteService(s.Hub, r.nodeID, []string{r.name})
+			for _, entry := range entries {
+				deleteChains(s.Hub, entry.NodeID, gost.ChainName(tunnel.ID))
+			}
+			for _, group := range chainGroups {
+				for _, ct := range group {
+					deleteChains(s.Hub, ct.NodeID, gost.ChainName(tunnel.ID))
+					deleteService(s.Hub, ct.NodeID, []string{gost.TunnelTLS(tunnel.ID)})
 				}
+			}
+			for _, ct := range outNodes {
+				deleteService(s.Hub, ct.NodeID, []string{gost.TunnelTLS(tunnel.ID)})
 			}
 		}
 
+		var jobs []nodeJob
 		// 入口 → 第一跳 / 出口
 		for _, entry := range entries {
 			var target []model.ChainTunnel
@@ -357,17 +357,18 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 			} else {
 				target = chainGroups[0]
 			}
-			res := s.addChains(entry.NodeID, target, nodes)
-			if !gost.IsOK(res.Msg) {
-				// 无转发链时 Java isError 为空，这里仍按失败回滚更安全
-				if len(chainGroups) == 0 {
-					// 对齐 Java isError 空实现：忽略
-					continue
+			e, t := entry, target
+			jobs = append(jobs, nodeJob{nodeID: e.NodeID, run: func() string {
+				res := s.addChains(e.NodeID, t, nodes)
+				if !gost.IsOK(res.Msg) {
+					// 无转发链时对齐 Java isError 空实现：忽略
+					if len(chainGroups) == 0 {
+						return ""
+					}
+					return gost.NormalizeOK(res.Msg)
 				}
-				rollback()
-				return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
-			}
-			success = append(success, successRef{nodeID: entry.NodeID, kind: "chain", name: gost.ChainName(tunnel.ID)})
+				return ""
+			}})
 		}
 
 		// 转发链
@@ -379,30 +380,34 @@ func (s *TunnelService) Create(req TunnelCreateReq) error {
 				target = outNodes
 			}
 			for _, ct := range chainGroups[i] {
-				res := s.addChains(ct.NodeID, target, nodes)
-				if !gost.IsOK(res.Msg) {
-					rollback()
-					return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
-				}
-				success = append(success, successRef{nodeID: ct.NodeID, kind: "chain", name: gost.ChainName(tunnel.ID)})
-
-				res = s.addChainService(ct.NodeID, ct, nodes)
-				if !gost.IsOK(res.Msg) {
-					rollback()
-					return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
-				}
-				success = append(success, successRef{nodeID: ct.NodeID, kind: "service", name: gost.TunnelTLS(tunnel.ID)})
+				c, t := ct, target
+				jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
+					var msgs []string
+					if res := s.addChains(c.NodeID, t, nodes); !gost.IsOK(res.Msg) {
+						msgs = append(msgs, gost.NormalizeOK(res.Msg))
+					}
+					if res := s.addChainService(c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
+						msgs = append(msgs, gost.NormalizeOK(res.Msg))
+					}
+					return strings.Join(msgs, "；")
+				}})
 			}
 		}
 
 		// 出口
 		for _, ct := range outNodes {
-			res := s.addChainService(ct.NodeID, ct, nodes)
-			if !gost.IsOK(res.Msg) {
-				rollback()
-				return fmt.Errorf("%s", gost.NormalizeOK(res.Msg))
-			}
-			success = append(success, successRef{nodeID: ct.NodeID, kind: "service", name: gost.TunnelTLS(tunnel.ID)})
+			c := ct
+			jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
+				if res := s.addChainService(c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
+					return gost.NormalizeOK(res.Msg)
+				}
+				return ""
+			}})
+		}
+
+		if fails := runNodeJobs(jobs); len(fails) > 0 {
+			rollback()
+			return fmt.Errorf("%s", fails[0])
 		}
 	}
 	return nil
@@ -706,8 +711,9 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 		return err
 	}
 
-	// 下发
+	// 下发：按节点分组并行（同节点上 chain 必须先于 service）
 	if isTunnelForward {
+		jobs := make([]nodeJob, 0, len(newEntries)+len(newOuts))
 		for _, entry := range newEntries {
 			var target []model.ChainTunnel
 			if len(newChains) == 0 {
@@ -716,11 +722,13 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 			} else {
 				target = newChains[0]
 			}
-			res := pushChains(s.Hub, entry.NodeID, target, nodes)
-			if !gost.IsOK(res.Msg) {
-				name := nodeName(nodes, entry.NodeID)
-				failures = append(failures, fmt.Sprintf("入口[%s]链下发失败: %s", name, res.Msg))
-			}
+			e, t := entry, target
+			jobs = append(jobs, nodeJob{nodeID: e.NodeID, run: func() string {
+				if res := pushChains(s.Hub, e.NodeID, t, nodes); !gost.IsOK(res.Msg) {
+					return fmt.Sprintf("入口[%s]链下发失败: %s", nodeName(nodes, e.NodeID), res.Msg)
+				}
+				return ""
+			}})
 		}
 		for i := range newChains {
 			var target []model.ChainTunnel
@@ -730,22 +738,29 @@ func (s *TunnelService) reconfigureTunnelNodes(tunnel *model.Tunnel, dto TunnelU
 				target = newOuts
 			}
 			for _, ct := range newChains[i] {
-				res := pushChains(s.Hub, ct.NodeID, target, nodes)
-				if !gost.IsOK(res.Msg) {
-					failures = append(failures, fmt.Sprintf("转发链[%s]链下发失败: %s", nodeName(nodes, ct.NodeID), res.Msg))
-				}
-				res = pushChainService(s.Hub, ct.NodeID, ct, nodes)
-				if !gost.IsOK(res.Msg) {
-					failures = append(failures, fmt.Sprintf("转发链[%s]服务下发失败: %s", nodeName(nodes, ct.NodeID), res.Msg))
-				}
+				c, t := ct, target
+				jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
+					var msgs []string
+					if res := pushChains(s.Hub, c.NodeID, t, nodes); !gost.IsOK(res.Msg) {
+						msgs = append(msgs, fmt.Sprintf("转发链[%s]链下发失败: %s", nodeName(nodes, c.NodeID), res.Msg))
+					}
+					if res := pushChainService(s.Hub, c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
+						msgs = append(msgs, fmt.Sprintf("转发链[%s]服务下发失败: %s", nodeName(nodes, c.NodeID), res.Msg))
+					}
+					return strings.Join(msgs, "；")
+				}})
 			}
 		}
 		for _, ct := range newOuts {
-			res := pushChainService(s.Hub, ct.NodeID, ct, nodes)
-			if !gost.IsOK(res.Msg) {
-				failures = append(failures, fmt.Sprintf("出口[%s]服务下发失败: %s", nodeName(nodes, ct.NodeID), res.Msg))
-			}
+			c := ct
+			jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
+				if res := pushChainService(s.Hub, c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
+					return fmt.Sprintf("出口[%s]服务下发失败: %s", nodeName(nodes, c.NodeID), res.Msg)
+				}
+				return ""
+			}})
 		}
+		failures = append(failures, runNodeJobs(jobs)...)
 	}
 
 	// 入口变化 → 迁移转发服务

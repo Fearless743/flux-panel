@@ -61,3 +61,44 @@ func parallelEach(n, workers int, fn func(i int) string) []string {
 	}
 	return errs
 }
+
+// nodeJob 一次面向单个节点的下发动作。
+// 组内（同 nodeID）严格按加入顺序串行，组间（不同 nodeID）限并发——
+// 既保证同节点上“先建 chain、再建引用它的 service”的顺序，又让多节点下发重叠 IO 等待。
+type nodeJob struct {
+	nodeID int64
+	run    func() string // 返回 "" 表示成功，否则为失败文案
+}
+
+// runNodeJobs 按 nodeID 分组后并行执行，返回按节点首次出现顺序、组内顺序收集的非空失败文案。
+func runNodeJobs(jobs []nodeJob) []string {
+	if len(jobs) == 0 {
+		return nil
+	}
+	groups := make(map[int64][]func() string)
+	order := make([]int64, 0)
+	for _, j := range jobs {
+		if _, ok := groups[j.nodeID]; !ok {
+			order = append(order, j.nodeID)
+		}
+		groups[j.nodeID] = append(groups[j.nodeID], j.run)
+	}
+
+	results := make([][]string, len(order))
+	parallelEach(len(order), batchConcurrency, func(i int) string {
+		var msgs []string
+		for _, fn := range groups[order[i]] {
+			if m := fn(); m != "" {
+				msgs = append(msgs, m)
+			}
+		}
+		results[i] = msgs
+		return ""
+	})
+
+	var out []string
+	for _, ms := range results {
+		out = append(out, ms...)
+	}
+	return out
+}

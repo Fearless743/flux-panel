@@ -204,7 +204,7 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 		// 4) 刷新 in_ip
 		refreshTunnelInIP(db, tunnel, entries)
 
-		// 5) type=2 重推
+		// 5) type=2 重推（按节点分组并行，同节点 chain 先于 service）
 		if tunnel.Type == 2 {
 			nodeIDs := make(map[int64]struct{})
 			for _, ct := range remaining {
@@ -212,6 +212,7 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 			}
 			nodes := loadNodesMap(db, nodeIDs)
 
+			var jobs []nodeJob
 			for _, entry := range entries {
 				n := nodes[entry.NodeID]
 				if n == nil || n.Status != 1 {
@@ -228,9 +229,13 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 					warnings = append(warnings, fmt.Sprintf("隧道[%s]入口后无下一跳，跳过链重推", tunnel.Name))
 					continue
 				}
-				if res := pushChains(hub, entry.NodeID, target, nodes); !gost.IsOK(res.Msg) {
-					warnings = append(warnings, fmt.Sprintf("隧道[%s]入口链重推失败: %s", tunnel.Name, res.Msg))
-				}
+				e, t := entry, target
+				jobs = append(jobs, nodeJob{nodeID: e.NodeID, run: func() string {
+					if res := pushChains(hub, e.NodeID, t, nodes); !gost.IsOK(res.Msg) {
+						return fmt.Sprintf("隧道[%s]入口链重推失败: %s", tunnel.Name, res.Msg)
+					}
+					return ""
+				}})
 			}
 
 			for i := range chains {
@@ -246,14 +251,19 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 						warnings = append(warnings, fmt.Sprintf("隧道[%s]转发链节点离线或缺失，跳过重推", tunnel.Name))
 						continue
 					}
-					if len(target) > 0 {
-						if res := pushChains(hub, ct.NodeID, target, nodes); !gost.IsOK(res.Msg) {
-							warnings = append(warnings, fmt.Sprintf("隧道[%s]转发链重推失败: %s", tunnel.Name, res.Msg))
+					c, t := ct, target
+					jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
+						var msgs []string
+						if len(t) > 0 {
+							if res := pushChains(hub, c.NodeID, t, nodes); !gost.IsOK(res.Msg) {
+								msgs = append(msgs, fmt.Sprintf("隧道[%s]转发链重推失败: %s", tunnel.Name, res.Msg))
+							}
 						}
-					}
-					if res := pushChainService(hub, ct.NodeID, ct, nodes); !gost.IsOK(res.Msg) {
-						warnings = append(warnings, fmt.Sprintf("隧道[%s]转发链服务重推失败: %s", tunnel.Name, res.Msg))
-					}
+						if res := pushChainService(hub, c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
+							msgs = append(msgs, fmt.Sprintf("隧道[%s]转发链服务重推失败: %s", tunnel.Name, res.Msg))
+						}
+						return strings.Join(msgs, "；")
+					}})
 				}
 			}
 
@@ -263,10 +273,15 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 					warnings = append(warnings, fmt.Sprintf("隧道[%s]出口节点离线或缺失，跳过服务重推", tunnel.Name))
 					continue
 				}
-				if res := pushChainService(hub, ct.NodeID, ct, nodes); !gost.IsOK(res.Msg) {
-					warnings = append(warnings, fmt.Sprintf("隧道[%s]出口服务重推失败: %s", tunnel.Name, res.Msg))
-				}
+				c := ct
+				jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
+					if res := pushChainService(hub, c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
+						return fmt.Sprintf("隧道[%s]出口服务重推失败: %s", tunnel.Name, res.Msg)
+					}
+					return ""
+				}})
 			}
+			warnings = append(warnings, runNodeJobs(jobs)...)
 		}
 	}
 
@@ -289,16 +304,15 @@ func deleteService(hub *ws.Hub, nodeID int64, names []string) {
 	if hub == nil {
 		return
 	}
-	res := hub.SendMsg(nodeID, gost.DeleteServicePayload(names), "DeleteService")
-	_ = gost.NormalizeOK(res.Msg)
+	// 清理类删除无需等待节点确认，避免慢响应时被 10s 超时拖住
+	hub.SendNoWait(nodeID, gost.DeleteServicePayload(names), "DeleteService")
 }
 
 func deleteChains(hub *ws.Hub, nodeID int64, name string) {
 	if hub == nil {
 		return
 	}
-	res := hub.SendMsg(nodeID, map[string]any{"chain": name}, "DeleteChains")
-	_ = gost.NormalizeOK(res.Msg)
+	hub.SendNoWait(nodeID, map[string]any{"chain": name}, "DeleteChains")
 }
 
 func loadNodesMap(db *sqlx.DB, ids map[int64]struct{}) map[int64]*model.Node {
