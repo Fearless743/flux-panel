@@ -27,6 +27,8 @@ http = "1"
 chrono = "0.4"
 
 [profile.release]
-lto = true
-codegen-units = 1
+# CI 多架构构建优先速度：thin LTO + 并行 codegen。
+# 若更在意极限体积/运行性能，可改回 lto = true + codegen-units = 1。
+lto = "thin"
+codegen-units = 16
 strip = true
