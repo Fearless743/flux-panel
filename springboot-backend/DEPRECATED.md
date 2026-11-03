@@ -6,11 +6,11 @@
 
 | 项 | 说明 |
 |----|------|
-| 替代实现 | 仓库根目录 `go-backend/` |
-| 生产镜像 | `ghcr.io/fearless743/go-backend` |
+| 替代实现 | 仓库根目录 `rust-backend/` |
+| 生产镜像 | `ghcr.io/fearless743/flux-panel` |
 | CI | `.github/workflows/docker-build.yml` 已改为构建 Go 镜像；不再执行 `mvn package` |
-| Compose | `docker-compose-v4.yml` / `docker-compose-v6.yml` 使用 `go-backend` 镜像 |
-| 契约 | Go 后端保持 `/api/v1`、`/flow`、`/system-info`、JWT、AES-GCM、SQLite schema 兼容 |
+| Compose | `docker-compose-v4.yml` / `docker-compose-v6.yml` 使用 `flux-panel` 镜像 |
+| 契约 | Rust 后端保持 `/api/v1`、`/flow`、`/system-info`、JWT、AES-GCM、SQLite schema 兼容 |
 
 ## 为何保留目录
 
@@ -23,7 +23,7 @@
 
 ```bash
 # 正确
-docker build -t ghcr.io/fearless743/go-backend:latest ./go-backend
+docker build -t ghcr.io/fearless743/flux-panel:latest .
 
 # 错误（已弃用）
 # docker build ./springboot-backend

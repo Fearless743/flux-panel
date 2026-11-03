@@ -197,6 +197,8 @@ After=network.target
 
 [Service]
 WorkingDirectory=$INSTALL_DIR
+# CVE-2026-98432：关闭 Go 1.24+ 监听套接字的 MPTCP 默认行为
+Environment=GODEBUG=multipathtcp=0
 ExecStart=$INSTALL_DIR/flux_agent
 Restart=on-failure
 

@@ -4,6 +4,10 @@ go 1.22.0
 
 toolchain go1.23.4
 
+// CVE-2026-98432：禁止 Go 1.24+ 在监听套接字上默认启用 MPTCP。
+// 显式调用 net.ListenConfig.SetMultipathTCP(true) 的代码不受影响。
+godebug multipathtcp=0
+
 require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 )

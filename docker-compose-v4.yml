@@ -1,6 +1,6 @@
 services:
   panel:
-    # 单一镜像：Caddy(80) + Go 后端(内部 6365) + 前端静态资源
+    # 单一镜像：Caddy(80) + Rust 后端(内部 6365) + 前端静态资源
     image: ghcr.io/fearless743/flux-panel:latest
     container_name: flux-panel
     restart: unless-stopped
@@ -8,6 +8,8 @@ services:
       DB_PATH: /app/data/gost.db
       JWT_SECRET: ${JWT_SECRET}
       LOG_DIR: /app/logs
+      # CVE-2026-98432：关闭 Go 1.24+ 监听套接字的 MPTCP 默认行为
+      GODEBUG: ${GODEBUG:-multipathtcp=0}
     ports:
       - "${PANEL_PORT:-6366}:80"
     volumes:

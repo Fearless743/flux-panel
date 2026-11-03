@@ -1,6 +1,10 @@
 module github.com/Fearless743/flux-panel/go-backend
 
-go 1.22
+go 1.23.0
+
+// CVE-2026-98432：禁止 Go 1.24+ 在监听套接字上默认启用 MPTCP。
+// 显式调用 net.ListenConfig.SetMultipathTCP(true) 的代码不受影响。
+godebug multipathtcp=0
 
 require (
 	github.com/gin-gonic/gin v1.10.0
