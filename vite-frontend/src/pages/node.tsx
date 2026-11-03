@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Pencil, Trash2, Plus, RefreshCw, Download, ArrowUpCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -57,6 +57,11 @@ interface NodeForm {
   socks: number;
 }
 
+// 远程升级节点后，后台静默轮询该节点：节点下载/校验/重启期间就地刷新该行
+// （状态 + 版本号），全程不刷新页面；重启完成或版本变化即停止。
+const UPGRADE_POLL_INTERVAL = 3000;
+const UPGRADE_POLL_TIMEOUT = 120000;
+
 export default function NodePage() {
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
@@ -87,9 +92,21 @@ export default function NodePage() {
   const [installCommandModal, setInstallCommandModal] = useState(false);
   const [installCommand, setInstallCommand] = useState("");
   const [currentNodeName, setCurrentNodeName] = useState("");
+  // 升级后的静默轮询定时器；仅就地刷新该节点所在行，不刷新页面
+  const upgradePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadNodes();
+  }, []);
+
+  // 卸载时清理轮询，避免对已卸载组件 setState
+  useEffect(() => {
+    return () => {
+      if (upgradePollTimerRef.current) {
+        clearTimeout(upgradePollTimerRef.current);
+        upgradePollTimerRef.current = null;
+      }
+    };
   }, []);
 
   const loadNodes = async () => {
@@ -273,6 +290,79 @@ export default function NodePage() {
     }
   };
 
+  // 结束轮询并复位该行按钮状态
+  const stopUpgradePolling = (nodeId: number) => {
+    if (upgradePollTimerRef.current) {
+      clearTimeout(upgradePollTimerRef.current);
+      upgradePollTimerRef.current = null;
+    }
+    setNodeList((prev) => prev.map((n) => (n.id === nodeId ? { ...n, upgradeLoading: false } : n)));
+  };
+
+  // 升级指令下发后静默轮询：只就地更新该节点一行（状态/版本号），
+  // 不触发整表 loading、不刷新页面；节点重启上线或版本变化即视为完成。
+  const startUpgradePolling = (nodeId: number, oldVersion: string) => {
+    if (upgradePollTimerRef.current) {
+      clearTimeout(upgradePollTimerRef.current);
+      upgradePollTimerRef.current = null;
+    }
+    const deadline = Date.now() + UPGRADE_POLL_TIMEOUT;
+    let sawOffline = false;
+
+    const tick = async () => {
+      upgradePollTimerRef.current = null;
+      let finished = false;
+      try {
+        const res = await getNodeList();
+        if (res.code === 0 && Array.isArray(res.data)) {
+          const fresh = res.data.find((item: any) => item.id === nodeId);
+          if (fresh) {
+            const online = fresh.status === 1;
+            const version = fresh.version || "";
+            if (!online) sawOffline = true;
+            // 仅就地替换该行数据，其余行与本地交互状态保持不变
+            setNodeList((prev) =>
+              prev.map((n) =>
+                n.id === nodeId
+                  ? {
+                      ...n,
+                      ...fresh,
+                      connectionStatus: online ? "online" : "offline",
+                      copyLoading: n.copyLoading,
+                      upgradeLoading: true,
+                    }
+                  : n
+              )
+            );
+            if (online && (version !== oldVersion || sawOffline)) {
+              finished = true;
+              toast.success(
+                version && version !== oldVersion
+                  ? `节点已升级到 ${version}`
+                  : `节点已重启完成，当前版本 ${version || "未知"}`
+              );
+            }
+          }
+        }
+      } catch {
+        // 单次轮询失败不中断，下一轮继续
+      }
+
+      if (finished) {
+        stopUpgradePolling(nodeId);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        toast("升级仍在进行中，请稍后手动刷新查看结果");
+        stopUpgradePolling(nodeId);
+        return;
+      }
+      upgradePollTimerRef.current = setTimeout(tick, UPGRADE_POLL_INTERVAL);
+    };
+
+    upgradePollTimerRef.current = setTimeout(tick, UPGRADE_POLL_INTERVAL);
+  };
+
   const handleUpgrade = async (node: Node) => {
     if (node.connectionStatus !== "online") {
       toast.error("节点不在线，无法远程升级");
@@ -285,23 +375,21 @@ export default function NodePage() {
     ) {
       return;
     }
+    const oldVersion = node.version || "";
     setNodeList((prev) => prev.map((n) => (n.id === node.id ? { ...n, upgradeLoading: true } : n)));
     try {
       const res = await upgradeNode({ id: node.id, version: "latest" });
-      if (res.code === 0) {
-        toast.success(typeof res.data === "string" ? res.data : "升级指令已下发，节点即将重启");
-        setTimeout(() => {
-          loadNodes();
-        }, 8000);
-      } else {
+      if (res.code !== 0) {
         toast.error(res.msg || "升级失败");
+        stopUpgradePolling(node.id);
+        return;
       }
+      toast.success("升级指令已下发，节点正在后台下载并重启");
+      // 后台等待节点重启上线并刷新版本号，用户无需刷新页面
+      startUpgradePolling(node.id, oldVersion);
     } catch {
       toast.error("升级请求失败，请重试");
-    } finally {
-      setNodeList((prev) =>
-        prev.map((n) => (n.id === node.id ? { ...n, upgradeLoading: false } : n))
-      );
+      stopUpgradePolling(node.id);
     }
   };
 

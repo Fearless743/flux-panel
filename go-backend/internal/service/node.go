@@ -264,7 +264,7 @@ func (s *NodeService) Upgrade(req NodeUpgradeReq) (string, error) {
 	if !gost.IsOK(res.Msg) {
 		return "", fmt.Errorf("%s", res.Msg)
 	}
-	msg := "升级任务已接受，节点将在后台下载并重启；失败时自动回滚到上一版本，请稍后刷新查看版本号"
+	msg := "升级任务已接受，节点将在后台下载并重启；失败时自动回滚到上一版本，面板会自动更新版本号"
 	if node.Version != nil && *node.Version != "" {
 		msg = fmt.Sprintf("当前版本 %s；%s", *node.Version, msg)
 	}
