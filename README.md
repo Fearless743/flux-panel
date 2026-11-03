@@ -14,9 +14,9 @@
 
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
 
-**面板**为 **单一 Docker 镜像**（Caddy + Go 后端 + 前端静态资源）：`ghcr.io/fearless743/flux-panel`。  
-- 后端实现：`go-backend/`（契约兼容原 `/api/v1`、`/flow`、`/system-info`）  
-- `springboot-backend/`、`vite-frontend` 独立镜像均已弃用构建路径（前端源码仍在 `vite-frontend/`，由根 `Dockerfile` 一并构建）
+**面板**为 **单一 Docker 镜像**（Caddy + Rust 后端 + 前端静态资源）：`ghcr.io/fearless743/flux-panel`。
+- 后端实现：`rust-backend/`（Axum + Tokio + sqlx，契约与旧 Go 版 1:1）
+- `go-backend/` 保留为迁移对照与回滚参考，不再进入生产镜像；`springboot-backend/`、`vite-frontend` 独立镜像均已弃用构建路径（前端源码仍在 `vite-frontend/`，由根 `Dockerfile` 一并构建）
 
 ---
 ## 特性
@@ -81,6 +81,10 @@ docker run -d --name flux-panel \
 - **密码**: admin_user
 
 > ⚠️ 首次登录后请立即修改默认密码！
+
+## 安全公告
+
+- [CVE-2026-98432 处置说明](./SECURITY.md)：Linux 内核 IPv4 TCP use-after-free。本项目已默认关闭 Go 的 MPTCP 监听，但**必须升级宿主机内核**才能根治；文档内含检查命令与临时缓解措施。
 
 
 ## 免责声明

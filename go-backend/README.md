@@ -1,4 +1,6 @@
-# flux-panel Go 后端（面板业务实现）
+# flux-panel Go 后端（迁移对照 / 回滚参考）
+
+> **已由 `rust-backend/` 替代**，不再进入生产镜像；本目录保留用于契约对照与紧急回滚。
 
 Spring Boot 的 **官方替代实现**，**全兼容现网契约**（`/api/v1`、`/flow`、`/system-info`、SQLite schema、JWT、AES-GCM、Gost 指令）。
 

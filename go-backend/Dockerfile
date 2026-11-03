@@ -1,5 +1,6 @@
 # 多架构构建：buildx 会注入 TARGETARCH
-FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS build
+# godebug 指令需要 Go 1.23+（见 go.mod，CVE-2026-98432 缓解）
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
 ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /src
@@ -16,6 +17,8 @@ RUN apk add --no-cache ca-certificates wget tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo Asia/Shanghai > /etc/timezone
 COPY --from=build /out/go-backend /app/go-backend
+# CVE-2026-98432：关闭 Go 1.24+ 监听套接字的 MPTCP 默认行为
+ENV GODEBUG=multipathtcp=0
 ENV DB_PATH=/app/data/gost.db
 ENV LOG_DIR=/app/logs
 ENV PORT=6365
