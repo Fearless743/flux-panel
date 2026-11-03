@@ -14,8 +14,12 @@ RUN mkdir -p src \
 
 COPY src ./src
 COPY migrations ./migrations
+# 见根 Dockerfile：避免复用依赖层的 stub fingerprint，touch 源码强制重编译本包
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-	cargo build --release
+	rm -f target/release/flux-panel-backend \
+	&& find src -name '*.rs' -exec touch {} \; \
+	&& cargo build --release \
+	&& test "$(stat -c%s target/release/flux-panel-backend)" -gt 1000000
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata \

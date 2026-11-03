@@ -43,8 +43,13 @@ RUN mkdir -p src \
 
 COPY rust-backend/src ./src
 COPY rust-backend/migrations ./migrations
+# 关键：依赖层的 stub 构建会留下 fingerprint，BuildKit 复制的源码 mtime 可能更旧，
+# 直接 cargo build 会被判定为“未变化”而复用 stub 空二进制。必须 touch 源码强制重编译。
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-	cargo build --release
+	rm -f target/release/flux-panel-backend \
+	&& find src -name '*.rs' -exec touch {} \; \
+	&& cargo build --release \
+	&& test "$(stat -c%s target/release/flux-panel-backend)" -gt 1000000
 
 # ---------- 运行时：Caddy + 二进制 + 静态资源 ----------
 FROM caddy:2.8-alpine
