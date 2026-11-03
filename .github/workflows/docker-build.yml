@@ -82,16 +82,24 @@ jobs:
           if-no-files-found: error
 
   build-panel:
-    name: Build & Push All-in-One Panel (Caddy + Rust + Frontend)
-    runs-on: ubuntu-latest
+    name: Build panel (${{ matrix.arch }})
+    # amd64 / arm64 各自在原生 runner 构建，避免 arm64 走 QEMU 模拟编译
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -108,40 +116,78 @@ jobs:
         id: owner
         run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          # 唯一面板镜像
-          images: |
-            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/flux-panel
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ github.ref_name }}
-          labels: |
-            org.opencontainers.image.title=flux-panel
-            org.opencontainers.image.description=All-in-one panel (Caddy + Rust + Frontend)
-
-      # GHA 缓存跨 run 复用层；mode=max 缓存所有中间 stage（frontend/backend）
-      # 前端固定 BUILDPLATFORM（避免 QEMU 跑 npm）；Rust 后端按 TARGETPLATFORM 构建，arm64 走 QEMU
-      - name: Build and push panel image
+      # 每个架构先推一个 digest，最后由 merge-panel 合成 multi-arch manifest
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/flux-panel,push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=flux-panel
+            org.opencontainers.image.description=All-in-one panel (Caddy + Rust + Frontend)
           build-args: |
             APP_VERSION=${{ github.ref_name }}
-          cache-from: type=gha,scope=panel
-          cache-to: type=gha,mode=max,scope=panel
+          cache-from: type=gha,scope=panel-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=panel-${{ matrix.arch }}
           provenance: false
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  merge-panel:
+    name: Merge multi-arch manifest
+    needs: build-panel
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: panel-digest-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          refs=()
+          for f in /tmp/digests/*; do
+            refs+=("${{ env.REGISTRY }}/${OWNER}/flux-panel@sha256:$(basename "$f")")
+          done
+          docker buildx imagetools create \
+            -t "${{ env.REGISTRY }}/${OWNER}/flux-panel:latest" \
+            -t "${{ env.REGISTRY }}/${OWNER}/flux-panel:${GITHUB_REF_NAME}" \
+            "${refs[@]}"
+          docker buildx imagetools inspect "${{ env.REGISTRY }}/${OWNER}/flux-panel:${GITHUB_REF_NAME}"
 
   create-release:
     name: Create Release
-    needs: [build-gost, build-panel]
+    needs: [build-gost, merge-panel]
     runs-on: ubuntu-latest
     permissions:
       contents: write
