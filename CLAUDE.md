@@ -100,7 +100,7 @@ docker run -d -p 6366:80 -e JWT_SECRET=secret -v data:/app/data \
   ghcr.io/fearless743/flux-panel:dev
 ```
 
-CI（`.github/workflows/docker-build.yml`）：推送数字开头 tag（如 `2.0.9-beta`）→ 构建 multi-arch 面板镜像 + 压缩 gost 二进制并上传 Release。兼容镜像标签 `go-backend` 与 `flux-panel` 为**同一镜像**。
+CI（`.github/workflows/docker-build.yml`）：推送数字开头 tag（如 `2.0.9-beta`）→ 构建 multi-arch 面板镜像 + 压缩 gost 二进制并上传 Release。面板镜像统一为 `flux-panel`。
 
 ## rust-backend 分层与契约
 
