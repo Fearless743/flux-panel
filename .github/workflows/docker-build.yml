@@ -82,7 +82,7 @@ jobs:
           if-no-files-found: error
 
   build-panel:
-    name: Build & Push All-in-One Panel (Caddy + Go + Frontend)
+    name: Build & Push All-in-One Panel (Caddy + Rust + Frontend)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -123,7 +123,7 @@ jobs:
             org.opencontainers.image.description=All-in-one panel (Caddy + Rust + Frontend)
 
       # GHA 缓存跨 run 复用层；mode=max 缓存所有中间 stage（frontend/backend）
-      # 前端/后端 stage 已固定 BUILDPLATFORM，arm64 仅交叉编译 Go，避免 QEMU 跑 npm
+      # 前端固定 BUILDPLATFORM（避免 QEMU 跑 npm）；Rust 后端按 TARGETPLATFORM 构建，arm64 走 QEMU
       - name: Build and push panel image
         uses: docker/build-push-action@v6
         with:
