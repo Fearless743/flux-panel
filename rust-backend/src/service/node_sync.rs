@@ -14,7 +14,6 @@ use crate::repo::tunnel as tunnel_repo;
 use crate::repo::user_tunnel as user_tunnel_repo;
 use crate::service::forward;
 use crate::service::speed_limit::convert_bits_to_mbps;
-use crate::service::tunnel;
 use crate::state::AppState;
 
 type NodeSyncLock = Arc<tokio::sync::Mutex<()>>;
@@ -127,58 +126,7 @@ pub async fn sync_node_config(state: &AppState, node_id: i64) {
         }
     }
 
-    // 2-3) 按隧道重放 chain + tunnel service
-    for tid in &tunnel_ids {
-        let tid = *tid;
-        let tunnel = match tunnel_repo::find_by_id(&state.db, tid).await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    nodeId = node_id,
-                    tunnelId = tid,
-                    err = %e,
-                    "节点配置同步：隧道不存在"
-                );
-                continue;
-            }
-        };
-        let Some(t) = tunnel else {
-            tracing::warn!(nodeId = node_id, tunnelId = tid, "节点配置同步：隧道不存在");
-            continue;
-        };
-        let all = match chain_repo::list_by_tunnel_id(&state.db, tid).await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    nodeId = node_id,
-                    tunnelId = tid,
-                    err = %e,
-                    "节点配置同步：加载拓扑失败"
-                );
-                continue;
-            }
-        };
-        let mut nodes = match load_nodes_for_chains(state, &all).await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    nodeId = node_id,
-                    tunnelId = tid,
-                    err = %e,
-                    "节点配置同步：加载节点失败"
-                );
-                continue;
-            }
-        };
-        // 确保本节点在 map 中
-        nodes.insert(node_id, node.clone());
-
-        if t.r#type == 2 {
-            sync_tunnel_topology(state, node_id, &all, &nodes, &mut rec).await;
-        }
-    }
-
-    // 4) Forwards on this node (入口端口)
+    // Forwards on this node (入口端口)
     match port_repo::list_by_node_id(&state.db, node_id).await {
         Ok(ports) => {
             for fp in &ports {
@@ -261,92 +209,6 @@ pub async fn sync_node_config(state: &AppState, node_id: i64) {
     );
 }
 
-enum TopoTask {
-    Chains(Vec<model::ChainTunnel>),
-    Service(model::ChainTunnel),
-}
-
-async fn sync_tunnel_topology(
-    state: &AppState,
-    node_id: i64,
-    all: &[model::ChainTunnel],
-    nodes: &HashMap<i64, model::Node>,
-    rec: &mut SyncRecorder,
-) {
-    let (entries, chain_groups, outs) = tunnel::split_topology(all.to_vec());
-
-    let mut tasks: Vec<(String, TopoTask)> =
-        Vec::with_capacity(entries.len() + chain_groups.len() + outs.len());
-
-    // 本节点作为入口：需要 chain 指向下一跳
-    for entry in &entries {
-        if entry.node_id != node_id {
-            continue;
-        }
-        let target: Vec<model::ChainTunnel> = if chain_groups.is_empty() {
-            outs.clone()
-        } else {
-            chain_groups[0].clone()
-        };
-        if target.is_empty() {
-            continue;
-        }
-        tasks.push((
-            format!("chain:entry:tunnel={}", entry.tunnel_id),
-            TopoTask::Chains(target),
-        ));
-    }
-
-    // 本节点作为转发链
-    for i in 0..chain_groups.len() {
-        let target: Vec<model::ChainTunnel> = if i + 1 < chain_groups.len() {
-            chain_groups[i + 1].clone()
-        } else {
-            outs.clone()
-        };
-        for ct in &chain_groups[i] {
-            if ct.node_id != node_id {
-                continue;
-            }
-            if !target.is_empty() {
-                tasks.push((
-                    format!("chain:hop:tunnel={}", ct.tunnel_id),
-                    TopoTask::Chains(target.clone()),
-                ));
-            }
-            tasks.push((
-                format!("service:tls:tunnel={}", ct.tunnel_id),
-                TopoTask::Service(ct.clone()),
-            ));
-        }
-    }
-
-    // 本节点作为出口
-    for ct in &outs {
-        if ct.node_id != node_id {
-            continue;
-        }
-        tasks.push((
-            format!("service:out:tunnel={}", ct.tunnel_id),
-            TopoTask::Service(ct.clone()),
-        ));
-    }
-
-    for (label, task) in tasks {
-        let msg = match &task {
-            TopoTask::Chains(target) => {
-                tunnel::push_chains(state, node_id, target, nodes).await.msg
-            }
-            TopoTask::Service(ct) => {
-                tunnel::push_chain_service(state, node_id, ct, nodes)
-                    .await
-                    .msg
-            }
-        };
-        rec.record(node_id, &label, &msg);
-    }
-}
-
 async fn ensure_limiter(state: &AppState, node_id: i64, sl: &model::SpeedLimit) -> String {
     let speed = convert_bits_to_mbps(sl.speed);
     let data = gost::limiter_data(sl.id, &speed);
@@ -391,26 +253,4 @@ async fn list_speed_limits_by_tunnel_ids(
     qb.build_query_as::<model::SpeedLimit>()
         .fetch_all(&state.db)
         .await
-}
-
-async fn load_nodes_for_chains(
-    state: &AppState,
-    cts: &[model::ChainTunnel],
-) -> crate::error::AppResult<HashMap<i64, model::Node>> {
-    let mut ids: Vec<i64> = Vec::with_capacity(cts.len());
-    let mut seen: HashSet<i64> = HashSet::new();
-    for ct in cts {
-        if seen.insert(ct.node_id) {
-            ids.push(ct.node_id);
-        }
-    }
-    let mut out: HashMap<i64, model::Node> = HashMap::with_capacity(ids.len());
-    if ids.is_empty() {
-        return Ok(out);
-    }
-    let list = node_repo::list_by_ids(&state.db, &ids).await?;
-    for n in list {
-        out.insert(n.id, n);
-    }
-    Ok(out)
 }

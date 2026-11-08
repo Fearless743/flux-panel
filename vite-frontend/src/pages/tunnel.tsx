@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Pencil, Trash2, Plus, Stethoscope, X, Route } from "lucide-react";
+import { Pencil, Trash2, Plus, Stethoscope, X } from "lucide-react";
 import { clsx } from "clsx";
 import toast from "react-hot-toast";
 
@@ -29,11 +29,6 @@ import {
 
 interface ChainTunnel {
   nodeId: number;
-  protocol?: string;
-  strategy?: string;
-  chainType?: number;
-  inx?: number;
-  exitNodeIds?: number[];
 }
 
 interface Tunnel {
@@ -41,8 +36,6 @@ interface Tunnel {
   name: string;
   type: number;
   inNodeId: ChainTunnel[];
-  outNodeId?: ChainTunnel[];
-  chainNodes?: ChainTunnel[][];
   inIp: string;
   outIp?: string;
   protocol?: string;
@@ -63,8 +56,6 @@ interface TunnelForm {
   name: string;
   type: number;
   inNodeId: ChainTunnel[];
-  outNodeId?: ChainTunnel[];
-  chainNodes?: ChainTunnel[][];
   flow: number;
   trafficRatio: number;
   inIp: string;
@@ -92,34 +83,6 @@ interface DiagnosisResult {
   }>;
 }
 
-const PROTOCOLS = ["tls", "wss", "tcp", "mtls", "mwss", "mtcp"];
-const PROTOCOL_LABEL: Record<string, string> = {
-  tls: "TLS",
-  wss: "WSS",
-  tcp: "TCP",
-  mtls: "MTLS",
-  mwss: "MWSS",
-  mtcp: "MTCP",
-};
-const STRATEGIES = [
-  { value: "fifo", label: "主备" },
-  { value: "round", label: "轮询" },
-  { value: "rand", label: "随机" },
-];
-
-function parseExitIds(entry: ChainTunnel): number[] {
-  const raw: any = entry.exitNodeIds;
-  if (!raw) return [];
-  if (typeof raw === "string") {
-    try {
-      const v = JSON.parse(raw);
-      return Array.isArray(v) ? v : [];
-    } catch {
-      return [];
-    }
-  }
-  return Array.isArray(raw) ? raw : [];
-}
 
 function NodeChipMulti({
   nodes,
@@ -206,8 +169,6 @@ export default function TunnelPage() {
     name: "",
     type: 1,
     inNodeId: [],
-    outNodeId: [],
-    chainNodes: [],
     flow: 1,
     trafficRatio: 1.0,
     inIp: "",
@@ -269,41 +230,6 @@ export default function TunnelPage() {
       newErrors.trafficRatio = "流量倍率必须在0.0-100.0之间";
     }
 
-    if (form.type === 2) {
-      if (!form.outNodeId || form.outNodeId.filter((n) => n.nodeId !== -1).length === 0) {
-        newErrors.outNodeId = "请至少选择一个出口节点";
-      } else {
-        const offlineNodes = (form.outNodeId || []).filter((item) => {
-          if (item.nodeId === -1) return false;
-          const node = nodes.find((n) => n.id === item.nodeId);
-          return node && node.status !== 1;
-        });
-        if (offlineNodes.length > 0) {
-          newErrors.outNodeId = "存在离线出口节点，请先取消勾选移除后再保存";
-        }
-
-        const inNodeIds = form.inNodeId.map((item) => item.nodeId);
-        const outNodeIds = (form.outNodeId || [])
-          .filter((n) => n.nodeId !== -1)
-          .map((item) => item.nodeId);
-        const overlap = inNodeIds.filter((id) => outNodeIds.includes(id));
-        if (overlap.length > 0) {
-          newErrors.outNodeId = "隧道转发模式下，入口和出口不能有相同节点";
-        }
-      }
-
-      const offlineChainNodes = (form.chainNodes || [])
-        .flat()
-        .filter((item) => item.nodeId !== -1)
-        .filter((item) => {
-          const node = nodes.find((n) => n.id === item.nodeId);
-          return node && node.status !== 1;
-        });
-      if (offlineChainNodes.length > 0) {
-        newErrors.chainNodes = "存在离线转发链节点，请先取消勾选移除后再保存";
-      }
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -314,8 +240,6 @@ export default function TunnelPage() {
       name: "",
       type: 1,
       inNodeId: [],
-      outNodeId: [],
-      chainNodes: [],
       flow: 1,
       trafficRatio: 1.0,
       inIp: "",
@@ -331,10 +255,8 @@ export default function TunnelPage() {
     setForm({
       id: tunnel.id,
       name: tunnel.name,
-      type: tunnel.type,
+      type: 1,
       inNodeId: tunnel.inNodeId || [],
-      outNodeId: tunnel.outNodeId || [],
-      chainNodes: tunnel.chainNodes || [],
       flow: tunnel.flow,
       trafficRatio: tunnel.trafficRatio,
       inIp: tunnel.inIp ? tunnel.inIp.split(",").map((ip) => ip.trim()).join("\n") : "",
@@ -371,117 +293,15 @@ export default function TunnelPage() {
     }
   };
 
-  const handleTypeChange = (type: number) => {
-    setForm((prev) => ({
-      ...prev,
-      type,
-      outNodeId: type === 1 ? [] : prev.outNodeId,
-      chainNodes: type === 1 ? [] : prev.chainNodes,
-    }));
-  };
-
-  const removeChainNode = (groupIndex: number) => {
-    setForm((prev) => ({
-      ...prev,
-      chainNodes: (prev.chainNodes || []).filter((_, index) => index !== groupIndex),
-    }));
-  };
-
-  const toggleChainNode = (groupIndex: number, nodeId: number) => {
-    setForm((prev) => {
-      const chainNodes = [...(prev.chainNodes || [])];
-      const group = chainNodes[groupIndex] || [];
-      if (group.some((n) => n.nodeId === nodeId)) {
-        chainNodes[groupIndex] = group.filter((node) => node.nodeId !== nodeId);
-      } else {
-        const strategy = group.length > 0 ? group[0].strategy : "round";
-        const protocol = group.length > 0 ? group[0].protocol : "tls";
-        chainNodes[groupIndex] = [...group, { nodeId, chainType: 2, protocol, strategy }];
-      }
-      return { ...prev, chainNodes };
-    });
-  };
-
-  const updateChainProtocol = (groupIndex: number, protocol: string) => {
-    setForm((prev) => {
-      const chainNodes = [...(prev.chainNodes || [])];
-      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map((node) => ({
-        ...node,
-        protocol,
-      }));
-      return { ...prev, chainNodes };
-    });
-  };
-
-  const updateChainStrategy = (groupIndex: number, strategy: string) => {
-    setForm((prev) => {
-      const chainNodes = [...(prev.chainNodes || [])];
-      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map((node) => ({
-        ...node,
-        strategy,
-      }));
-      return { ...prev, chainNodes };
-    });
-  };
-
-  const getSelectedChainNodeIds = (): number[] => {
-    return (form.chainNodes || []).flatMap((group) => group.map((node) => node.nodeId));
-  };
-
-  const getChainGroups = (): ChainTunnel[][] => {
-    return form.chainNodes || [];
-  };
-
   const nodeById = (id: number) => nodes.find((n) => n.id === id);
   const inIds = form.inNodeId.map((ct) => ct.nodeId);
-  const outIds = (form.outNodeId || []).filter((n) => n.nodeId !== -1).map((ct) => ct.nodeId);
-  const chainIds = getSelectedChainNodeIds();
 
   const toggleInNode = (id: number) => {
     setForm((prev) => {
       if (prev.inNodeId.some((ct) => ct.nodeId === id)) {
         return { ...prev, inNodeId: prev.inNodeId.filter((ct) => ct.nodeId !== id) };
       }
-      return { ...prev, inNodeId: [...prev.inNodeId, { nodeId: id, chainType: 1 }] };
-    });
-  };
-
-  const toggleOutNode = (id: number) => {
-    setForm((prev) => {
-      const current = (prev.outNodeId || []).filter((ct) => ct.nodeId !== -1);
-      if (current.some((ct) => ct.nodeId === id)) {
-        return { ...prev, outNodeId: current.filter((ct) => ct.nodeId !== id) };
-      }
-      let protocol = "tls";
-      let strategy = "round";
-      if (current.length > 0) {
-        protocol = current[0].protocol || "tls";
-        strategy = current[0].strategy || "round";
-      }
-      return { ...prev, outNodeId: [...current, { nodeId: id, chainType: 3, protocol, strategy }] };
-    });
-  };
-
-  const setOutProtoStrategy = (kind: "protocol" | "strategy", value: string) => {
-    setForm((prev) => {
-      const current = prev.outNodeId || [];
-      if (current.length === 0) {
-        return {
-          ...prev,
-          outNodeId: [
-            {
-              nodeId: -1,
-              chainType: 3,
-              protocol: kind === "protocol" ? value : "tls",
-              strategy: kind === "strategy" ? value : "round",
-            },
-          ],
-        };
-      }
-      return {
-        ...prev,
-        outNodeId: current.map((ct) => ({ ...ct, [kind]: value })),
-      };
+      return { ...prev, inNodeId: [...prev.inNodeId, { nodeId: id }] };
     });
   };
 
@@ -490,23 +310,16 @@ export default function TunnelPage() {
 
     setSubmitLoading(true);
     try {
-      const cleanedChainNodes = (form.chainNodes || [])
-        .map((group) => group.filter((node) => node.nodeId !== -1))
-        .filter((group) => group.length > 0);
-
-      const cleanedOutNodeId = (form.outNodeId || []).filter((node) => node.nodeId !== -1);
-
       const inIpString = form.inIp
         .split("\n")
         .map((ip) => ip.trim())
         .filter((ip) => ip)
         .join(",");
 
+      const { status: _status, ...submitForm } = form;
       const data = {
-        ...form,
+        ...submitForm,
         inIp: inIpString,
-        outNodeId: cleanedOutNodeId,
-        chainNodes: cleanedChainNodes,
       };
 
       const response = isEdit ? await updateTunnel(data) : await createTunnel(data);
@@ -540,7 +353,7 @@ export default function TunnelPage() {
         toast.error(response.msg || "诊断失败");
         setDiagnosisResult({
           tunnelName: tunnel.name,
-          tunnelType: tunnel.type === 1 ? "端口转发" : "隧道转发",
+          tunnelType: "端口转发",
           timestamp: Date.now(),
           results: [
             {
@@ -560,7 +373,7 @@ export default function TunnelPage() {
       toast.error("网络错误，请重试");
       setDiagnosisResult({
         tunnelName: tunnel.name,
-        tunnelType: tunnel.type === 1 ? "端口转发" : "隧道转发",
+        tunnelType: "端口转发",
         timestamp: Date.now(),
         results: [
           {
@@ -579,15 +392,8 @@ export default function TunnelPage() {
     }
   };
 
-  const getTypeDisplay = (type: number) => {
-    switch (type) {
-      case 1:
-        return { text: "端口转发", tone: "cyan" as const };
-      case 2:
-        return { text: "隧道转发", tone: "violet" as const };
-      default:
-        return { text: "未知", tone: "slate" as const };
-    }
+  const getTypeDisplay = (_type: number) => {
+    return { text: "端口转发", tone: "cyan" as const };
   };
 
   const getFlowDisplay = (flow: number) => {
@@ -614,17 +420,8 @@ export default function TunnelPage() {
 
   const groupedDiagnosis = (results: DiagnosisResult["results"]) => {
     const entry = results.filter((r) => r.fromChainType === 1);
-    const exit = results.filter((r) => r.fromChainType === 3);
-    const chains: Record<number, typeof results> = {};
     const ungrouped = results.filter((r) => !r.fromChainType);
-    results.forEach((r) => {
-      if (r.fromChainType === 2 && r.fromInx != null) {
-        if (!chains[r.fromInx]) chains[r.fromInx] = [];
-        chains[r.fromInx].push(r);
-      }
-    });
-    const rest = [...ungrouped];
-    return { entry, chains, exit, rest };
+    return { entry, exit: [], chains: {}, rest: [...ungrouped] };
   };
 
   const renderDiagSection = (title: string, results: DiagnosisResult["results"]) => {
@@ -716,19 +513,11 @@ export default function TunnelPage() {
     );
   };
 
-  const outProto =
-    form.outNodeId && form.outNodeId.length > 0
-      ? form.outNodeId[0].protocol || "tls"
-      : "tls";
-  const outStrategy =
-    form.outNodeId && form.outNodeId.length > 0
-      ? form.outNodeId[0].strategy || "round"
-      : "round";
 
   if (loading) {
     return (
       <div>
-        <PageHeader title="隧道管理" desc="管理端口转发与隧道转发拓扑" />
+        <PageHeader title="隧道管理" desc="管理端口转发拓扑" />
         <Card>
           <Loading text="正在加载..." />
         </Card>
@@ -740,7 +529,7 @@ export default function TunnelPage() {
     <div>
       <PageHeader
         title="隧道管理"
-        desc={tunnels.length > 0 ? `共 ${tunnels.length} 条隧道` : "管理端口转发与隧道转发拓扑"}
+        desc={tunnels.length > 0 ? `共 ${tunnels.length} 条隧道` : "管理端口转发拓扑"}
         actions={
           <Button variant="primary" size="sm" onClick={handleAdd}>
             <Plus size={15} /> 新增
@@ -786,15 +575,8 @@ export default function TunnelPage() {
                             {tunnel.inNodeId?.length || 0}入口
                           </span>
                           <span className="text-slate-500">→</span>
-                          <span className="whitespace-nowrap rounded-lg border border-blue-500/30 bg-blue-500/15 px-2 py-0.5 font-medium text-blue-200">
-                            {tunnel.type === 2 ? tunnel.chainNodes?.length || 0 : 0}跳
-                          </span>
-                          <span className="text-slate-500">→</span>
                           <span className="whitespace-nowrap rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 font-medium text-emerald-200">
-                            {tunnel.type === 2
-                              ? tunnel.outNodeId?.length || 0
-                              : tunnel.inNodeId?.length || 0}
-                            出口
+                            {tunnel.inNodeId?.length || 0}出口
                           </span>
                         </div>
                       </td>
@@ -868,15 +650,10 @@ export default function TunnelPage() {
           </Field>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="隧道类型" hint={isEdit ? "编辑时无法修改隧道类型" : undefined}>
-              <Select
-                value={String(form.type)}
-                disabled={isEdit}
-                onChange={(e) => handleTypeChange(parseInt(e.target.value))}
-              >
-                <option value="1">端口转发</option>
-                <option value="2">隧道转发</option>
-              </Select>
+            <Field label="隧道类型">
+              <div className="flex items-center gap-2">
+                <Badge tone="cyan">端口转发</Badge>
+              </div>
             </Field>
             <Field label="状态">
               <Select
@@ -935,8 +712,7 @@ export default function TunnelPage() {
                 const n = nodeById(id);
                 const selected = inIds.includes(id);
                 if (n && n.status !== 1 && !selected) return { disabled: true, reason: "离线" };
-                if (outIds.includes(id)) return { disabled: true, reason: "已选为出口" };
-                if (chainIds.includes(id)) return { disabled: true, reason: "已选为转发链" };
+
                 return { disabled: false };
               }}
             />
@@ -959,204 +735,6 @@ export default function TunnelPage() {
               })}
             </div>
           </div>
-
-          {form.type === 2 && form.inNodeId.length > 0 && (
-            <div className="border-t border-white/[0.07] pt-4">
-              <h3 className="mb-1 text-sm font-semibold text-white">入口-出口绑定</h3>
-              <p className="mb-3 text-xs text-slate-500">
-                为每个入口节点指定它应该使用的出口节点。如果不指定，则使用所有出口节点。
-              </p>
-              <div className="space-y-3">
-                {form.inNodeId.map((entry, entryIndex) => {
-                  const entryNode = nodes.find((n) => n.id === entry.nodeId);
-                  if (!entryNode) return null;
-                  const sel = parseExitIds(entry);
-                  return (
-                    <div
-                      key={entry.nodeId}
-                      className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3"
-                    >
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-medium text-slate-200">{entryNode.name}</span>
-                        <Badge tone="cyan">入口</Badge>
-                      </div>
-                      <NodeChipMulti
-                        nodes={(form.outNodeId || []).map((o) => nodeById(o.nodeId)).filter(Boolean) as Node[]}
-                        selected={sel}
-                        onToggle={(id) => {
-                          setForm((prev) => {
-                            const next = [...prev.inNodeId];
-                            const cur = parseExitIds(next[entryIndex]);
-                            const has = cur.includes(id);
-                            const ids = has ? cur.filter((x) => x !== id) : [...cur, id];
-                            next[entryIndex] = {
-                              ...next[entryIndex],
-                              exitNodeIds: ids.length > 0 ? ids : undefined,
-                            };
-                            return { ...prev, inNodeId: next };
-                          });
-                        }}
-                        isDisabled={(id) => {
-                          const n = nodeById(id);
-                          if (n && n.status !== 1 && !sel.includes(id))
-                            return { disabled: true, reason: "离线" };
-                          return { disabled: false };
-                        }}
-                      />
-                      {sel.length === 0 && (
-                        <p className="mt-1.5 text-xs text-slate-500">未指定 = 使用全部出口节点</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {form.type === 2 && (
-            <div className="border-t border-white/[0.07] pt-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-white">转发链配置</h3>
-                <Button
-                  size="sm"
-                  variant="soft"
-                  onClick={() => {
-                    setForm((prev) => ({
-                      ...prev,
-                      chainNodes: [
-                        ...(prev.chainNodes || []),
-                        [{ nodeId: -1, chainType: 2, protocol: "tls", strategy: "round" }],
-                      ],
-                    }));
-                  }}
-                >
-                  <Plus size={14} /> 添加一跳
-                </Button>
-              </div>
-
-              {errors.chainNodes && (
-                <p className="mb-2 text-xs text-red-400">{errors.chainNodes}</p>
-              )}
-
-              {getChainGroups().length > 0 ? (
-                <div className="space-y-3">
-                  {getChainGroups().map((groupNodes, groupIndex) => {
-                    const real = groupNodes.filter((ct) => ct.nodeId !== -1);
-                    const protocol = groupNodes.length > 0 ? groupNodes[0].protocol || "tls" : "tls";
-                    const strategy = groupNodes.length > 0 ? groupNodes[0].strategy || "round" : "round";
-                    const selectedHere = real.map((ct) => ct.nodeId);
-                    const otherChainIds = (form.chainNodes || [])
-                      .flatMap((group, idx) => (idx !== groupIndex ? group.map((ct) => ct.nodeId) : []))
-                      .filter((id) => id !== -1);
-                    return (
-                      <div
-                        key={groupIndex}
-                        className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3"
-                      >
-                        <div className="mb-2 flex items-center justify-between">
-                          <span className="flex items-center gap-1.5 text-sm font-medium text-slate-200">
-                            <Route size={14} className="text-blue-300" />
-                            第{groupIndex + 1}跳
-                          </span>
-                          <Button size="sm" variant="danger" onClick={() => removeChainNode(groupIndex)}>
-                            <Trash2 size={13} /> 删除本跳
-                          </Button>
-                        </div>
-
-                        <NodeChipMulti
-                          nodes={nodes}
-                          selected={selectedHere}
-                          onToggle={(id) => toggleChainNode(groupIndex, id)}
-                          isDisabled={(id) => {
-                            const n = nodeById(id);
-                            if (selectedHere.includes(id)) return { disabled: false };
-                            if (n && n.status !== 1) return { disabled: true, reason: "离线" };
-                            if (inIds.includes(id)) return { disabled: true, reason: "已选为入口" };
-                            if (outIds.includes(id)) return { disabled: true, reason: "已选为出口" };
-                            if (otherChainIds.includes(id)) return { disabled: true, reason: "已选为其他跳" };
-                            return { disabled: false };
-                          }}
-                        />
-
-                        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                          <Field label="协议">
-                            <Select
-                              value={protocol}
-                              onChange={(e) => updateChainProtocol(groupIndex, e.target.value)}
-                            >
-                              {PROTOCOLS.map((p) => (
-                                <option key={p} value={p}>
-                                  {PROTOCOL_LABEL[p]}
-                                </option>
-                              ))}
-                            </Select>
-                          </Field>
-                          <Field label="负载策略">
-                            <Select
-                              value={strategy}
-                              onChange={(e) => updateChainStrategy(groupIndex, e.target.value)}
-                            >
-                              {STRATEGIES.map((s) => (
-                                <option key={s.value} value={s.value}>
-                                  {s.label}
-                                </option>
-                              ))}
-                            </Select>
-                          </Field>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-white/10 py-8 text-center">
-                  <p className="text-xs text-slate-500">还没有添加转发链，点击上方“添加一跳”开始添加</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {form.type === 2 && (
-            <div className="border-t border-white/[0.07] pt-4">
-              <h3 className="mb-1 text-sm font-semibold text-white">出口配置</h3>
-              <p className="mb-2 text-xs text-slate-500">勾选出口节点，入口与转发链已选节点不可重复</p>
-              <NodeChipMulti
-                nodes={nodes}
-                selected={outIds}
-                onToggle={toggleOutNode}
-                isDisabled={(id) => {
-                  const n = nodeById(id);
-                  const selected = outIds.includes(id);
-                  if (n && n.status !== 1 && !selected) return { disabled: true, reason: "离线" };
-                  if (!selected && inIds.includes(id)) return { disabled: true, reason: "已选为入口" };
-                  if (!selected && chainIds.filter((x) => x !== -1).includes(id))
-                    return { disabled: true, reason: "已选为转发链" };
-                  return { disabled: false };
-                }}
-              />
-              {errors.outNodeId && <p className="mt-1 text-xs text-red-400">{errors.outNodeId}</p>}
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Field label="协议">
-                  <Select value={outProto} onChange={(e) => setOutProtoStrategy("protocol", e.target.value)}>
-                    {PROTOCOLS.map((p) => (
-                      <option key={p} value={p}>
-                        {PROTOCOL_LABEL[p]}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="负载策略">
-                  <Select value={outStrategy} onChange={(e) => setOutProtoStrategy("strategy", e.target.value)}>
-                    {STRATEGIES.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
-            </div>
-          )}
 
           <Field label="启用状态">
             <div className="flex items-center gap-3">
@@ -1199,8 +777,8 @@ export default function TunnelPage() {
           currentDiagnosisTunnel ? (
             <span className="inline-flex items-center gap-2">
               {currentDiagnosisTunnel.name}
-              <Badge tone={currentDiagnosisTunnel.type === 1 ? "cyan" : "violet"}>
-                {currentDiagnosisTunnel.type === 1 ? "端口转发" : "隧道转发"}
+              <Badge tone="cyan">
+                端口转发
               </Badge>
             </span>
           ) : undefined
@@ -1251,11 +829,6 @@ export default function TunnelPage() {
               return (
                 <>
                   {renderDiagSection("入口测试", g.entry)}
-                  {Object.keys(g.chains)
-                    .map(Number)
-                    .sort((a, b) => a - b)
-                    .map((hop) => renderDiagSection(`转发链 · 第${hop}跳`, g.chains[hop]))}
-                  {renderDiagSection("出口测试", g.exit)}
                   {renderDiagSection("其他", g.rest)}
                 </>
               );

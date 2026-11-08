@@ -14,14 +14,6 @@ pub fn forward_udp(base: &str) -> String {
     format!("{}_udp", base)
 }
 
-pub fn tunnel_tls(tunnel_id: i64) -> String {
-    format!("{}_tls", tunnel_id)
-}
-
-pub fn chain_name(tunnel_id: i64) -> String {
-    format!("chains_{}", tunnel_id)
-}
-
 /// 解析 n 字段: "{forwardId}_{userId}_{userTunnelId}_tcp|udp"
 pub fn parse_forward_service_name(n: &str) -> Option<(i64, i64, i64)> {
     if n.is_empty() || n == "web_api" {
@@ -93,52 +85,6 @@ fn is_ipv6(address: &str) -> bool {
     address.matches(':').count() >= 2
 }
 
-pub struct ChainNodeInput {
-    pub protocol: String,
-    pub server_ip: String,
-    pub port: i32,
-}
-
-pub fn build_chain_data(
-    tunnel_id: i64,
-    _source_node_id: i64,
-    interface_name: &str,
-    strategy: &str,
-    nodes: &[ChainNodeInput],
-) -> Value {
-    let arr: Vec<Value> = nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| {
-            json!({
-                "name": format!("node_{}", i + 1),
-                "addr": process_server_address(&format!("{}:{}", n.server_ip, n.port)),
-                "connector": { "type": "relay" },
-                "dialer": { "type": n.protocol },
-            })
-        })
-        .collect();
-
-    let strategy = if strategy.is_empty() { "fifo" } else { strategy };
-    let mut hop = json!({
-        "name": format!("hop_{}", tunnel_id),
-        "selector": {
-            "strategy": strategy,
-            "maxFails": 1,
-            "failTimeout": 600_000_000_000i64,
-        },
-        "nodes": arr,
-    });
-    if !interface_name.is_empty() {
-        hop["interface"] = json!(interface_name);
-    }
-
-    json!({
-        "name": chain_name(tunnel_id),
-        "hops": [hop],
-    })
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn build_forward_services(
     base_name: &str,
@@ -147,8 +93,6 @@ pub fn build_forward_services(
     udp_listen: &str,
     port: i32,
     interface_name: &str,
-    tunnel_type: i32,
-    tunnel_id: i64,
     remote_addr: &str,
     strategy: &str,
 ) -> Vec<Value> {
@@ -163,16 +107,13 @@ pub fn build_forward_services(
             "name": format!("{}_{}", base_name, protocol),
             "addr": format!("{}:{}", addr, port),
         });
-        if tunnel_type == 1 && !interface_name.is_empty() {
+        if !interface_name.is_empty() {
             svc["metadata"] = json!({ "interface": interface_name });
         }
         if let Some(limiter) = limiter {
             svc["limiter"] = json!(limiter.to_string());
         }
-        let mut handler = json!({ "type": protocol });
-        if tunnel_type == 2 {
-            handler["chain"] = json!(chain_name(tunnel_id));
-        }
+        let handler = json!({ "type": protocol });
         svc["handler"] = handler;
 
         let mut listener = json!({ "type": protocol });
@@ -208,31 +149,7 @@ fn build_forwarder(remote_addr: &str, strategy: &str) -> Value {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn build_chain_service(
-    tunnel_id: i64,
-    chain_type: i32,
-    protocol: &str,
-    tcp_listen: &str,
-    port: i32,
-    interface_name: &str,
-    source_node_has_iface: bool,
-) -> Vec<Value> {
-    let mut svc = json!({
-        "name": tunnel_tls(tunnel_id),
-        "addr": format!("{}:{}", tcp_listen, port),
-    });
-    if chain_type == 3 && source_node_has_iface && !interface_name.is_empty() {
-        svc["metadata"] = json!({ "interface": interface_name });
-    }
-    let mut handler = json!({ "type": "relay" });
-    if chain_type == 2 {
-        handler["chain"] = json!(chain_name(tunnel_id));
-    }
-    svc["handler"] = handler;
-    svc["listener"] = json!({ "type": protocol });
-    vec![svc]
-}
+
 
 pub fn delete_service_payload(names: Vec<String>) -> Value {
     json!({ "services": names })

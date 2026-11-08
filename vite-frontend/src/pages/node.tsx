@@ -92,6 +92,7 @@ export default function NodePage() {
   const [installCommandModal, setInstallCommandModal] = useState(false);
   const [installCommand, setInstallCommand] = useState("");
   const [currentNodeName, setCurrentNodeName] = useState("");
+  const installTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   // 升级后的静默轮询定时器；仅就地刷新该节点所在行，不刷新页面
   const upgradePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -108,6 +109,14 @@ export default function NodePage() {
       }
     };
   }, []);
+
+  // 打开安装命令弹窗时自动全选，方便用户直接 Ctrl+C 复制（不触发剪贴板 API 拦截）
+  useEffect(() => {
+    if (installCommandModal) {
+      const t = setTimeout(() => installTextareaRef.current?.select(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [installCommandModal]);
 
   const loadNodes = async () => {
     setLoading(true);
@@ -399,14 +408,11 @@ export default function NodePage() {
     try {
       const res = await getNodeInstallCommand(node.id);
       if (res.code === 0 && res.data) {
-        try {
-          await navigator.clipboard.writeText(res.data);
-          toast.success("安装命令已复制到剪贴板");
-        } catch {
-          setInstallCommand(res.data);
-          setCurrentNodeName(node.name);
-          setInstallCommandModal(true);
-        }
+        // 不走程序化剪贴板写入：改为手动选中复制展示安装命令，避免被 uBlock 等拦截
+        // 误判为 ClickFix（程序化写入含 curl/chmod 的命令字符串会触发拦截）。
+        setInstallCommand(res.data);
+        setCurrentNodeName(node.name);
+        setInstallCommandModal(true);
       } else {
         toast.error(res.msg || "获取安装命令失败");
       }
@@ -417,14 +423,15 @@ export default function NodePage() {
     }
   };
 
-  const handleManualCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(installCommand);
-      toast.success("安装命令已复制到剪贴板");
-      setInstallCommandModal(false);
-    } catch {
-      toast.error("复制失败，请手动选择文本复制");
+  // 手动选中 + 键盘复制：不调用剪贴板 API，避免 uBlock Origin 将安装命令判为 ClickFix
+  const handleSelectInstallCommand = () => {
+    const ta = installTextareaRef.current;
+    if (ta) {
+      ta.focus();
+      ta.select();
     }
+    const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || "");
+    toast.success(isMac ? "已全选，请按 Cmd+C 复制" : "已全选，请按 Ctrl+C 复制");
   };
 
   const handleSubmit = async () => {
@@ -572,7 +579,7 @@ export default function NodePage() {
                             variant="soft"
                             onClick={() => handleCopyInstallCommand(node)}
                             loading={node.copyLoading}
-                            title="复制安装命令"
+                            title="查看安装命令"
                           >
                             <Download size={14} /> 安装
                           </Button>
@@ -774,23 +781,23 @@ export default function NodePage() {
         open={installCommandModal}
         onClose={() => setInstallCommandModal(false)}
         title={`安装命令 - ${currentNodeName}`}
-        desc="自动复制失败，请手动复制以下命令到服务器执行"
+        desc="请选中下方命令后，复制到服务器执行（手动复制，避免被浏览器插件误判为 ClickFix）"
         width="max-w-2xl"
         footer={
           <>
             <Button variant="ghost" onClick={() => setInstallCommandModal(false)}>
               关闭
             </Button>
-            <Button variant="primary" size="sm" onClick={handleManualCopy}>
-              复制
+            <Button variant="primary" size="sm" onClick={handleSelectInstallCommand}>
+              全选命令
             </Button>
           </>
         }
       >
         <div className="relative">
-          <Textarea value={installCommand} readOnly rows={6} className="font-mono text-xs" />
+          <Textarea ref={installTextareaRef} value={installCommand} readOnly rows={6} className="font-mono text-xs" onClick={(e) => (e.target as HTMLTextAreaElement).select()} />
         </div>
-        <p className="mt-2 text-xs text-slate-500">提示：如果复制按钮失效，请手动选择上方文本复制</p>
+        <p className="mt-2 text-xs text-slate-500">提示：点击命令区域即可全选，再使用 Ctrl+C（Mac 为 Cmd+C）复制到服务器执行</p>
       </Modal>
     </div>
   );

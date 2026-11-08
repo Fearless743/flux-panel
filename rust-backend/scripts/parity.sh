@@ -237,17 +237,6 @@ cmp_admin node/list /api/v1/node/list '{}'
 cmp_admin tunnel/list /api/v1/tunnel/list '{}'
 cmp_admin user/list /api/v1/user/list '{}'
 
-# type=2 隧道：节点在线但无 WS 连接，验证下发失败后的整体回滚
-cmp_admin node/create /api/v1/node/create '{"name":"n2","serverIp":"127.0.0.2","port":"20020-20030","tcpListenAddr":"[::]","udpListenAddr":"[::]"}'
-cmp_admin node/create /api/v1/node/create '{"name":"n3","serverIp":"127.0.0.3","port":"20040-20050","tcpListenAddr":"[::]","udpListenAddr":"[::]"}'
-for db in "$TMP/go.db" "$TMP/rust.db"; do
-  sqlite3 "$db" "PRAGMA busy_timeout=5000; UPDATE node SET status=1 WHERE id IN (2,3);"
-done
-cmp_admin tunnel/create2 /api/v1/tunnel/create '{"name":"t2","type":2,"flow":1,"trafficRatio":1.0,"inIp":"","inNodeId":[{"nodeId":2}],"chainNodes":[],"outNodeId":[{"nodeId":3}]}'
-cmp_admin tunnel/list2 /api/v1/tunnel/list '{}'
-cmp_admin node/delete2 /api/v1/node/delete '{"id":2}'
-cmp_admin node/delete3 /api/v1/node/delete '{"id":3}'
-cmp_admin node/list2 /api/v1/node/list '{}'
 
 # CORS：OPTIONS 预检状态码与关键响应头
 GO_CORS="$(curl -sS -D - -o /dev/null -X OPTIONS "http://127.0.0.1:${GO_PORT}/api/v1/user/login" | tr -d '\r' | grep -iE '^(HTTP/|access-control-allow-origin|access-control-allow-methods|access-control-allow-headers|access-control-expose-headers)' | tr '[:upper:]' '[:lower:]' | sort)"

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -63,28 +62,22 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 		}
 		ctxMap[tunnelID] = &tunnelCtx{tunnel: &t, all: all}
 
-		remainEntry, remainExit := 0, 0
+		remainEntry := 0
 		for _, ct := range all {
 			if ct.NodeID == nodeID {
 				continue
 			}
-			switch chainTypeOf(ct) {
-			case 1:
+			if chainTypeOf(ct) == 1 {
 				remainEntry++
-			case 3:
-				remainExit++
 			}
 		}
 		if remainEntry == 0 {
 			blockers = append(blockers, fmt.Sprintf("隧道[%s]剔除后将没有入口节点", t.Name))
 		}
-		if t.Type == 2 && remainExit == 0 {
-			blockers = append(blockers, fmt.Sprintf("隧道[%s]剔除后将没有出口节点", t.Name))
-		}
 	}
 
 	if len(blockers) > 0 {
-		return fmt.Errorf("无法删除节点：%s。请先在隧道编辑中更换入口/出口，或删除相关隧道后再删节点。",
+		return fmt.Errorf("无法删除节点：%s。请先在隧道编辑中更换入口，或删除相关隧道后再删节点。",
 			strings.Join(blockers, "；"))
 	}
 
@@ -98,24 +91,19 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 		tunnel := ctx.tunnel
 		all := ctx.all
 
-		wasEntry, wasChain, wasExit := false, false, false
+		wasEntry := false
 		for _, ct := range all {
 			if ct.NodeID != nodeID {
 				continue
 			}
-			switch chainTypeOf(ct) {
-			case 1:
+			if chainTypeOf(ct) == 1 {
 				wasEntry = true
-			case 2:
-				wasChain = true
-			case 3:
-				wasExit = true
 			}
 		}
 
 		slog.Info("删除节点时从隧道剔除",
 			"nodeId", nodeID, "tunnelId", tunnelID, "tunnelName", tunnel.Name,
-			"entry", wasEntry, "chain", wasChain, "exit", wasExit)
+			"entry", wasEntry)
 
 		// 1) 清理该节点上的 gost 配置
 		func() {
@@ -140,16 +128,6 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 					base := gost.ForwardServiceBase(fw.ID, int64(fw.UserID), utID)
 					deleteService(hub, nodeID, []string{base + "_tcp", base + "_udp"})
 				}
-				if tunnel.Type == 2 {
-					deleteChains(hub, nodeID, gost.ChainName(tunnelID))
-				}
-			}
-			if wasChain {
-				deleteChains(hub, nodeID, gost.ChainName(tunnelID))
-				deleteService(hub, nodeID, []string{gost.TunnelTLS(tunnelID)})
-			}
-			if wasExit {
-				deleteService(hub, nodeID, []string{gost.TunnelTLS(tunnelID)})
 			}
 		}()
 
@@ -175,114 +153,14 @@ func DetachNodeFromTunnels(db *sqlx.DB, hub *ws.Hub, nodeID int64) error {
 			return err
 		}
 		var entries []model.ChainTunnel
-		var outs []model.ChainTunnel
-		chainGroups := make(map[int][]model.ChainTunnel)
 		for _, ct := range remaining {
-			switch chainTypeOf(ct) {
-			case 1:
+			if chainTypeOf(ct) == 1 {
 				entries = append(entries, ct)
-			case 2:
-				inx := 0
-				if ct.Inx != nil {
-					inx = *ct.Inx
-				}
-				chainGroups[inx] = append(chainGroups[inx], ct)
-			case 3:
-				outs = append(outs, ct)
 			}
-		}
-		var chainKeys []int
-		for k := range chainGroups {
-			chainKeys = append(chainKeys, k)
-		}
-		sort.Ints(chainKeys)
-		var chains [][]model.ChainTunnel
-		for _, k := range chainKeys {
-			chains = append(chains, chainGroups[k])
 		}
 
 		// 4) 刷新 in_ip
 		refreshTunnelInIP(db, tunnel, entries)
-
-		// 5) type=2 重推（按节点分组并行，同节点 chain 先于 service）
-		if tunnel.Type == 2 {
-			nodeIDs := make(map[int64]struct{})
-			for _, ct := range remaining {
-				nodeIDs[ct.NodeID] = struct{}{}
-			}
-			nodes := loadNodesMap(db, nodeIDs)
-
-			var jobs []nodeJob
-			for _, entry := range entries {
-				n := nodes[entry.NodeID]
-				if n == nil || n.Status != 1 {
-					warnings = append(warnings, fmt.Sprintf("隧道[%s]入口节点离线或缺失，跳过链重推", tunnel.Name))
-					continue
-				}
-				var target []model.ChainTunnel
-				if len(chains) == 0 {
-					target = outs
-				} else {
-					target = chains[0]
-				}
-				if len(target) == 0 {
-					warnings = append(warnings, fmt.Sprintf("隧道[%s]入口后无下一跳，跳过链重推", tunnel.Name))
-					continue
-				}
-				e, t := entry, target
-				jobs = append(jobs, nodeJob{nodeID: e.NodeID, run: func() string {
-					if res := pushChains(hub, e.NodeID, t, nodes); !gost.IsOK(res.Msg) {
-						return fmt.Sprintf("隧道[%s]入口链重推失败: %s", tunnel.Name, res.Msg)
-					}
-					return ""
-				}})
-			}
-
-			for i := range chains {
-				var target []model.ChainTunnel
-				if i+1 < len(chains) {
-					target = chains[i+1]
-				} else {
-					target = outs
-				}
-				for _, ct := range chains[i] {
-					n := nodes[ct.NodeID]
-					if n == nil || n.Status != 1 {
-						warnings = append(warnings, fmt.Sprintf("隧道[%s]转发链节点离线或缺失，跳过重推", tunnel.Name))
-						continue
-					}
-					c, t := ct, target
-					jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
-						var msgs []string
-						if len(t) > 0 {
-							if res := pushChains(hub, c.NodeID, t, nodes); !gost.IsOK(res.Msg) {
-								msgs = append(msgs, fmt.Sprintf("隧道[%s]转发链重推失败: %s", tunnel.Name, res.Msg))
-							}
-						}
-						if res := pushChainService(hub, c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
-							msgs = append(msgs, fmt.Sprintf("隧道[%s]转发链服务重推失败: %s", tunnel.Name, res.Msg))
-						}
-						return strings.Join(msgs, "；")
-					}})
-				}
-			}
-
-			for _, ct := range outs {
-				n := nodes[ct.NodeID]
-				if n == nil || n.Status != 1 {
-					warnings = append(warnings, fmt.Sprintf("隧道[%s]出口节点离线或缺失，跳过服务重推", tunnel.Name))
-					continue
-				}
-				c := ct
-				jobs = append(jobs, nodeJob{nodeID: c.NodeID, run: func() string {
-					if res := pushChainService(hub, c.NodeID, c, nodes); !gost.IsOK(res.Msg) {
-						return fmt.Sprintf("隧道[%s]出口服务重推失败: %s", tunnel.Name, res.Msg)
-					}
-					return ""
-				}})
-			}
-			warnings = append(warnings, runNodeJobs(jobs)...)
-		}
 	}
 
 	// 兜底清理 forward_port
@@ -308,37 +186,7 @@ func deleteService(hub *ws.Hub, nodeID int64, names []string) {
 	hub.SendNoWait(nodeID, gost.DeleteServicePayload(names), "DeleteService")
 }
 
-func deleteChains(hub *ws.Hub, nodeID int64, name string) {
-	if hub == nil {
-		return
-	}
-	hub.SendNoWait(nodeID, map[string]any{"chain": name}, "DeleteChains")
-}
 
-func loadNodesMap(db *sqlx.DB, ids map[int64]struct{}) map[int64]*model.Node {
-	out := make(map[int64]*model.Node)
-	if len(ids) == 0 {
-		return out
-	}
-	idList := make([]int64, 0, len(ids))
-	for id := range ids {
-		idList = append(idList, id)
-	}
-	q, args, err := sqlx.In(`SELECT * FROM node WHERE id IN (?)`, idList)
-	if err != nil {
-		return out
-	}
-	q = db.Rebind(q)
-	var list []model.Node
-	if err := db.Select(&list, q, args...); err != nil {
-		return out
-	}
-	for i := range list {
-		n := list[i]
-		out[n.ID] = &n
-	}
-	return out
-}
 
 func refreshTunnelInIP(db *sqlx.DB, tunnel *model.Tunnel, entries []model.ChainTunnel) {
 	if tunnel == nil {
@@ -358,87 +206,4 @@ func refreshTunnelInIP(db *sqlx.DB, tunnel *model.Tunnel, entries []model.ChainT
 	_, _ = db.Exec(`UPDATE tunnel SET in_ip = ?, updated_time = ? WHERE id = ?`, inIP, now, tunnel.ID)
 }
 
-func pushChains(hub *ws.Hub, nodeID int64, target []model.ChainTunnel, nodes map[int64]*model.Node) ws.GostResult {
-	if hub == nil || len(target) == 0 {
-		return ws.GostResult{Msg: "节点不在线"}
-	}
-	tunnelID := target[0].TunnelID
-	src := nodes[nodeID]
-	iface := ""
-	if src != nil && src.InterfaceName != nil {
-		iface = *src.InterfaceName
-	}
-	strategy := ""
-	if target[0].Strategy != nil {
-		strategy = *target[0].Strategy
-	}
-	inputs := make([]gost.ChainNodeInput, 0, len(target))
-	for _, ct := range target {
-		n := nodes[ct.NodeID]
-		if n == nil {
-			continue
-		}
-		port := 0
-		if ct.Port != nil {
-			port = *ct.Port
-		}
-		proto := ""
-		if ct.Protocol != nil {
-			proto = *ct.Protocol
-		}
-		inputs = append(inputs, gost.ChainNodeInput{
-			Protocol: proto,
-			ServerIP: n.ServerIP,
-			Port:     port,
-		})
-	}
-	data := gost.BuildChainData(tunnelID, nodeID, iface, strategy, inputs)
-	// Update 优先
-	req := map[string]any{
-		"chain": data["name"],
-		"data":  data,
-	}
-	res := hub.SendMsg(nodeID, req, "UpdateChains")
-	// 空节点 Update 返回 not found，必须 Add（IsOK 不再吞掉 not found）
-	if !gost.IsOK(res.Msg) {
-		res = hub.SendMsg(nodeID, data, "AddChains")
-	}
-	res.Msg = gost.NormalizeOK(res.Msg)
-	return res
-}
 
-func pushChainService(hub *ws.Hub, nodeID int64, ct model.ChainTunnel, nodes map[int64]*model.Node) ws.GostResult {
-	if hub == nil {
-		return ws.GostResult{Msg: "节点不在线"}
-	}
-	n := nodes[ct.NodeID]
-	if n == nil {
-		return ws.GostResult{Msg: "节点不存在"}
-	}
-	src := nodes[nodeID]
-	iface := ""
-	srcHas := false
-	if src != nil && src.InterfaceName != nil && *src.InterfaceName != "" {
-		iface = *src.InterfaceName
-		srcHas = true
-	}
-	proto := "tls"
-	if ct.Protocol != nil && *ct.Protocol != "" {
-		proto = *ct.Protocol
-	}
-	port := 0
-	if ct.Port != nil {
-		port = *ct.Port
-	}
-	tcpListen := n.TCPListenAddr
-	if tcpListen == "" {
-		tcpListen = "[::]"
-	}
-	services := gost.BuildChainService(ct.TunnelID, chainTypeOf(ct), proto, tcpListen, port, iface, srcHas)
-	res := hub.SendMsg(nodeID, services, "UpdateService")
-	if !gost.IsOK(res.Msg) {
-		res = hub.SendMsg(nodeID, services, "AddService")
-	}
-	res.Msg = gost.NormalizeOK(res.Msg)
-	return res
-}
