@@ -941,16 +941,23 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 		return nil, fmt.Errorf("隧道配置不完整")
 	}
 
-	var inNodes []model.ChainTunnel
+	// 入口直连出口：仅 1=入口 / 3=出口，不再有中间转发链
+	var inNodes, outNodes []model.ChainTunnel
 	for _, ct := range chainTunnels {
-		if ct.ChainType == "1" {
+		switch ct.ChainType {
+		case "1":
 			inNodes = append(inNodes, ct)
+		case "3":
+			outNodes = append(outNodes, ct)
 		}
 	}
 
 	// 诊断涉及的节点一次查回（替代循环内逐个 GetNode）
 	nodeIDSet := make(map[int64]struct{})
 	for _, ct := range inNodes {
+		nodeIDSet[ct.NodeID] = struct{}{}
+	}
+	for _, ct := range outNodes {
 		nodeIDSet[ct.NodeID] = struct{}{}
 	}
 	nodeIDs := make([]int64, 0, len(nodeIDSet))
@@ -985,18 +992,53 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 	results := make([]DiagnosisResult, 0)
 	remoteAddresses := strings.Split(forward.RemoteAddr, ",")
 
-	for _, inNode := range inNodes {
-		node := nodeMap[inNode.NodeID]
-		if node == nil {
-			continue
+	if tunnel.Type == 1 {
+		for _, inNode := range inNodes {
+			node := nodeMap[inNode.NodeID]
+			if node == nil {
+				continue
+			}
+			for _, ra := range remoteAddresses {
+				ra = strings.TrimSpace(ra)
+				targetIP := extractIPFromAddress(ra)
+				targetPort := extractPortFromAddress(ra)
+				if targetIP != "" && targetPort != -1 {
+					addTask(node, targetIP, targetPort, "入口("+node.Name+")->目标("+ra+")",
+						intPtr(1), nil, nil, nil)
+				}
+			}
 		}
-		for _, ra := range remoteAddresses {
-			ra = strings.TrimSpace(ra)
-			targetIP := extractIPFromAddress(ra)
-			targetPort := extractPortFromAddress(ra)
-			if targetIP != "" && targetPort != -1 {
-				addTask(node, targetIP, targetPort, "入口("+node.Name+")->目标("+ra+")",
-					intPtr(1), nil, nil, nil)
+	} else if tunnel.Type == 2 {
+		// 入口 -> 出口（根据入口的 ExitNodeIDs 过滤出口节点）
+		for _, inNode := range inNodes {
+			fromNode := nodeMap[inNode.NodeID]
+			if fromNode == nil {
+				continue
+			}
+			for _, out := range filterExitsByEntry(outNodes, inNode) {
+				toNode := nodeMap[out.NodeID]
+				if toNode == nil {
+					continue
+				}
+				port := derefInt(out.Port)
+				addTask(fromNode, toNode.ServerIP, port, "入口("+fromNode.Name+")->出口("+toNode.Name+")",
+					intPtr(1), nil, intPtr(3), nil)
+			}
+		}
+		// 出口 -> 目标
+		for _, out := range outNodes {
+			node := nodeMap[out.NodeID]
+			if node == nil {
+				continue
+			}
+			for _, ra := range remoteAddresses {
+				ra = strings.TrimSpace(ra)
+				targetIP := extractIPFromAddress(ra)
+				targetPort := extractPortFromAddress(ra)
+				if targetIP != "" && targetPort != -1 {
+					addTask(node, targetIP, targetPort, "出口("+node.Name+")->目标("+ra+")",
+						intPtr(3), nil, nil, nil)
+				}
 			}
 		}
 	}
@@ -1019,6 +1061,9 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 	}
 
 	tunnelTypeName := "端口转发"
+	if tunnel.Type == 2 {
+		tunnelTypeName = "隧道转发"
+	}
 	return map[string]any{
 		"forwardId":   id,
 		"forwardName": forward.Name,
@@ -2059,7 +2104,7 @@ func (s *ForwardService) addOrUpdateService(serviceName string, limiter *int, no
 	}
 	services := gost.BuildForwardServices(
 		serviceName, limiter, tcpListen, udpListen, fp.Port, iface,
-		forward.RemoteAddr, forward.Strategy,
+		tunnel.Type, int64(forward.TunnelID), forward.RemoteAddr, forward.Strategy,
 	)
 	res := s.Hub.SendMsg(node.ID, services, meth)
 	// Update 在空节点上必然 not found：回落 Add（弃用本地 gost.json 后的主路径）

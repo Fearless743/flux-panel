@@ -37,8 +37,49 @@ func isIPv6(address string) bool {
 	return strings.Count(address, ":") >= 2
 }
 
+// ChainHopNode 转发链 hop 内节点
+type ChainNodeInput struct {
+	Protocol string
+	ServerIP string
+	Port     int
+}
 
-func BuildForwardServices(baseName string, limiter *int, tcpListen, udpListen string, port int, interfaceName string, remoteAddr, strategy string) []any {
+func BuildChainData(tunnelID, sourceNodeID int64, interfaceName string, strategy string, nodes []ChainNodeInput) map[string]any {
+	arr := make([]any, 0, len(nodes))
+	for i, n := range nodes {
+		arr = append(arr, map[string]any{
+			"name": fmt.Sprintf("node_%d", i+1),
+			"addr": ProcessServerAddress(fmt.Sprintf("%s:%d", n.ServerIP, n.Port)),
+			"connector": map[string]any{
+				"type": "relay",
+			},
+			"dialer": map[string]any{
+				"type": n.Protocol,
+			},
+		})
+	}
+	if strategy == "" {
+		strategy = "fifo"
+	}
+	hop := map[string]any{
+		"name": fmt.Sprintf("hop_%d", tunnelID),
+		"selector": map[string]any{
+			"strategy":    strategy,
+			"maxFails":    1,
+			"failTimeout": int64(600000000000), // 600s 纳秒
+		},
+		"nodes": arr,
+	}
+	if interfaceName != "" {
+		hop["interface"] = interfaceName
+	}
+	return map[string]any{
+		"name": ChainName(tunnelID),
+		"hops": []any{hop},
+	}
+}
+
+func BuildForwardServices(baseName string, limiter *int, tcpListen, udpListen string, port int, interfaceName string, tunnelType int, tunnelID int64, remoteAddr, strategy string) []any {
 	services := make([]any, 0, 2)
 	for _, protocol := range []string{"tcp", "udp"} {
 		addr := tcpListen
@@ -49,13 +90,16 @@ func BuildForwardServices(baseName string, limiter *int, tcpListen, udpListen st
 			"name": baseName + "_" + protocol,
 			"addr": fmt.Sprintf("%s:%d", addr, port),
 		}
-		if interfaceName != "" {
+		if tunnelType == 1 && interfaceName != "" {
 			svc["metadata"] = map[string]any{"interface": interfaceName}
 		}
 		if limiter != nil {
 			svc["limiter"] = fmt.Sprintf("%d", *limiter)
 		}
 		handler := map[string]any{"type": protocol}
+		if tunnelType == 2 {
+			handler["chain"] = ChainName(tunnelID)
+		}
 		svc["handler"] = handler
 
 		listener := map[string]any{"type": protocol}
@@ -91,6 +135,23 @@ func buildForwarder(remoteAddr, strategy string) map[string]any {
 	}
 }
 
+func BuildChainService(tunnelID int64, chainType int, protocol, tcpListen string, port int, interfaceName string, sourceNodeHasIface bool) []any {
+	svc := map[string]any{
+		"name": TunnelTLS(tunnelID),
+		"addr": fmt.Sprintf("%s:%d", tcpListen, port),
+	}
+	// 只为出口节点(chainType=3)设置 interface
+	if chainType == 3 && sourceNodeHasIface && interfaceName != "" {
+		svc["metadata"] = map[string]any{"interface": interfaceName}
+	}
+	handler := map[string]any{"type": "relay"}
+	if chainType == 2 {
+		handler["chain"] = ChainName(tunnelID)
+	}
+	svc["handler"] = handler
+	svc["listener"] = map[string]any{"type": protocol}
+	return []any{svc}
+}
 
 func DeleteServicePayload(names []string) map[string]any {
 	return map[string]any{"services": names}

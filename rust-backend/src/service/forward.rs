@@ -998,15 +998,21 @@ pub async fn diagnose(
     }
 
     let mut in_nodes: Vec<model::ChainTunnel> = Vec::new();
+    let mut out_nodes: Vec<model::ChainTunnel> = Vec::new();
     for ct in chain_tunnels {
-        if ct.chain_type.as_str() == "1" {
-            in_nodes.push(ct);
+        match ct.chain_type.as_str() {
+            "1" => in_nodes.push(ct),
+            "3" => out_nodes.push(ct),
+            _ => {}
         }
     }
 
     // 诊断涉及的节点一次查回
     let mut node_id_set: HashSet<i64> = HashSet::new();
     for ct in &in_nodes {
+        node_id_set.insert(ct.node_id);
+    }
+    for ct in &out_nodes {
         node_id_set.insert(ct.node_id);
     }
     let node_ids: Vec<i64> = node_id_set.into_iter().collect();
@@ -1052,26 +1058,74 @@ pub async fn diagnose(
     let mut tasks: Vec<PingTask> = Vec::new();
     let remote_addresses: Vec<String> = forward.remote_addr.split(',').map(|s| s.to_string()).collect();
 
-    for in_node in &in_nodes {
-        let Some(node) = node_map.get(&in_node.node_id) else {
-            continue;
-        };
-        for ra in &remote_addresses {
-            let ra = ra.trim();
-            let target_ip = extract_ip_from_address(ra);
-            let target_port = extract_port_from_address(ra);
-            if !target_ip.is_empty() && target_port != -1 {
+    if tunnel.r#type == 1 {
+        for in_node in &in_nodes {
+            let Some(node) = node_map.get(&in_node.node_id) else {
+                continue;
+            };
+            for ra in &remote_addresses {
+                let ra = ra.trim();
+                let target_ip = extract_ip_from_address(ra);
+                let target_port = extract_port_from_address(ra);
+                if !target_ip.is_empty() && target_port != -1 {
+                    push_task(
+                        &mut tasks,
+                        node,
+                        target_ip,
+                        target_port,
+                        format!("入口({})->目标({})", node.name, ra),
+                        Some(1),
+                        None,
+                        None,
+                        None,
+                    );
+                }
+            }
+        }
+    } else {
+        // type2 直连：入口→出口、出口→目标
+        for in_node in &in_nodes {
+            let Some(from_node) = node_map.get(&in_node.node_id) else {
+                continue;
+            };
+            for out in &out_nodes {
+                let Some(to_node) = node_map.get(&out.node_id) else {
+                    continue;
+                };
                 push_task(
                     &mut tasks,
-                    node,
-                    target_ip,
-                    target_port,
-                    format!("入口({})->目标({})", node.name, ra),
+                    from_node,
+                    to_node.server_ip.clone(),
+                    deref_int(out.port),
+                    format!("入口({})->出口({})", from_node.name, to_node.name),
                     Some(1),
                     None,
-                    None,
+                    Some(3),
                     None,
                 );
+            }
+        }
+        for out in &out_nodes {
+            let Some(node) = node_map.get(&out.node_id) else {
+                continue;
+            };
+            for ra in &remote_addresses {
+                let ra = ra.trim();
+                let target_ip = extract_ip_from_address(ra);
+                let target_port = extract_port_from_address(ra);
+                if !target_ip.is_empty() && target_port != -1 {
+                    push_task(
+                        &mut tasks,
+                        node,
+                        target_ip,
+                        target_port,
+                        format!("出口({})->目标({})", node.name, ra),
+                        Some(3),
+                        None,
+                        None,
+                        None,
+                    );
+                }
             }
         }
     }
@@ -1118,7 +1172,7 @@ pub async fn diagnose(
         }
     }
 
-    let tunnel_type_name = "端口转发";
+    let tunnel_type_name = if tunnel.r#type == 2 { "隧道转发" } else { "端口转发" };
     Ok(json!({
         "forwardId": id,
         "forwardName": forward.name,
@@ -2302,7 +2356,7 @@ pub async fn add_or_update_service(
     node: &model::Node,
     forward: &model::Forward,
     fp: &model::ForwardPort,
-    _tunnel: &model::Tunnel,
+    tunnel: &model::Tunnel,
     method: &str,
 ) -> String {
     let iface = node.interface_name.clone().unwrap_or_default();
@@ -2321,6 +2375,8 @@ pub async fn add_or_update_service(
         &udp_listen,
         fp.port,
         &iface,
+        tunnel.r#type,
+        forward.tunnel_id,
         &forward.remote_addr,
         &forward.strategy,
     );
