@@ -21,7 +21,8 @@ flux-panel（转发面板）管理多节点 GOST 代理：面板下发隧道/转
 | `Dockerfile` | 前端 build → Rust build → Caddy 运行时 |
 | `install.sh` | 节点安装/更新（拉 Release 中的 `gost-amd64`/`gost-arm64`） |
 | `panel_install.sh` | 面板 Docker Compose 安装（`docker-compose-v4/v6.yml`） |
-| `android-app/`、`ios-app/` | 移动端客户端（与 Web 共用 `/api/v1`） |
+
+移动端套壳（WebView）已归档到分支 `archive/mobile-apps`；移动浏览器可直接用前端 H5 布局。
 
 历史后端对照请看归档分支：`archive/go-backend`（Go）、`archive/springboot-backend`（Java），例如 `git show archive/go-backend:go-backend/internal/config/config.go`。
 
