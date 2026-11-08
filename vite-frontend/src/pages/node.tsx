@@ -62,6 +62,57 @@ interface NodeForm {
 const UPGRADE_POLL_INTERVAL = 3000;
 const UPGRADE_POLL_TIMEOUT = 120000;
 
+// 一键自动复制安装命令
+// uBlock Origin 的 prevent-clipboard-write 会拦截以 curl 开头等命令型字符串的
+// navigator.clipboard.writeText 写入（表现为“ClickFix”误报），因此顺序尝试：
+// 1) execCommand + 隐藏 textarea（不走 writeText 通道）
+// 2) ClipboardItem write（同样不走 writeText 通道）
+// 3) writeText 兜底
+async function copyTextAuto(text: string): Promise<boolean> {
+  // 1) execCommand + textarea
+  {
+    let ta: HTMLTextAreaElement | null = null;
+    try {
+      ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      ta.style.fontSize = "16px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      if (document.execCommand("copy")) return true;
+    } catch {
+      // fallthrough
+    } finally {
+      ta?.remove();
+    }
+  }
+
+  // 2) ClipboardItem
+  try {
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": text })]);
+      return true;
+    }
+  } catch {
+    // fallthrough
+  }
+
+  // 3) writeText 兜底
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function NodePage() {
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
@@ -408,11 +459,16 @@ export default function NodePage() {
     try {
       const res = await getNodeInstallCommand(node.id);
       if (res.code === 0 && res.data) {
-        // 不走程序化剪贴板写入：改为手动选中复制展示安装命令，避免被 uBlock 等拦截
-        // 误判为 ClickFix（程序化写入含 curl/chmod 的命令字符串会触发拦截）。
-        setInstallCommand(res.data);
-        setCurrentNodeName(node.name);
-        setInstallCommandModal(true);
+        // 一键自动复制：execCommand / ClipboardItem 绕开 uBlock 对 writeText 的拦截
+        const ok = await copyTextAuto(res.data);
+        if (ok) {
+          toast.success("安装命令已复制到剪贴板");
+        } else {
+          // 仅当浏览器拒绝全部自动复制方式时才降级为手动弹窗
+          setInstallCommand(res.data);
+          setCurrentNodeName(node.name);
+          setInstallCommandModal(true);
+        }
       } else {
         toast.error(res.msg || "获取安装命令失败");
       }
@@ -423,7 +479,7 @@ export default function NodePage() {
     }
   };
 
-  // 手动选中 + 键盘复制：不调用剪贴板 API，避免 uBlock Origin 将安装命令判为 ClickFix
+  // 弹窗降级：全选 + 键盘复制（仅自动复制被浏览器拒绝时使用）
   const handleSelectInstallCommand = () => {
     const ta = installTextareaRef.current;
     if (ta) {
@@ -579,7 +635,7 @@ export default function NodePage() {
                             variant="soft"
                             onClick={() => handleCopyInstallCommand(node)}
                             loading={node.copyLoading}
-                            title="查看安装命令"
+                            title="复制安装命令"
                           >
                             <Download size={14} /> 安装
                           </Button>
@@ -781,7 +837,7 @@ export default function NodePage() {
         open={installCommandModal}
         onClose={() => setInstallCommandModal(false)}
         title={`安装命令 - ${currentNodeName}`}
-        desc="请选中下方命令后，复制到服务器执行（手动复制，避免被浏览器插件误判为 ClickFix）"
+        desc="浏览器拒绝了自动复制，请手动复制以下命令到服务器执行"
         width="max-w-2xl"
         footer={
           <>
