@@ -1062,16 +1062,8 @@ export default function ForwardPage() {
 
   const groupedDiagnosis = (results: DiagnosisResult["results"]) => {
     const entry = results.filter((r) => r.fromChainType === 1);
-    const exit = results.filter((r) => r.fromChainType === 3);
-    const chains: Record<number, DiagnosisResult["results"]> = {};
-    results.forEach((r) => {
-      if (r.fromChainType === 2 && r.fromInx != null) {
-        if (!chains[r.fromInx]) chains[r.fromInx] = [];
-        chains[r.fromInx].push(r);
-      }
-    });
-    const other = results.filter((r) => r.fromChainType !== 1 && r.fromChainType !== 2 && r.fromChainType !== 3);
-    return { entry, chains, exit, other };
+    const other = results.filter((r) => r.fromChainType !== 1);
+    return { entry, other };
   };
 
   if (loading) {
@@ -1576,11 +1568,6 @@ export default function ForwardPage() {
               const g = groupedDiagnosis(diagnosisResult.results);
               const sections: Array<{ title: string; list: DiagnosisResult["results"] }> = [
                 { title: "入口测试", list: g.entry },
-                ...Object.keys(g.chains)
-                  .map(Number)
-                  .sort((a, b) => a - b)
-                  .map((hop) => ({ title: `转发链 - 第${hop}跳`, list: g.chains[hop] })),
-                { title: "出口测试", list: g.exit },
                 ...(g.other.length > 0 ? [{ title: "其他测试", list: g.other }] : []),
               ].filter((s) => s.list.length > 0);
               if (sections.length === 0 && diagnosisResult.results.length > 0) {

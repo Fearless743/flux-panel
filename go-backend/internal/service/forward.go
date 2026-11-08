@@ -941,51 +941,16 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 		return nil, fmt.Errorf("隧道配置不完整")
 	}
 
-	var inNodes, outNodes []model.ChainTunnel
-	chainNodesMap := make(map[int][]model.ChainTunnel)
+	var inNodes []model.ChainTunnel
 	for _, ct := range chainTunnels {
-		switch ct.ChainType {
-		case "1":
+		if ct.ChainType == "1" {
 			inNodes = append(inNodes, ct)
-		case "2":
-			inx := 0
-			if ct.Inx != nil {
-				inx = *ct.Inx
-			}
-			chainNodesMap[inx] = append(chainNodesMap[inx], ct)
-		case "3":
-			outNodes = append(outNodes, ct)
 		}
-	}
-	// sorted hops
-	var hopKeys []int
-	for k := range chainNodesMap {
-		hopKeys = append(hopKeys, k)
-	}
-	// simple sort
-	for i := 0; i < len(hopKeys); i++ {
-		for j := i + 1; j < len(hopKeys); j++ {
-			if hopKeys[j] < hopKeys[i] {
-				hopKeys[i], hopKeys[j] = hopKeys[j], hopKeys[i]
-			}
-		}
-	}
-	var chainNodesList [][]model.ChainTunnel
-	for _, k := range hopKeys {
-		chainNodesList = append(chainNodesList, chainNodesMap[k])
 	}
 
 	// 诊断涉及的节点一次查回（替代循环内逐个 GetNode）
 	nodeIDSet := make(map[int64]struct{})
 	for _, ct := range inNodes {
-		nodeIDSet[ct.NodeID] = struct{}{}
-	}
-	for _, hop := range chainNodesList {
-		for _, ct := range hop {
-			nodeIDSet[ct.NodeID] = struct{}{}
-		}
-	}
-	for _, ct := range outNodes {
 		nodeIDSet[ct.NodeID] = struct{}{}
 	}
 	nodeIDs := make([]int64, 0, len(nodeIDSet))
@@ -1020,97 +985,18 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 	results := make([]DiagnosisResult, 0)
 	remoteAddresses := strings.Split(forward.RemoteAddr, ",")
 
-	if tunnel.Type == 1 {
-		for _, inNode := range inNodes {
-			node := nodeMap[inNode.NodeID]
-			if node == nil {
-				continue
-			}
-			for _, ra := range remoteAddresses {
-				ra = strings.TrimSpace(ra)
-				targetIP := extractIPFromAddress(ra)
-				targetPort := extractPortFromAddress(ra)
-				if targetIP != "" && targetPort != -1 {
-					addTask(node, targetIP, targetPort, "入口("+node.Name+")->目标("+ra+")",
-						intPtr(1), nil, nil, nil)
-				}
-			}
+	for _, inNode := range inNodes {
+		node := nodeMap[inNode.NodeID]
+		if node == nil {
+			continue
 		}
-	} else if tunnel.Type == 2 {
-		// 入口 -> 第一跳/出口
-		for _, inNode := range inNodes {
-			fromNode := nodeMap[inNode.NodeID]
-			if fromNode == nil {
-				continue
-			}
-			if len(chainNodesList) > 0 {
-				for _, first := range chainNodesList[0] {
-					toNode := nodeMap[first.NodeID]
-					if toNode == nil {
-						continue
-					}
-					port := derefInt(first.Port)
-					addTask(fromNode, toNode.ServerIP, port, "入口("+fromNode.Name+")->第1跳("+toNode.Name+")",
-						intPtr(1), nil, intPtr(2), first.Inx)
-				}
-			} else if len(outNodes) > 0 {
-				for _, out := range outNodes {
-					toNode := nodeMap[out.NodeID]
-					if toNode == nil {
-						continue
-					}
-					port := derefInt(out.Port)
-					addTask(fromNode, toNode.ServerIP, port, "入口("+fromNode.Name+")->出口("+toNode.Name+")",
-						intPtr(1), nil, intPtr(3), nil)
-				}
-			}
-		}
-		// 链路
-		for i, currentHop := range chainNodesList {
-			for _, current := range currentHop {
-				fromNode := nodeMap[current.NodeID]
-				if fromNode == nil {
-					continue
-				}
-				if i+1 < len(chainNodesList) {
-					for _, next := range chainNodesList[i+1] {
-						toNode := nodeMap[next.NodeID]
-						if toNode == nil {
-							continue
-						}
-						port := derefInt(next.Port)
-						desc := fmt.Sprintf("第%d跳(%s)->第%d跳(%s)", i+1, fromNode.Name, i+2, toNode.Name)
-						addTask(fromNode, toNode.ServerIP, port, desc,
-							intPtr(2), current.Inx, intPtr(2), next.Inx)
-					}
-				} else if len(outNodes) > 0 {
-					for _, out := range outNodes {
-						toNode := nodeMap[out.NodeID]
-						if toNode == nil {
-							continue
-						}
-						port := derefInt(out.Port)
-						desc := fmt.Sprintf("第%d跳(%s)->出口(%s)", i+1, fromNode.Name, toNode.Name)
-						addTask(fromNode, toNode.ServerIP, port, desc,
-							intPtr(2), current.Inx, intPtr(3), nil)
-					}
-				}
-			}
-		}
-		// 出口 -> 目标
-		for _, out := range outNodes {
-			node := nodeMap[out.NodeID]
-			if node == nil {
-				continue
-			}
-			for _, ra := range remoteAddresses {
-				ra = strings.TrimSpace(ra)
-				targetIP := extractIPFromAddress(ra)
-				targetPort := extractPortFromAddress(ra)
-				if targetIP != "" && targetPort != -1 {
-					addTask(node, targetIP, targetPort, "出口("+node.Name+")->目标("+ra+")",
-						intPtr(3), nil, nil, nil)
-				}
+		for _, ra := range remoteAddresses {
+			ra = strings.TrimSpace(ra)
+			targetIP := extractIPFromAddress(ra)
+			targetPort := extractPortFromAddress(ra)
+			if targetIP != "" && targetPort != -1 {
+				addTask(node, targetIP, targetPort, "入口("+node.Name+")->目标("+ra+")",
+					intPtr(1), nil, nil, nil)
 			}
 		}
 	}
@@ -1133,9 +1019,6 @@ func (s *ForwardService) Diagnose(user CurrentUser, id int64) (map[string]any, e
 	}
 
 	tunnelTypeName := "端口转发"
-	if tunnel.Type == 2 {
-		tunnelTypeName = "隧道转发"
-	}
 	return map[string]any{
 		"forwardId":   id,
 		"forwardName": forward.Name,
@@ -2176,7 +2059,7 @@ func (s *ForwardService) addOrUpdateService(serviceName string, limiter *int, no
 	}
 	services := gost.BuildForwardServices(
 		serviceName, limiter, tcpListen, udpListen, fp.Port, iface,
-		tunnel.Type, int64(forward.TunnelID), forward.RemoteAddr, forward.Strategy,
+		forward.RemoteAddr, forward.Strategy,
 	)
 	res := s.Hub.SendMsg(node.ID, services, meth)
 	// Update 在空节点上必然 not found：回落 Add（弃用本地 gost.json 后的主路径）

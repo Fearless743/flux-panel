@@ -998,37 +998,15 @@ pub async fn diagnose(
     }
 
     let mut in_nodes: Vec<model::ChainTunnel> = Vec::new();
-    let mut out_nodes: Vec<model::ChainTunnel> = Vec::new();
-    let mut chain_nodes_map: HashMap<i32, Vec<model::ChainTunnel>> = HashMap::new();
     for ct in chain_tunnels {
-        match ct.chain_type.as_str() {
-            "1" => in_nodes.push(ct),
-            "2" => {
-                let inx = ct.inx.unwrap_or(0);
-                chain_nodes_map.entry(inx).or_default().push(ct);
-            }
-            "3" => out_nodes.push(ct),
-            _ => {}
+        if ct.chain_type.as_str() == "1" {
+            in_nodes.push(ct);
         }
-    }
-    let mut hop_keys: Vec<i32> = chain_nodes_map.keys().copied().collect();
-    hop_keys.sort_unstable();
-    let mut chain_nodes_list: Vec<Vec<model::ChainTunnel>> = Vec::new();
-    for k in &hop_keys {
-        chain_nodes_list.push(chain_nodes_map.remove(k).unwrap_or_default());
     }
 
     // 诊断涉及的节点一次查回
     let mut node_id_set: HashSet<i64> = HashSet::new();
     for ct in &in_nodes {
-        node_id_set.insert(ct.node_id);
-    }
-    for hop in &chain_nodes_list {
-        for ct in hop {
-            node_id_set.insert(ct.node_id);
-        }
-    }
-    for ct in &out_nodes {
         node_id_set.insert(ct.node_id);
     }
     let node_ids: Vec<i64> = node_id_set.into_iter().collect();
@@ -1074,154 +1052,26 @@ pub async fn diagnose(
     let mut tasks: Vec<PingTask> = Vec::new();
     let remote_addresses: Vec<String> = forward.remote_addr.split(',').map(|s| s.to_string()).collect();
 
-    if tunnel.r#type == 1 {
-        for in_node in &in_nodes {
-            let Some(node) = node_map.get(&in_node.node_id) else {
-                continue;
-            };
-            for ra in &remote_addresses {
-                let ra = ra.trim();
-                let target_ip = extract_ip_from_address(ra);
-                let target_port = extract_port_from_address(ra);
-                if !target_ip.is_empty() && target_port != -1 {
-                    push_task(
-                        &mut tasks,
-                        node,
-                        target_ip,
-                        target_port,
-                        format!("入口({})->目标({})", node.name, ra),
-                        Some(1),
-                        None,
-                        None,
-                        None,
-                    );
-                }
-            }
-        }
-    } else if tunnel.r#type == 2 {
-        // 入口 -> 第一跳/出口
-        for in_node in &in_nodes {
-            let Some(from_node) = node_map.get(&in_node.node_id) else {
-                continue;
-            };
-            if !chain_nodes_list.is_empty() {
-                for first in &chain_nodes_list[0] {
-                    let Some(to_node) = node_map.get(&first.node_id) else {
-                        continue;
-                    };
-                    let port = deref_int(first.port);
-                    push_task(
-                        &mut tasks,
-                        from_node,
-                        to_node.server_ip.clone(),
-                        port,
-                        format!("入口({})->第1跳({})", from_node.name, to_node.name),
-                        Some(1),
-                        None,
-                        Some(2),
-                        first.inx,
-                    );
-                }
-            } else if !out_nodes.is_empty() {
-                for out in &out_nodes {
-                    let Some(to_node) = node_map.get(&out.node_id) else {
-                        continue;
-                    };
-                    let port = deref_int(out.port);
-                    push_task(
-                        &mut tasks,
-                        from_node,
-                        to_node.server_ip.clone(),
-                        port,
-                        format!("入口({})->出口({})", from_node.name, to_node.name),
-                        Some(1),
-                        None,
-                        Some(3),
-                        None,
-                    );
-                }
-            }
-        }
-        // 链路
-        for (i, current_hop) in chain_nodes_list.iter().enumerate() {
-            for current in current_hop {
-                let Some(from_node) = node_map.get(&current.node_id) else {
-                    continue;
-                };
-                if i + 1 < chain_nodes_list.len() {
-                    for next in &chain_nodes_list[i + 1] {
-                        let Some(to_node) = node_map.get(&next.node_id) else {
-                            continue;
-                        };
-                        let port = deref_int(next.port);
-                        let desc = format!(
-                            "第{}跳({})->第{}跳({})",
-                            i + 1,
-                            from_node.name,
-                            i + 2,
-                            to_node.name
-                        );
-                        push_task(
-                            &mut tasks,
-                            from_node,
-                            to_node.server_ip.clone(),
-                            port,
-                            desc,
-                            Some(2),
-                            current.inx,
-                            Some(2),
-                            next.inx,
-                        );
-                    }
-                } else if !out_nodes.is_empty() {
-                    for out in &out_nodes {
-                        let Some(to_node) = node_map.get(&out.node_id) else {
-                            continue;
-                        };
-                        let port = deref_int(out.port);
-                        let desc = format!(
-                            "第{}跳({})->出口({})",
-                            i + 1,
-                            from_node.name,
-                            to_node.name
-                        );
-                        push_task(
-                            &mut tasks,
-                            from_node,
-                            to_node.server_ip.clone(),
-                            port,
-                            desc,
-                            Some(2),
-                            current.inx,
-                            Some(3),
-                            None,
-                        );
-                    }
-                }
-            }
-        }
-        // 出口 -> 目标
-        for out in &out_nodes {
-            let Some(node) = node_map.get(&out.node_id) else {
-                continue;
-            };
-            for ra in &remote_addresses {
-                let ra = ra.trim();
-                let target_ip = extract_ip_from_address(ra);
-                let target_port = extract_port_from_address(ra);
-                if !target_ip.is_empty() && target_port != -1 {
-                    push_task(
-                        &mut tasks,
-                        node,
-                        target_ip,
-                        target_port,
-                        format!("出口({})->目标({})", node.name, ra),
-                        Some(3),
-                        None,
-                        None,
-                        None,
-                    );
-                }
+    for in_node in &in_nodes {
+        let Some(node) = node_map.get(&in_node.node_id) else {
+            continue;
+        };
+        for ra in &remote_addresses {
+            let ra = ra.trim();
+            let target_ip = extract_ip_from_address(ra);
+            let target_port = extract_port_from_address(ra);
+            if !target_ip.is_empty() && target_port != -1 {
+                push_task(
+                    &mut tasks,
+                    node,
+                    target_ip,
+                    target_port,
+                    format!("入口({})->目标({})", node.name, ra),
+                    Some(1),
+                    None,
+                    None,
+                    None,
+                );
             }
         }
     }
@@ -1268,11 +1118,7 @@ pub async fn diagnose(
         }
     }
 
-    let tunnel_type_name = if tunnel.r#type == 2 {
-        "隧道转发"
-    } else {
-        "端口转发"
-    };
+    let tunnel_type_name = "端口转发";
     Ok(json!({
         "forwardId": id,
         "forwardName": forward.name,
@@ -2456,7 +2302,7 @@ pub async fn add_or_update_service(
     node: &model::Node,
     forward: &model::Forward,
     fp: &model::ForwardPort,
-    tunnel: &model::Tunnel,
+    _tunnel: &model::Tunnel,
     method: &str,
 ) -> String {
     let iface = node.interface_name.clone().unwrap_or_default();
@@ -2475,8 +2321,6 @@ pub async fn add_or_update_service(
         &udp_listen,
         fp.port,
         &iface,
-        tunnel.r#type,
-        forward.tunnel_id,
         &forward.remote_addr,
         &forward.strategy,
     );

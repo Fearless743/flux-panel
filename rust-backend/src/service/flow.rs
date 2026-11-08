@@ -34,8 +34,6 @@ pub struct GostConfigDto {
     #[serde(default)]
     pub limiters: Vec<ConfigItem>,
     #[serde(default)]
-    pub chains: Vec<ConfigItem>,
-    #[serde(default)]
     pub services: Vec<ConfigItem>,
 }
 
@@ -602,7 +600,6 @@ pub async fn clean_node_configs(state: &AppState, node_id: i64, cfg: GostConfigD
         _ => return,
     };
     clean_orphaned_services(state, &cfg.services, &node).await;
-    clean_orphaned_chains(state, &cfg.chains, &node).await;
     clean_orphaned_limiters(state, &cfg.limiters, &node).await;
 }
 
@@ -618,21 +615,6 @@ async fn clean_orphaned_services(state: &AppState, items: &[ConfigItem], node: &
         }
         let last = parts[parts.len() - 1];
         match last {
-            "tls" => {
-                // {tunnelId}_tls
-                let Ok(tunnel_id) = parts[0].parse::<i64>() else {
-                    continue;
-                };
-                let cnt = sqlx::query_scalar::<_, i64>("SELECT COUNT(1) FROM tunnel WHERE id = ?")
-                    .bind(tunnel_id)
-                    .fetch_one(&state.db)
-                    .await
-                    .unwrap_or(0);
-                if cnt == 0 {
-                    delete_services(state, node.id, vec![gost::tunnel_tls(tunnel_id)]).await;
-                    tracing::info!(name = %name, node = node.id, "删除孤立的服务");
-                }
-            }
             "tcp" => {
                 // {forwardId}_{userId}_{userTunnelId}_tcp
                 if parts.len() < 4 {
@@ -662,27 +644,6 @@ async fn clean_orphaned_services(state: &AppState, items: &[ConfigItem], node: &
     }
 }
 
-async fn clean_orphaned_chains(state: &AppState, items: &[ConfigItem], node: &Node) {
-    for ch in items {
-        let parts: Vec<&str> = ch.name.split('_').collect();
-        if parts.is_empty() {
-            continue;
-        }
-        let Ok(tunnel_id) = parts[parts.len() - 1].parse::<i64>() else {
-            continue;
-        };
-        let cnt = sqlx::query_scalar::<_, i64>("SELECT COUNT(1) FROM tunnel WHERE id = ?")
-            .bind(tunnel_id)
-            .fetch_one(&state.db)
-            .await
-            .unwrap_or(0);
-        if cnt == 0 {
-            delete_chains(state, node.id, &ch.name).await;
-            tracing::info!(name = %ch.name, node = node.id, "删除孤立的链");
-        }
-    }
-}
-
 async fn clean_orphaned_limiters(state: &AppState, items: &[ConfigItem], node: &Node) {
     for lim in items {
         let Ok(id) = lim.name.parse::<i64>() else {
@@ -708,13 +669,6 @@ async fn delete_services(state: &AppState, node_id: i64, names: Vec<String>) {
     state
         .hub
         .send_no_wait(node_id, gost::delete_service_payload(names), "DeleteService")
-        .await;
-}
-
-async fn delete_chains(state: &AppState, node_id: i64, name: &str) {
-    state
-        .hub
-        .send_no_wait(node_id, json!({ "chain": name }), "DeleteChains")
         .await;
 }
 

@@ -179,22 +179,7 @@ func NewChainTunnel(tunnelID int64, chainType int, nodeID int64, port *int, stra
 	}
 }
 
-func NewChainTunnelWithExitBinding(tunnelID int64, chainType int, nodeID int64, port *int, strategy, protocol *string, inx *int, exitNodeIDs *string) model.ChainTunnel {
-	return model.ChainTunnel{
-		TunnelID:    tunnelID,
-		ChainType:   chainTypeStr(chainType),
-		NodeID:      nodeID,
-		Port:        port,
-		Strategy:    strategy,
-		Protocol:    protocol,
-		Inx:         inx,
-		ExitNodeIDs: exitNodeIDs,
-	}
-}
 
-func IntPtr(v int) *int {
-	return &v
-}
 
 func StringPtr(s string) *string {
 	if s == "" {

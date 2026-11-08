@@ -37,11 +37,11 @@ flux-panel（转发面板）管理多节点 GOST 代理：面板下发隧道/转
 
 节点 agent (go-gost)
   WS 连面板 /system-info?secret=&type=1&version=&http=&tls=&socks=
-  收指令: Add/Update/Delete Service|Chains|Limiters, Pause/Resume, TcpPing, SetProtocol, Upgrade
+  收指令: Add/Update/Delete Service|Limiters, Pause/Resume, TcpPing, SetProtocol, Upgrade
   HTTP: POST /flow/upload、/flow/config（body AES-GCM，密钥=节点 secret）
 ```
 
-- **配置权威源是面板 DB**，不是节点本地 `gost.json`。节点上线后 `NodeSyncService.SyncNodeConfig` 异步按 DB 重放 limiter → chain → service → pause。
+- **配置权威源是面板 DB**，不是节点本地 `gost.json`。节点上线后 `NodeSyncService.SyncNodeConfig` 异步按 DB 重放 limiter → service → pause。
 - 面板 → 节点：`Hub.SendMsg` / `SendMsgTimeout`（requestId 等待，默认 10s；升级 15s）。
 - 成功判定：`gost.IsOK(msg)` / `gost.NormalizeOK`。
 
@@ -132,7 +132,6 @@ src/
 7. 服务名（`src/gost.rs`）：
    - 转发：`{forwardId}_{userId}_{userTunnelId}_tcp|_udp`
    - 隧道入口：`{tunnelId}_tls`
-   - 链：`chains_{tunnelId}`
 8. 改后端后至少 `cd rust-backend && cargo check`；契约变更跑 `./scripts/parity.sh`。
 
 领域规格（实现前先读对应 SPEC）：
@@ -147,7 +146,7 @@ src/
 ## 节点 agent 要点（`go-gost/`）
 
 - 入口：`main.go` / `program.go`；面板集成在 `x/socket/`（`websocket_reporter.go`、`upgrade.go` 等）。
-- WS 指令类型：`AddService`/`UpdateService`/`DeleteService`/`PauseService`/`ResumeService`、`AddChains`/`UpdateChains`/`DeleteChains`、`AddLimiters`/`UpdateLimiters`/`DeleteLimiters`、`TcpPing`、`SetProtocol`、`Upgrade`。
+- WS 指令类型：`AddService`/`UpdateService`/`DeleteService`/`PauseService`/`ResumeService`、`AddLimiters`/`UpdateLimiters`/`DeleteLimiters`、`TcpPing`、`SetProtocol`、`Upgrade`。
 - 远程升级：`Upgrade` 异步下载校验、备份替换；`upgrade-apply.sh` 健康检查失败回滚。节点必须先具备带 Upgrade 的二进制后，才能用面板一键升。
 - Release 产物名：`gost-amd64` / `gost-arm64`。
 - 内存调优（`main.go` → `internal/memtune`，`tune` 有单测）：
