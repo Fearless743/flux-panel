@@ -191,30 +191,6 @@ export default function NodePage() {
     }
   };
 
-  const validateIp = (ip: string): boolean => {
-    if (!ip || !ip.trim()) return false;
-
-    const trimmedIp = ip.trim();
-
-    const ipv4Regex =
-      /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-
-    const ipv6Regex =
-      /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
-
-    if (ipv4Regex.test(trimmedIp) || ipv6Regex.test(trimmedIp) || trimmedIp === "localhost") {
-      return true;
-    }
-
-    if (/^\d+$/.test(trimmedIp)) return false;
-
-    const domainRegex =
-      /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$/;
-    const singleLabelDomain = /^[a-zA-Z][a-zA-Z0-9\-]{0,62}$/;
-
-    return domainRegex.test(trimmedIp) || singleLabelDomain.test(trimmedIp);
-  };
-
   const validatePort = (portStr: string): { valid: boolean; error?: string } => {
     if (!portStr || !portStr.trim()) {
       return { valid: false, error: "请输入端口" };
@@ -277,11 +253,7 @@ export default function NodePage() {
       newErrors.name = "节点名称长度不能超过50位";
     }
 
-    if (!form.serverIp.trim()) {
-      newErrors.serverIp = "请输入服务器IP地址";
-    } else if (!validateIp(form.serverIp.trim())) {
-      newErrors.serverIp = "请输入有效的IPv4、IPv6地址或域名";
-    }
+    // 服务器 IP 由节点 agent 自动上报回填，不再手填校验
 
     const portValidation = validatePort(form.port);
     if (!portValidation.valid) {
@@ -670,7 +642,7 @@ export default function NodePage() {
         open={dialogVisible}
         onClose={() => setDialogVisible(false)}
         title={dialogTitle || (isEdit ? "编辑节点" : "新增节点")}
-        desc="服务器 IP 是你要添加的服务器地址，不是面板的 IP"
+        desc="服务器 IP 由节点自动上报，节点上线后自动回填，无需手动填写"
         width="max-w-2xl"
         footer={
           <>
@@ -692,11 +664,11 @@ export default function NodePage() {
             />
           </Field>
 
-          <Field label="服务器 IP" hint={errors.serverIp}>
+          <Field label="服务器 IP">
             <Input
-              placeholder="如: 192.168.1.100 或 example.com"
+              placeholder={isEdit ? "已上报自动回填，节点上线后自动更新" : "新增后待节点上线自动获取"}
               value={form.serverIp}
-              onChange={(e) => setForm((prev) => ({ ...prev, serverIp: e.target.value }))}
+              disabled
             />
           </Field>
 

@@ -56,9 +56,7 @@ pub async fn create(state: &AppState, req: NodeCreateReq) -> AppResult<()> {
     if req.name.trim().is_empty() {
         return Err(AppError::new("节点名称不能为空"));
     }
-    if req.server_ip.trim().is_empty() {
-        return Err(AppError::new("服务器ip不能为空"));
-    }
+    // 服务器 IP 由节点 agent 自动上报回填，不再强制手填
     if req.port.trim().is_empty() {
         return Err(AppError::new("可用端口不能为空"));
     }
@@ -95,9 +93,7 @@ pub async fn update(state: &AppState, req: NodeUpdateReq) -> AppResult<()> {
     if req.name.trim().is_empty() {
         return Err(AppError::new("节点名称不能为空"));
     }
-    if req.server_ip.trim().is_empty() {
-        return Err(AppError::new("服务器ip不能为空"));
-    }
+    // 服务器 IP 由 agent 上报自动维护：更新时空值表示保持原值，不清空
     if req.port.trim().is_empty() {
         return Err(AppError::new("可用port不能为空"));
     }
@@ -131,7 +127,11 @@ pub async fn update(state: &AppState, req: NodeUpdateReq) -> AppResult<()> {
     let mut upd = Node {
         id: req.id,
         name: req.name,
-        server_ip: req.server_ip,
+        server_ip: if req.server_ip.trim().is_empty() {
+            node.server_ip.clone()
+        } else {
+            req.server_ip
+        },
         port: req.port,
         interface_name: req.interface_name,
         tcp_listen_addr: req.tcp_listen_addr,
@@ -257,6 +257,7 @@ pub async fn mark_online(
     http: &str,
     tls: &str,
     socks: &str,
+    reported_ip: &str,
 ) -> AppResult<()> {
     let v = if version.is_empty() {
         None
@@ -278,11 +279,34 @@ pub async fn mark_online(
     } else {
         socks.parse::<i32>().ok()
     };
-    repo::update_online(&state.db, id, v, h, t, so).await
+    repo::update_online(&state.db, id, v, h, t, so).await?;
+    // agent 上报的公网 IP 回填 server_ip（上线即回填，IP 变化自动更新）
+    if is_valid_reported_ip(reported_ip) {
+        repo::update_server_ip_if_changed(&state.db, id, reported_ip.trim()).await?;
+    }
+    Ok(())
 }
 
 pub async fn mark_offline(state: &AppState, id: i64) -> AppResult<()> {
     repo::update_status(&state.db, id, 0).await
+}
+
+/// agent 上报 IP 校验：只接受裸 IPv4/IPv6（agent 探测逻辑只产出 IP）。
+/// 域名/多 IP 场景如需手填，可走更新接口的 server_ip 字段覆盖。
+pub fn is_valid_reported_ip(ip: &str) -> bool {
+    let ip = ip.trim().trim_matches(|c| c == '[' || c == ']');
+    if ip.is_empty() {
+        return false;
+    }
+    ip.parse::<std::net::IpAddr>().is_ok()
+}
+
+/// 周期上报（SystemInfo.public_ip）里的 IP 回填入口，复用同一校验。
+pub async fn maybe_update_reported_ip(state: &AppState, id: i64, ip: &str) -> AppResult<()> {
+    if !is_valid_reported_ip(ip) {
+        return Ok(());
+    }
+    repo::update_server_ip_if_changed(&state.db, id, ip.trim()).await
 }
 
 /// 对齐 Java validatePortRange

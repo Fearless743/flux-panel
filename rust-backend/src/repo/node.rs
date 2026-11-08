@@ -156,6 +156,20 @@ pub async fn update_status(pool: &SqlitePool, id: i64, status: i32) -> AppResult
     Ok(())
 }
 
+/// agent 上报的公网 IP 回填 server_ip：仅当值变化时才写，避免周期上报打爆 DB。
+/// 由调用方保证 ip 已通过校验。
+pub async fn update_server_ip_if_changed(pool: &SqlitePool, id: i64, ip: &str) -> AppResult<()> {
+    let now = now_ms();
+    sqlx::query("UPDATE node SET server_ip = ?, updated_time = ? WHERE id = ? AND server_ip != ?")
+        .bind(ip)
+        .bind(now)
+        .bind(id)
+        .bind(ip)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn delete(pool: &SqlitePool, id: i64) -> AppResult<()> {
     let res = sqlx::query("DELETE FROM node WHERE id=?")
         .bind(id)

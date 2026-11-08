@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -31,6 +33,7 @@ type SystemInfo struct {
 	BytesTransmitted uint64  `json:"bytes_transmitted"` // 发送字节数
 	CPUUsage         float64 `json:"cpu_usage"`         // CPU使用率（百分比）
 	MemoryUsage      float64 `json:"memory_usage"`      // 内存使用率（百分比）
+	PublicIP         string  `json:"public_ip,omitempty"` // 节点公网出口 IP（自动探测，供面板回填 server_ip）
 }
 
 // NetworkStats 网络统计信息
@@ -224,7 +227,8 @@ func (w *WebSocketReporter) connect() error {
 		scheme = "wss://"
 	}
 	currentURL := scheme + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
-		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
+		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks) +
+		"&ip=" + url.QueryEscape(getCachedPublicIP())
 
 	u, err := url.Parse(currentURL)
 	if err != nil {
@@ -316,6 +320,7 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 		BytesTransmitted: networkStats.BytesTransmitted,
 		CPUUsage:         cpuInfo.Usage,
 		MemoryUsage:      memoryInfo.Usage,
+		PublicIP:         getCachedPublicIP(),
 	}
 }
 
@@ -1014,6 +1019,87 @@ func getUptime() uint64 {
 	return uptime
 }
 
+// 公网 IP 探测缓存：外部查询有成本且 IP 变化低频，缓存 10 分钟。
+var (
+	publicIPCacheMu sync.Mutex
+	publicIPCache   string
+	publicIPCacheAt time.Time
+)
+
+func getCachedPublicIP() string {
+	publicIPCacheMu.Lock()
+	defer publicIPCacheMu.Unlock()
+	if publicIPCache != "" && time.Since(publicIPCacheAt) < 10*time.Minute {
+		return publicIPCache
+	}
+	ip := detectPublicIP()
+	if ip != "" {
+		publicIPCache = ip
+		publicIPCacheAt = time.Now()
+		return ip
+	}
+	// 探测失败时沿用旧缓存（可能为空），避免每次上报都打外部服务
+	return publicIPCache
+}
+
+// detectPublicIP 探测本机公网出口 IP：先问外部回显服务，失败则回退到
+// UDP 外拨路由的本地地址（NAT 后可能是内网地址，仅作兜底）。
+func detectPublicIP() string {
+	client := &http.Client{Timeout: 4 * time.Second}
+	for _, endpoint := range []string{
+		"https://api.ipify.org",
+		"https://icanhazip.com",
+		"https://ifconfig.me/ip",
+	} {
+		if ip := fetchPublicIP(client, endpoint); ip != "" {
+			return ip
+		}
+	}
+	return outboundIP()
+}
+
+func fetchPublicIP(client *http.Client, endpoint string) string {
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+	if err != nil {
+		return ""
+	}
+	candidate := strings.TrimSpace(string(body))
+	// 兼容纯文本前后带换行的回显
+	if fields := strings.Fields(candidate); len(fields) > 0 {
+		candidate = fields[0]
+	}
+	candidate = strings.Trim(candidate, "[]")
+	if net.ParseIP(candidate) == nil {
+		return ""
+	}
+	return candidate
+}
+
+// outboundIP 取得到外网路由的本地源地址（UDP dial 不发包）。
+func outboundIP() string {
+	conn, err := net.DialTimeout("udp", "8.8.8.8:80", 3*time.Second)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok && addr.IP != nil {
+		return addr.IP.String()
+	}
+	host, _, err := net.SplitHostPort(conn.LocalAddr().String())
+	if err != nil {
+		return ""
+	}
+	return host
+}
+
 // getNetworkStats 获取网络统计信息
 func getNetworkStats() NetworkStats {
 	var stats NetworkStats
@@ -1074,7 +1160,7 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 	if ssl {
 		scheme = "wss://"
 	}
-	fullURL := scheme + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
+	fullURL := scheme + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks) + "&ip=" + url.QueryEscape(getCachedPublicIP())
 
 	fmt.Printf("🔗 WebSocket连接URL: %s\n", fullURL)
 

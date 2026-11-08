@@ -26,6 +26,9 @@ pub struct WsQuery {
     pub tls: String,
     #[serde(default)]
     pub socks: String,
+    /// agent 自动探测的公网出口 IP（go-gost 上报），面板回填 server_ip
+    #[serde(default)]
+    pub ip: String,
 }
 
 /// `/system-info`
@@ -42,6 +45,7 @@ pub async fn handle_websocket(
         http,
         tls,
         socks,
+        ip,
     } = q;
 
     let session_id: i64;
@@ -89,6 +93,7 @@ pub async fn handle_websocket(
             http,
             tls,
             socks,
+            ip,
         )
     })
 }
@@ -104,6 +109,7 @@ async fn handle_socket(
     http: String,
     tls: String,
     socks: String,
+    reported_ip: String,
 ) {
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
@@ -121,8 +127,8 @@ async fn handle_socket(
         conn_id = state
             .hub
             .register_node(session_id, tx.clone(), &node_secret, &version);
-        // 更新在线状态
-        match node_svc::mark_online(&state, session_id, &version, &http, &tls, &socks).await {
+        // 更新在线状态（含 agent 上报 IP 回填 server_ip）
+        match node_svc::mark_online(&state, session_id, &version, &http, &tls, &socks, &reported_ip).await {
             Ok(()) => {
                 tracing::info!(nodeId = session_id, version = %version, "节点连接建立成功");
                 broadcast_status(&state, session_id, 1);
@@ -162,6 +168,13 @@ async fn handle_socket(
             .await;
 
         if is_node {
+            // 周期 SystemInfo 中的 public_ip 变化也回填（无变化时 conditional UPDATE 命中 0 行，开销可忽略）
+            if let Some(ip) = extract_reported_ip(&plain) {
+                let st = state.clone();
+                tokio::spawn(async move {
+                    let _ = node_svc::maybe_update_reported_ip(&st, session_id, &ip).await;
+                });
+            }
             let msg = json!({
                 "id": session_id.to_string(),
                 "type": "info",
@@ -213,8 +226,25 @@ fn broadcast_status(state: &AppState, node_id: i64, status: i32) {
     }
 }
 
-fn decrypt_if_needed(secret: &str, raw: &[u8]) -> Vec<u8> {
-    if secret.is_empty() {
+/// 从节点消息中提取 agent 上报的 IP：SystemInfo.public_ip（蛇形）或 publicIp（驼峰）。
+/// 非 JSON / 无该字段返回 None，调用方再做 IP 合法性校验。
+fn extract_reported_ip(plain: &[u8]) -> Option<String> {
+    let v: Value = serde_json::from_slice(plain).ok()?;
+    if !v.is_object() {
+        return None;
+    }
+    for key in ["public_ip", "publicIp", "ip"] {
+        if let Some(s) = v.get(key).and_then(Value::as_str) {
+            let s = s.trim();
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn decrypt_if_needed(secret: &str, raw: &[u8]) -> Vec<u8> {    if secret.is_empty() {
         return raw.to_vec();
     }
     let Some(c) = crypto::get_or_create(secret) else {
