@@ -15,6 +15,14 @@ func ForwardServiceBase(forwardID, userID, userTunnelID int64) string {
 func ForwardTCP(base string) string { return base + "_tcp" }
 func ForwardUDP(base string) string { return base + "_udp" }
 
+func TunnelTLS(tunnelID int64) string {
+	return fmt.Sprintf("%d_tls", tunnelID)
+}
+
+func ChainName(tunnelID int64) string {
+	return fmt.Sprintf("chains_%d", tunnelID)
+}
+
 // ParseForwardServiceName 解析 n 字段: "{forwardId}_{userId}_{userTunnelId}_tcp|udp"
 // 返回 forwardID, userID, userTunnelID, ok
 func ParseForwardServiceName(n string) (forwardID, userID, userTunnelID int64, ok bool) {

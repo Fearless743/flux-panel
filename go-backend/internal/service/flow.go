@@ -39,6 +39,7 @@ type ConfigItem struct {
 
 type GostConfigDto struct {
 	Limiters []ConfigItem `json:"limiters"`
+	Chains   []ConfigItem `json:"chains"`
 	Services []ConfigItem `json:"services"`
 }
 
@@ -541,6 +542,7 @@ func (s *FlowService) CleanNodeConfigs(nodeID int64, cfg GostConfigDto) {
 		return
 	}
 	s.cleanOrphanedServices(cfg.Services, &node)
+	s.cleanOrphanedChains(cfg.Chains, &node)
 	s.cleanOrphanedLimiters(cfg.Limiters, &node)
 }
 
@@ -556,6 +558,18 @@ func (s *FlowService) cleanOrphanedServices(items []ConfigItem, node *model.Node
 		}
 		last := parts[len(parts)-1]
 		switch last {
+		case "tls":
+			// {tunnelId}_tls
+			tunnelID, err := strconv.ParseInt(parts[0], 10, 64)
+			if err != nil {
+				continue
+			}
+			var cnt int
+			_ = s.DB.Get(&cnt, `SELECT COUNT(1) FROM tunnel WHERE id = ?`, tunnelID)
+			if cnt == 0 {
+				s.deleteServices(node.ID, []string{gost.TunnelTLS(tunnelID)})
+				slog.Info("删除孤立的服务", "name", name, "node", node.ID)
+			}
 		case "tcp":
 			// {forwardId}_{userId}_{userTunnelId}_tcp
 			if len(parts) < 4 {
@@ -576,6 +590,24 @@ func (s *FlowService) cleanOrphanedServices(items []ConfigItem, node *model.Node
 	}
 }
 
+func (s *FlowService) cleanOrphanedChains(items []ConfigItem, node *model.Node) {
+	for _, ch := range items {
+		parts := strings.Split(ch.Name, "_")
+		if len(parts) == 0 {
+			continue
+		}
+		tunnelID, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+		if err != nil {
+			continue
+		}
+		var cnt int
+		_ = s.DB.Get(&cnt, `SELECT COUNT(1) FROM tunnel WHERE id = ?`, tunnelID)
+		if cnt == 0 {
+			s.deleteChains(node.ID, ch.Name)
+			slog.Info("删除孤立的链", "name", ch.Name, "node", node.ID)
+		}
+	}
+}
 
 func (s *FlowService) cleanOrphanedLimiters(items []ConfigItem, node *model.Node) {
 	for _, lim := range items {
@@ -600,6 +632,12 @@ func (s *FlowService) deleteServices(nodeID int64, names []string) {
 	s.Hub.SendNoWait(nodeID, gost.DeleteServicePayload(names), "DeleteService")
 }
 
+func (s *FlowService) deleteChains(nodeID int64, name string) {
+	if s.Hub == nil {
+		return
+	}
+	s.Hub.SendNoWait(nodeID, map[string]any{"chain": name}, "DeleteChains")
+}
 
 func (s *FlowService) deleteLimiters(nodeID, name int64) {
 	if s.Hub == nil {

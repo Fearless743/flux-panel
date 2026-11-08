@@ -6,15 +6,17 @@ use serde_json::{json, Value};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::error::{AppError, AppResult};
-use crate::gost;
+use crate::gost::{self, ChainNodeInput};
 use crate::model::{ChainTunnel, Forward, ForwardPort, Node, Tunnel, UserTunnel};
 use crate::repo::chain_tunnel as chain_repo;
 use crate::repo::tunnel as tunnel_repo;
 use crate::repo::user_tunnel as user_tunnel_repo;
 use crate::response::now_ms;
 use crate::service::forward::{self, DiagnosisResult};
-use crate::service::tunnel_detach::delete_service;
+pub use crate::service::tunnel_detach::{push_chain_service, push_chains};
+use crate::service::tunnel_detach::{delete_chains, delete_service};
 use crate::state::AppState;
+use crate::ws::GostResult;
 
 // ---- DTO ----
 
@@ -23,6 +25,42 @@ use crate::state::AppState;
 pub struct ChainTunnelInput {
     #[serde(default, rename = "nodeId")]
     pub node_id: i64,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub strategy: Option<String>,
+    /// 入口节点使用的出口节点 ID 列表，支持数组或 JSON 字符串
+    #[serde(default, rename = "exitNodeIds")]
+    pub exit_node_ids: Option<Value>,
+}
+
+impl ChainTunnelInput {
+    /// 解析 exitNodeIds，支持数组和 JSON 字符串两种格式
+    pub fn get_exit_node_ids(&self) -> Vec<i64> {
+        let Some(v) = self.exit_node_ids.as_ref() else {
+            return Vec::new();
+        };
+        match v {
+            Value::Array(arr) => {
+                let mut ids = Vec::with_capacity(arr.len());
+                for item in arr {
+                    if let Some(n) = item.as_i64() {
+                        ids.push(n);
+                    } else if let Some(f) = item.as_f64() {
+                        ids.push(f as i64);
+                    }
+                }
+                ids
+            }
+            Value::String(s) => {
+                if s.is_empty() || s == "null" {
+                    return Vec::new();
+                }
+                serde_json::from_str::<Vec<i64>>(s).unwrap_or_default()
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -37,8 +75,19 @@ pub struct TunnelCreateReq {
     pub traffic_ratio: f64,
     #[serde(default, rename = "inIp")]
     pub in_ip: String,
-    #[serde(default, rename = "inNodeId")]
+    #[serde(default, deserialize_with = "null_default", rename = "inNodeId")]
     pub in_node_id: Vec<ChainTunnelInput>,
+    #[serde(default, deserialize_with = "null_default", rename = "outNodeId")]
+    pub out_node_id: Vec<ChainTunnelInput>,
+}
+
+/// Go 的 JSON 反序列化接受 null 切片（视为空），serde 需显式转换
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -53,8 +102,10 @@ pub struct TunnelUpdateReq {
     pub traffic_ratio: f64,
     #[serde(default, rename = "inIp")]
     pub in_ip: String,
-    #[serde(default, rename = "inNodeId")]
+    #[serde(default, deserialize_with = "null_default", rename = "inNodeId")]
     pub in_node_id: Vec<ChainTunnelInput>,
+    #[serde(default, deserialize_with = "null_default", rename = "outNodeId")]
+    pub out_node_id: Vec<ChainTunnelInput>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,6 +123,7 @@ pub struct TunnelDetailDto {
     pub updated_time: i64,
     pub in_ip: Option<String>,
     pub in_node_id: Vec<ChainTunnel>,
+    pub out_node_id: Vec<ChainTunnel>,
 }
 
 // ---- create ----
@@ -83,8 +135,11 @@ pub async fn create(state: &AppState, req: TunnelCreateReq) -> AppResult<()> {
     if req.in_node_id.is_empty() {
         return Err(AppError::new("入口节点不能为空"));
     }
-    if req.r#type != 1 {
+    if req.r#type != 1 && req.r#type != 2 {
         return Err(AppError::new("隧道类型不合法"));
+    }
+    if req.r#type == 2 && req.out_node_id.is_empty() {
+        return Err(AppError::new("出口不能为空"));
     }
     if req.traffic_ratio <= 0.0 || req.traffic_ratio > 100.0 {
         return Err(AppError::new("流量倍率必须大于0.0且不超过100.0"));
@@ -105,6 +160,14 @@ pub async fn create(state: &AppState, req: TunnelCreateReq) -> AppResult<()> {
             return Err(AppError::new("节点不存在"));
         }
         node_ids.push(input.node_id);
+    }
+    if req.r#type == 2 {
+        for out in &req.out_node_id {
+            if out.node_id == 0 {
+                return Err(AppError::new("节点不存在"));
+            }
+            node_ids.push(out.node_id);
+        }
     }
 
     let mut set: HashSet<i64> = HashSet::new();
@@ -137,7 +200,14 @@ pub async fn create(state: &AppState, req: TunnelCreateReq) -> AppResult<()> {
         if !nodes.contains_key(&input.node_id) {
             return Err(AppError::new("节点不存在"));
         }
-        chain_tunnels.push(chain_repo::new_chain_tunnel(
+        let exit_ids = input.get_exit_node_ids();
+        let mut exit_node_ids: Option<String> = None;
+        if !exit_ids.is_empty() {
+            let s = serde_json::to_string(&exit_ids)
+                .map_err(|e| AppError::new(format!("序列化出口节点 ID 失败: {}", e)))?;
+            exit_node_ids = Some(s);
+        }
+        chain_tunnels.push(chain_repo::new_chain_tunnel_with_exit_binding(
             0,
             1,
             input.node_id,
@@ -145,7 +215,30 @@ pub async fn create(state: &AppState, req: TunnelCreateReq) -> AppResult<()> {
             None,
             None,
             None,
+            exit_node_ids,
         ));
+    }
+
+    // type2: 出口（入口→出口直连，无中间转发链）
+    let mut out_nodes: Vec<ChainTunnel> = Vec::new();
+    if req.r#type == 2 {
+        for out in &req.out_node_id {
+            if !nodes.contains_key(&out.node_id) {
+                return Err(AppError::new("节点不存在"));
+            }
+            let port = get_node_port(state, out.node_id).await?;
+            let ct = chain_repo::new_chain_tunnel(
+                0,
+                3,
+                out.node_id,
+                Some(port),
+                out.strategy.clone(),
+                out.protocol.clone(),
+                None,
+            );
+            out_nodes.push(ct.clone());
+            chain_tunnels.push(ct);
+        }
     }
 
     // in_ip
@@ -166,7 +259,7 @@ pub async fn create(state: &AppState, req: TunnelCreateReq) -> AppResult<()> {
     let mut tunnel = Tunnel {
         name: req.name.clone(),
         traffic_ratio: req.traffic_ratio,
-        r#type: 1,
+        r#type: req.r#type,
         protocol: "tls".to_string(),
         flow: req.flow,
         created_time: now,
@@ -180,12 +273,57 @@ pub async fn create(state: &AppState, req: TunnelCreateReq) -> AppResult<()> {
     for ct in chain_tunnels.iter_mut() {
         ct.tunnel_id = tunnel.id;
     }
+    for ct in out_nodes.iter_mut() {
+        ct.tunnel_id = tunnel.id;
+    }
+    // 入口列表（用于下发）
+    let entries: Vec<ChainTunnel> = chain_tunnels
+        .iter()
+        .filter(|ct| chain_repo::chain_type_of(ct) == 1)
+        .cloned()
+        .collect();
 
     if let Err(e) = chain_repo::insert_batch(&state.db, &mut chain_tunnels).await {
         let _ = tunnel_repo::delete(&state.db, tunnel.id).await;
         return Err(e);
     }
 
+    // type2 下发：按节点分组并行（同节点 chain 先于 service），任一下发失败整体回滚
+    if tunnel.r#type == 2 {
+        let mut jobs: Vec<PushJob> = Vec::new();
+        // 入口 → 出口（直连）
+        for entry in &entries {
+            jobs.push(PushJob {
+                node_id: entry.node_id,
+                kind: PushJobKind::CreateEntry {
+                    target: filter_exits_by_entry(&out_nodes, entry),
+                    tolerate_failure: true,
+                },
+            });
+        }
+
+        // 出口
+        for ct in &out_nodes {
+            jobs.push(PushJob {
+                node_id: ct.node_id,
+                kind: PushJobKind::CreateOut { ct: ct.clone() },
+            });
+        }
+
+        let fails = run_node_jobs(state, &nodes, jobs).await;
+        if let Some(first) = fails.first() {
+            // 回滚
+            let _ = tunnel_repo::delete(&state.db, tunnel.id).await;
+            let _ = chain_repo::delete_by_tunnel_id(&state.db, tunnel.id).await;
+            for entry in &entries {
+                delete_chains(state, entry.node_id, &gost::chain_name(tunnel.id)).await;
+            }
+            for ct in &out_nodes {
+                delete_service(state, ct.node_id, vec![gost::tunnel_tls(tunnel.id)]).await;
+            }
+            return Err(AppError::new(first.clone()));
+        }
+    }
     Ok(())
 }
 
@@ -206,10 +344,7 @@ pub async fn list(state: &AppState) -> AppResult<Vec<TunnelDetailDto>> {
     let mut out: Vec<TunnelDetailDto> = Vec::with_capacity(tunnels.len());
     for t in tunnels {
         let cts = by_tunnel.remove(&t.id).unwrap_or_default();
-        let entries: Vec<ChainTunnel> = cts
-            .into_iter()
-            .filter(|ct| chain_repo::chain_type_of(ct) == 1)
-            .collect();
+        let (entries, outs) = split_topology(cts);
         out.push(TunnelDetailDto {
             id: t.id,
             name: t.name,
@@ -221,6 +356,7 @@ pub async fn list(state: &AppState) -> AppResult<Vec<TunnelDetailDto>> {
             updated_time: t.updated_time,
             in_ip: t.in_ip,
             in_node_id: entries,
+            out_node_id: outs,
         });
     }
     Ok(out)
@@ -285,16 +421,30 @@ async fn reconfigure_tunnel_nodes(
     dto: &TunnelUpdateReq,
 ) -> AppResult<()> {
     let tunnel_id = tunnel.id;
+    let is_tunnel_forward = tunnel.r#type == 2;
 
-    // 规范化
+    let out_nodes_req = &dto.out_node_id;
+    if is_tunnel_forward && out_nodes_req.is_empty() {
+        return Err(AppError::new("出口不能为空"));
+    }
+
+    // 规范化（入口→出口直连，无中间转发链）
     let mut new_entries: Vec<ChainTunnel> = Vec::new();
+    let mut new_outs: Vec<ChainTunnel> = Vec::new();
     let mut node_ids: Vec<i64> = Vec::new();
 
     for input in &dto.in_node_id {
         if input.node_id == 0 {
             return Err(AppError::new("节点不存在"));
         }
-        new_entries.push(chain_repo::new_chain_tunnel(
+        let exit_ids = input.get_exit_node_ids();
+        let mut exit_node_ids: Option<String> = None;
+        if !exit_ids.is_empty() {
+            let s = serde_json::to_string(&exit_ids)
+                .map_err(|e| AppError::new(format!("序列化出口节点 ID 失败: {}", e)))?;
+            exit_node_ids = Some(s);
+        }
+        new_entries.push(chain_repo::new_chain_tunnel_with_exit_binding(
             tunnel_id,
             1,
             input.node_id,
@@ -302,8 +452,25 @@ async fn reconfigure_tunnel_nodes(
             None,
             None,
             None,
+            exit_node_ids,
         ));
         node_ids.push(input.node_id);
+    }
+    for out in out_nodes_req {
+        if out.node_id == 0 {
+            return Err(AppError::new("节点不存在"));
+        }
+        let ct = chain_repo::new_chain_tunnel(
+            tunnel_id,
+            3,
+            out.node_id,
+            None,
+            out.strategy.clone(),
+            out.protocol.clone(),
+            None,
+        );
+        new_outs.push(ct);
+        node_ids.push(out.node_id);
     }
 
     let mut set: HashSet<i64> = HashSet::new();
@@ -330,14 +497,81 @@ async fn reconfigure_tunnel_nodes(
     }
 
     let old_records = chain_repo::list_by_tunnel_id(&state.db, tunnel_id).await?;
+    let mut old_ports: HashMap<i64, i32> = HashMap::new();
+    for old in &old_records {
+        if let Some(p) = old.port {
+            old_ports.insert(old.node_id, p);
+        }
+    }
+
+    // 端口沿用
+    for ct in new_outs.iter_mut() {
+        if let Some(p) = old_ports.get(&ct.node_id) {
+            ct.port = Some(*p);
+        } else {
+            ct.port = Some(get_node_port(state, ct.node_id).await?);
+        }
+    }
 
     let mut failures: Vec<String> = Vec::new();
+
+    // 清理旧 gost
+    if is_tunnel_forward {
+        let mut chain_needed: HashSet<i64> = HashSet::new();
+        let mut service_needed: HashSet<i64> = HashSet::new();
+        for ct in &new_entries {
+            chain_needed.insert(ct.node_id);
+        }
+        for ct in &new_outs {
+            service_needed.insert(ct.node_id);
+        }
+        let mut chain_cleaned: HashSet<i64> = HashSet::new();
+        let mut service_cleaned: HashSet<i64> = HashSet::new();
+        for old in &old_records {
+            let ct = chain_repo::chain_type_of(old);
+            let had_chain = ct == 1;
+            let had_service = ct == 3;
+            if had_chain
+                && !chain_needed.contains(&old.node_id)
+                && chain_cleaned.insert(old.node_id)
+            {
+                delete_chains(state, old.node_id, &gost::chain_name(tunnel_id)).await;
+            }
+            if had_service
+                && !service_needed.contains(&old.node_id)
+                && service_cleaned.insert(old.node_id)
+            {
+                delete_service(state, old.node_id, vec![gost::tunnel_tls(tunnel_id)]).await;
+            }
+        }
+    }
 
     // DB 替换
     chain_repo::delete_by_tunnel_id(&state.db, tunnel_id).await?;
     let mut all_new: Vec<ChainTunnel> = Vec::new();
     all_new.extend(new_entries.iter().cloned());
+    all_new.extend(new_outs.iter().cloned());
     chain_repo::insert_batch(&state.db, &mut all_new).await?;
+
+    // 下发：按节点分组并行（同节点上 chain 必须先于 service）
+    if is_tunnel_forward {
+        let mut jobs: Vec<PushJob> = Vec::new();
+        for entry in &new_entries {
+            jobs.push(PushJob {
+                node_id: entry.node_id,
+                kind: PushJobKind::UpdateEntry {
+                    target: filter_exits_by_entry(&new_outs, entry),
+                },
+            });
+        }
+        for ct in &new_outs {
+            jobs.push(PushJob {
+                node_id: ct.node_id,
+                kind: PushJobKind::UpdateOut { ct: ct.clone() },
+            });
+        }
+        failures.extend(run_node_jobs(state, &nodes, jobs).await);
+    }
 
     // 入口变化 → 迁移转发服务
     let mut old_entry_ids: HashSet<i64> = HashSet::new();
@@ -663,7 +897,17 @@ pub async fn delete(state: &AppState, id: i64) -> AppResult<()> {
         )));
     }
 
-    // 无业务关联时，仅清 chain_tunnel + tunnel
+    // 无业务关联时，仅清 gost 拓扑 + chain_tunnel + tunnel
+    let chain_tunnels = chain_repo::list_by_tunnel_id(&state.db, id)
+        .await
+        .unwrap_or_default();
+    for ct in &chain_tunnels {
+        if chain_repo::chain_type_of(ct) == 1 {
+            delete_chains(state, ct.node_id, &gost::chain_name(ct.tunnel_id)).await;
+        } else {
+            delete_service(state, ct.node_id, vec![gost::tunnel_tls(ct.tunnel_id)]).await;
+        }
+    }
     let _ = chain_repo::delete_by_tunnel_id(&state.db, id).await;
     tunnel_repo::delete(&state.db, id).await
 }
@@ -703,15 +947,12 @@ pub async fn diagnose(state: &AppState, tunnel_id: i64) -> AppResult<Value> {
     if chain_tunnels.is_empty() {
         return Err(AppError::new("隧道配置不完整"));
     }
-    let entries: Vec<ChainTunnel> = chain_tunnels
-        .into_iter()
-        .filter(|ct| chain_repo::chain_type_of(ct) == 1)
-        .collect();
+    let (entries, outs) = split_topology(chain_tunnels.clone());
 
     // 诊断涉及的节点一次查回（替代循环内逐个 GetByID）
     let diag_node_ids: Vec<i64> = {
         let mut set: HashSet<i64> = HashSet::new();
-        for ct in &entries {
+        for ct in &chain_tunnels {
             set.insert(ct.node_id);
         }
         set.into_iter().collect()
@@ -724,20 +965,63 @@ pub async fn diagnose(state: &AppState, tunnel_id: i64) -> AppResult<Value> {
     // 先按原顺序组装探测任务，再限并发执行 TcpPing（单次最长 10s，串行是主要耗时）
     let mut tasks: Vec<PingTask> = Vec::new();
 
-    for in_node in &entries {
-        let Some(n) = diag_node_map.get(&in_node.node_id) else {
-            continue;
-        };
-        tasks.push(PingTask {
-            node: n.clone(),
-            target_ip: "www.google.com".to_string(),
-            target_port: 443,
-            description: format!("入口({})->外网", n.name),
-            from_chain_type: Some(1),
-            from_inx: None,
-            to_chain_type: None,
-            to_inx: None,
-        });
+    if tunnel.r#type == 1 {
+        for in_node in &entries {
+            let Some(n) = diag_node_map.get(&in_node.node_id) else {
+                continue;
+            };
+            tasks.push(PingTask {
+                node: n.clone(),
+                target_ip: "www.google.com".to_string(),
+                target_port: 443,
+                description: format!("入口({})->外网", n.name),
+                from_chain_type: Some(1),
+                from_inx: None,
+                to_chain_type: None,
+                to_inx: None,
+            });
+        }
+    } else if tunnel.r#type == 2 {
+        // 入口→过滤后出口（直连），出口→外网
+        for in_node in &entries {
+            let Some(from) = diag_node_map.get(&in_node.node_id) else {
+                continue;
+            };
+            // 根据入口的 ExitNodeIDs 过滤出口节点
+            let target_outs = filter_exits_by_entry(&outs, in_node);
+            for out in &target_outs {
+                let Some(to) = diag_node_map.get(&out.node_id) else {
+                    continue;
+                };
+                let port = out.port.unwrap_or(0);
+                tasks.push(PingTask {
+                    node: from.clone(),
+                    target_ip: to.server_ip.clone(),
+                    target_port: port,
+                    description: format!("入口({})->出口({})", from.name, to.name),
+                    from_chain_type: Some(1),
+                    from_inx: None,
+                    to_chain_type: Some(3),
+                    to_inx: None,
+                });
+            }
+        }
+
+        for out in &outs {
+            let Some(n) = diag_node_map.get(&out.node_id) else {
+                continue;
+            };
+            tasks.push(PingTask {
+                node: n.clone(),
+                target_ip: "www.google.com".to_string(),
+                target_port: 443,
+                description: format!("出口({})->外网", n.name),
+                from_chain_type: Some(3),
+                from_inx: None,
+                to_chain_type: None,
+                to_inx: None,
+            });
+        }
     }
 
     let mut results: Vec<DiagnosisResult> = Vec::with_capacity(tasks.len());
@@ -761,7 +1045,11 @@ pub async fn diagnose(state: &AppState, tunnel_id: i64) -> AppResult<Value> {
         }
     }
 
-    let type_label = "端口转发";
+    let type_label = if tunnel.r#type == 2 {
+        "隧道转发"
+    } else {
+        "端口转发"
+    };
     Ok(json!({
         "tunnelId": tunnel_id,
         "tunnelName": tunnel.name,
@@ -773,6 +1061,32 @@ pub async fn diagnose(state: &AppState, tunnel_id: i64) -> AppResult<Value> {
 
 // ---- ports ----
 
+async fn get_node_port(state: &AppState, node_id: i64) -> AppResult<i32> {
+    let ports = get_available_ports(state, node_id).await?;
+    ports
+        .first()
+        .copied()
+        .ok_or_else(|| AppError::new("节点端口已满，无可用端口"))
+}
+
+async fn get_available_ports(state: &AppState, node_id: i64) -> AppResult<Vec<i32>> {
+    let Some(node) = load_node_by_id(&state.db, node_id).await? else {
+        return Err(AppError::new("节点不存在"));
+    };
+    let mut used: HashSet<i32> = HashSet::new();
+    let cts = chain_repo::list_by_node_id(&state.db, node_id).await?;
+    for ct in cts {
+        if let Some(p) = ct.port {
+            used.insert(p);
+        }
+    }
+    let fps = list_forward_ports_by_node_id(&state.db, node_id).await?;
+    for fp in fps {
+        used.insert(fp.port);
+    }
+    let parsed = parse_ports(&node.port)?;
+    Ok(parsed.into_iter().filter(|p| !used.contains(p)).collect())
+}
 
 /// 解析节点端口配置："1000-2000,3000"
 fn parse_ports(input: &str) -> AppResult<Vec<i32>> {
@@ -813,6 +1127,285 @@ fn parse_ports(input: &str) -> AppResult<Vec<i32>> {
     Ok(set.into_iter().collect())
 }
 
+// ---- gost helpers (create path: Add*) ----
+
+async fn add_chains(
+    state: &AppState,
+    node_id: i64,
+    target: &[ChainTunnel],
+    nodes: &HashMap<i64, Node>,
+) -> GostResult {
+    if target.is_empty() {
+        return GostResult {
+            msg: "节点不在线".to_string(),
+            data: None,
+        };
+    }
+    let tunnel_id = target[0].tunnel_id;
+    let src = nodes.get(&node_id);
+    let iface = src
+        .and_then(|n| n.interface_name.clone())
+        .unwrap_or_default();
+    let strategy = target[0].strategy.clone().unwrap_or_default();
+    let mut inputs: Vec<ChainNodeInput> = Vec::with_capacity(target.len());
+    for ct in target {
+        let Some(n) = nodes.get(&ct.node_id) else {
+            continue;
+        };
+        inputs.push(ChainNodeInput {
+            protocol: ct.protocol.clone().unwrap_or_default(),
+            server_ip: n.server_ip.clone(),
+            port: ct.port.unwrap_or(0),
+        });
+    }
+    let data = gost::build_chain_data(tunnel_id, node_id, &iface, &strategy, &inputs);
+    // 节点未连接时跳过下发，仅保存数据库配置
+    if !state.hub.is_node_online(node_id) {
+        return GostResult {
+            msg: "OK".to_string(),
+            data: None,
+        };
+    }
+    let mut res = state.hub.send_msg(node_id, data, "AddChains").await;
+    res.msg = gost::normalize_ok(&res.msg);
+    res
+}
+
+async fn add_chain_service(
+    state: &AppState,
+    node_id: i64,
+    ct: &ChainTunnel,
+    nodes: &HashMap<i64, Node>,
+) -> GostResult {
+    // 节点未连接时跳过下发，仅保存数据库配置
+    if !state.hub.is_node_online(node_id) {
+        return GostResult {
+            msg: "OK".to_string(),
+            data: None,
+        };
+    }
+    let Some(n) = nodes.get(&ct.node_id) else {
+        return GostResult {
+            msg: "节点不存在".to_string(),
+            data: None,
+        };
+    };
+    let src = nodes.get(&node_id);
+    let iface = src
+        .and_then(|s| s.interface_name.clone())
+        .unwrap_or_default();
+    let src_has = src
+        .and_then(|s| s.interface_name.as_deref())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let proto = ct
+        .protocol
+        .clone()
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| "tls".to_string());
+    let port = ct.port.unwrap_or(0);
+    let mut tcp_listen = n.tcp_listen_addr.clone();
+    if tcp_listen.is_empty() {
+        tcp_listen = "[::]".to_string();
+    }
+    let services = gost::build_chain_service(
+        ct.tunnel_id,
+        chain_repo::chain_type_of(ct),
+        &proto,
+        &tcp_listen,
+        port,
+        &iface,
+        src_has,
+    );
+    let mut res = state
+        .hub
+        .send_msg(node_id, json!(services), "AddService")
+        .await;
+    res.msg = gost::normalize_ok(&res.msg);
+    res
+}
+
+// ---- job runner ----
+
+pub(crate) enum PushJobKind {
+    CreateEntry {
+        target: Vec<ChainTunnel>,
+        tolerate_failure: bool,
+    },
+    CreateOut {
+        ct: ChainTunnel,
+    },
+    UpdateEntry {
+        target: Vec<ChainTunnel>,
+    },
+    UpdateOut {
+        ct: ChainTunnel,
+    },
+    DetachEntry {
+        tunnel_name: String,
+        target: Vec<ChainTunnel>,
+    },
+    DetachOut {
+        tunnel_name: String,
+        ct: ChainTunnel,
+    },
+}
+
+pub(crate) struct PushJob {
+    pub(crate) node_id: i64,
+    pub(crate) kind: PushJobKind,
+}
+
+async fn run_job(
+    state: &AppState,
+    node_id: i64,
+    kind: &PushJobKind,
+    nodes: &HashMap<i64, Node>,
+) -> Option<String> {
+    match kind {
+        PushJobKind::CreateEntry {
+            target,
+            tolerate_failure,
+        } => {
+            let res = add_chains(state, node_id, target, nodes).await;
+            if !gost::is_ok(&res.msg) {
+                if *tolerate_failure {
+                    return None;
+                }
+                return Some(gost::normalize_ok(&res.msg));
+            }
+            None
+        }
+        PushJobKind::CreateOut { ct } => {
+            let res = add_chain_service(state, node_id, ct, nodes).await;
+            if !gost::is_ok(&res.msg) {
+                return Some(gost::normalize_ok(&res.msg));
+            }
+            None
+        }
+        PushJobKind::UpdateEntry { target } => {
+            let res = push_chains(state, node_id, target, nodes).await;
+            if !gost::is_ok(&res.msg) {
+                return Some(format!(
+                    "入口[{}]链下发失败: {}",
+                    node_name(nodes, node_id),
+                    res.msg
+                ));
+            }
+            None
+        }
+        PushJobKind::UpdateOut { ct } => {
+            let res = push_chain_service(state, node_id, ct, nodes).await;
+            if !gost::is_ok(&res.msg) {
+                return Some(format!(
+                    "出口[{}]服务下发失败: {}",
+                    node_name(nodes, node_id),
+                    res.msg
+                ));
+            }
+            None
+        }
+        PushJobKind::DetachEntry {
+            tunnel_name,
+            target,
+        } => {
+            let res = push_chains(state, node_id, target, nodes).await;
+            if !gost::is_ok(&res.msg) {
+                return Some(format!("隧道[{}]入口链重推失败: {}", tunnel_name, res.msg));
+            }
+            None
+        }
+        PushJobKind::DetachOut { tunnel_name, ct } => {
+            let res = push_chain_service(state, node_id, ct, nodes).await;
+            if !gost::is_ok(&res.msg) {
+                return Some(format!(
+                    "隧道[{}]出口服务重推失败: {}",
+                    tunnel_name, res.msg
+                ));
+            }
+            None
+        }
+    }
+}
+
+/// 按 nodeID 分组后顺序执行，返回按节点首次出现顺序、组内顺序收集的非空失败文案。
+pub(crate) async fn run_node_jobs(
+    state: &AppState,
+    nodes: &HashMap<i64, Node>,
+    jobs: Vec<PushJob>,
+) -> Vec<String> {
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    let mut groups: Vec<(i64, Vec<PushJobKind>)> = Vec::new();
+    for job in jobs {
+        if let Some(group) = groups.iter_mut().find(|(id, _)| *id == job.node_id) {
+            group.1.push(job.kind);
+        } else {
+            groups.push((job.node_id, vec![job.kind]));
+        }
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    for (node_id, kinds) in groups {
+        for kind in &kinds {
+            if let Some(msg) = run_job(state, node_id, kind, nodes).await {
+                out.push(msg);
+            }
+        }
+    }
+    out
+}
+
+// ---- topology helpers ----
+
+pub fn split_topology(cts: Vec<ChainTunnel>) -> (Vec<ChainTunnel>, Vec<ChainTunnel>) {
+    let mut entries: Vec<ChainTunnel> = Vec::new();
+    let mut outs: Vec<ChainTunnel> = Vec::new();
+    for ct in cts {
+        match chain_repo::chain_type_of(&ct) {
+            1 => entries.push(ct),
+            3 => outs.push(ct),
+            _ => {}
+        }
+    }
+    (entries, outs)
+}
+
+pub(crate) fn node_name(nodes: &HashMap<i64, Node>, id: i64) -> String {
+    match nodes.get(&id) {
+        Some(n) => n.name.clone(),
+        None => id.to_string(),
+    }
+}
+
+/// 根据入口节点的 ExitNodeIDs 过滤出口节点
+/// 如果入口没有指定 ExitNodeIDs，则返回所有出口节点
+pub(crate) fn filter_exits_by_entry(out_nodes: &[ChainTunnel], entry: &ChainTunnel) -> Vec<ChainTunnel> {
+    let Some(raw) = entry.exit_node_ids.as_deref() else {
+        return out_nodes.to_vec();
+    };
+    if raw.is_empty() {
+        return out_nodes.to_vec();
+    }
+    let exit_ids: Vec<i64> = match serde_json::from_str(raw) {
+        Ok(v) => v,
+        Err(_) => return out_nodes.to_vec(),
+    };
+    if exit_ids.is_empty() {
+        return out_nodes.to_vec();
+    }
+    let exit_id_set: HashSet<i64> = exit_ids.into_iter().collect();
+    let filtered: Vec<ChainTunnel> = out_nodes
+        .iter()
+        .filter(|node| exit_id_set.contains(&node.node_id))
+        .cloned()
+        .collect();
+    if filtered.is_empty() {
+        return out_nodes.to_vec();
+    }
+    filtered
+}
 
 // ---- 跨域数据访问（forward / forward_port / node） ----
 
@@ -836,6 +1429,16 @@ pub(crate) async fn load_nodes_by_ids(pool: &SqlitePool, ids: &[i64]) -> AppResu
     }
     sep.push_unseparated(")");
     Ok(qb.build_query_as::<Node>().fetch_all(pool).await?)
+}
+
+pub(crate) async fn load_nodes_map(
+    pool: &SqlitePool,
+    ids: &[i64],
+) -> HashMap<i64, Node> {
+    match load_nodes_by_ids(pool, ids).await {
+        Ok(list) => list.into_iter().map(|n| (n.id, n)).collect(),
+        Err(_) => HashMap::new(),
+    }
 }
 
 pub(crate) async fn list_forwards_by_tunnel_id(

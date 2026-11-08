@@ -1062,8 +1062,9 @@ export default function ForwardPage() {
 
   const groupedDiagnosis = (results: DiagnosisResult["results"]) => {
     const entry = results.filter((r) => r.fromChainType === 1);
-    const other = results.filter((r) => r.fromChainType !== 1);
-    return { entry, other };
+    const exit = results.filter((r) => r.fromChainType === 3);
+    const other = results.filter((r) => r.fromChainType !== 1 && r.fromChainType !== 3);
+    return { entry, exit, other };
   };
 
   if (loading) {
@@ -1568,6 +1569,7 @@ export default function ForwardPage() {
               const g = groupedDiagnosis(diagnosisResult.results);
               const sections: Array<{ title: string; list: DiagnosisResult["results"] }> = [
                 { title: "入口测试", list: g.entry },
+                { title: "出口测试", list: g.exit },
                 ...(g.other.length > 0 ? [{ title: "其他测试", list: g.other }] : []),
               ].filter((s) => s.list.length > 0);
               if (sections.length === 0 && diagnosisResult.results.length > 0) {

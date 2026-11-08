@@ -29,6 +29,10 @@ import {
 
 interface ChainTunnel {
   nodeId: number;
+  chainType?: number;
+  protocol?: string;
+  strategy?: string;
+  exitNodeIds?: number[];
 }
 
 interface Tunnel {
@@ -36,6 +40,7 @@ interface Tunnel {
   name: string;
   type: number;
   inNodeId: ChainTunnel[];
+  outNodeId?: ChainTunnel[];
   inIp: string;
   outIp?: string;
   protocol?: string;
@@ -56,6 +61,7 @@ interface TunnelForm {
   name: string;
   type: number;
   inNodeId: ChainTunnel[];
+  outNodeId?: ChainTunnel[];
   flow: number;
   trafficRatio: number;
   inIp: string;
@@ -83,6 +89,34 @@ interface DiagnosisResult {
   }>;
 }
 
+const PROTOCOLS = ["tls", "wss", "tcp", "mtls", "mwss", "mtcp"];
+const PROTOCOL_LABEL: Record<string, string> = {
+  tls: "TLS",
+  wss: "WSS",
+  tcp: "TCP",
+  mtls: "MTLS",
+  mwss: "MWSS",
+  mtcp: "MTCP",
+};
+const STRATEGIES = [
+  { value: "fifo", label: "主备" },
+  { value: "round", label: "轮询" },
+  { value: "rand", label: "随机" },
+];
+
+function parseExitIds(entry: ChainTunnel): number[] {
+  const raw: any = entry.exitNodeIds;
+  if (!raw) return [];
+  if (typeof raw === "string") {
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(raw) ? raw : [];
+}
 
 function NodeChipMulti({
   nodes,
@@ -169,6 +203,7 @@ export default function TunnelPage() {
     name: "",
     type: 1,
     inNodeId: [],
+    outNodeId: [],
     flow: 1,
     trafficRatio: 1.0,
     inIp: "",
@@ -230,6 +265,30 @@ export default function TunnelPage() {
       newErrors.trafficRatio = "流量倍率必须在0.0-100.0之间";
     }
 
+    if (form.type === 2) {
+      if (!form.outNodeId || form.outNodeId.filter((n) => n.nodeId !== -1).length === 0) {
+        newErrors.outNodeId = "请至少选择一个出口节点";
+      } else {
+        const offlineNodes = (form.outNodeId || []).filter((item) => {
+          if (item.nodeId === -1) return false;
+          const node = nodes.find((n) => n.id === item.nodeId);
+          return node && node.status !== 1;
+        });
+        if (offlineNodes.length > 0) {
+          newErrors.outNodeId = "存在离线出口节点，请先取消勾选移除后再保存";
+        }
+
+        const inNodeIds = form.inNodeId.map((item) => item.nodeId);
+        const outNodeIds = (form.outNodeId || [])
+          .filter((n) => n.nodeId !== -1)
+          .map((item) => item.nodeId);
+        const overlap = inNodeIds.filter((id) => outNodeIds.includes(id));
+        if (overlap.length > 0) {
+          newErrors.outNodeId = "隧道转发模式下，入口和出口不能有相同节点";
+        }
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -240,6 +299,7 @@ export default function TunnelPage() {
       name: "",
       type: 1,
       inNodeId: [],
+      outNodeId: [],
       flow: 1,
       trafficRatio: 1.0,
       inIp: "",
@@ -255,8 +315,9 @@ export default function TunnelPage() {
     setForm({
       id: tunnel.id,
       name: tunnel.name,
-      type: 1,
+      type: tunnel.type,
       inNodeId: tunnel.inNodeId || [],
+      outNodeId: tunnel.outNodeId || [],
       flow: tunnel.flow,
       trafficRatio: tunnel.trafficRatio,
       inIp: tunnel.inIp ? tunnel.inIp.split(",").map((ip) => ip.trim()).join("\n") : "",
@@ -293,15 +354,63 @@ export default function TunnelPage() {
     }
   };
 
+  const handleTypeChange = (type: number) => {
+    setForm((prev) => ({
+      ...prev,
+      type,
+      outNodeId: type === 1 ? [] : prev.outNodeId,
+    }));
+  };
+
   const nodeById = (id: number) => nodes.find((n) => n.id === id);
   const inIds = form.inNodeId.map((ct) => ct.nodeId);
+  const outIds = (form.outNodeId || []).filter((n) => n.nodeId !== -1).map((ct) => ct.nodeId);
 
   const toggleInNode = (id: number) => {
     setForm((prev) => {
       if (prev.inNodeId.some((ct) => ct.nodeId === id)) {
         return { ...prev, inNodeId: prev.inNodeId.filter((ct) => ct.nodeId !== id) };
       }
-      return { ...prev, inNodeId: [...prev.inNodeId, { nodeId: id }] };
+      return { ...prev, inNodeId: [...prev.inNodeId, { nodeId: id, chainType: 1 }] };
+    });
+  };
+
+  const toggleOutNode = (id: number) => {
+    setForm((prev) => {
+      const current = (prev.outNodeId || []).filter((ct) => ct.nodeId !== -1);
+      if (current.some((ct) => ct.nodeId === id)) {
+        return { ...prev, outNodeId: current.filter((ct) => ct.nodeId !== id) };
+      }
+      let protocol = "tls";
+      let strategy = "round";
+      if (current.length > 0) {
+        protocol = current[0].protocol || "tls";
+        strategy = current[0].strategy || "round";
+      }
+      return { ...prev, outNodeId: [...current, { nodeId: id, chainType: 3, protocol, strategy }] };
+    });
+  };
+
+  const setOutProtoStrategy = (kind: "protocol" | "strategy", value: string) => {
+    setForm((prev) => {
+      const current = prev.outNodeId || [];
+      if (current.length === 0) {
+        return {
+          ...prev,
+          outNodeId: [
+            {
+              nodeId: -1,
+              chainType: 3,
+              protocol: kind === "protocol" ? value : "tls",
+              strategy: kind === "strategy" ? value : "round",
+            },
+          ],
+        };
+      }
+      return {
+        ...prev,
+        outNodeId: current.map((ct) => ({ ...ct, [kind]: value })),
+      };
     });
   };
 
@@ -310,16 +419,18 @@ export default function TunnelPage() {
 
     setSubmitLoading(true);
     try {
+      const cleanedOutNodeId = (form.outNodeId || []).filter((node) => node.nodeId !== -1);
+
       const inIpString = form.inIp
         .split("\n")
         .map((ip) => ip.trim())
         .filter((ip) => ip)
         .join(",");
 
-      const { status: _status, ...submitForm } = form;
       const data = {
-        ...submitForm,
+        ...form,
         inIp: inIpString,
+        outNodeId: cleanedOutNodeId,
       };
 
       const response = isEdit ? await updateTunnel(data) : await createTunnel(data);
@@ -353,7 +464,7 @@ export default function TunnelPage() {
         toast.error(response.msg || "诊断失败");
         setDiagnosisResult({
           tunnelName: tunnel.name,
-          tunnelType: "端口转发",
+          tunnelType: tunnel.type === 1 ? "端口转发" : "隧道转发",
           timestamp: Date.now(),
           results: [
             {
@@ -373,7 +484,7 @@ export default function TunnelPage() {
       toast.error("网络错误，请重试");
       setDiagnosisResult({
         tunnelName: tunnel.name,
-        tunnelType: "端口转发",
+        tunnelType: tunnel.type === 1 ? "端口转发" : "隧道转发",
         timestamp: Date.now(),
         results: [
           {
@@ -392,8 +503,15 @@ export default function TunnelPage() {
     }
   };
 
-  const getTypeDisplay = (_type: number) => {
-    return { text: "端口转发", tone: "cyan" as const };
+  const getTypeDisplay = (type: number) => {
+    switch (type) {
+      case 1:
+        return { text: "端口转发", tone: "cyan" as const };
+      case 2:
+        return { text: "隧道转发", tone: "violet" as const };
+      default:
+        return { text: "未知", tone: "slate" as const };
+    }
   };
 
   const getFlowDisplay = (flow: number) => {
@@ -420,8 +538,10 @@ export default function TunnelPage() {
 
   const groupedDiagnosis = (results: DiagnosisResult["results"]) => {
     const entry = results.filter((r) => r.fromChainType === 1);
+    const exit = results.filter((r) => r.fromChainType === 3);
     const ungrouped = results.filter((r) => !r.fromChainType);
-    return { entry, exit: [], chains: {}, rest: [...ungrouped] };
+    const rest = [...ungrouped];
+    return { entry, exit, rest };
   };
 
   const renderDiagSection = (title: string, results: DiagnosisResult["results"]) => {
@@ -513,11 +633,19 @@ export default function TunnelPage() {
     );
   };
 
+  const outProto =
+    form.outNodeId && form.outNodeId.length > 0
+      ? form.outNodeId[0].protocol || "tls"
+      : "tls";
+  const outStrategy =
+    form.outNodeId && form.outNodeId.length > 0
+      ? form.outNodeId[0].strategy || "round"
+      : "round";
 
   if (loading) {
     return (
       <div>
-        <PageHeader title="隧道管理" desc="管理端口转发拓扑" />
+        <PageHeader title="隧道管理" desc="管理端口转发与隧道转发拓扑" />
         <Card>
           <Loading text="正在加载..." />
         </Card>
@@ -529,7 +657,7 @@ export default function TunnelPage() {
     <div>
       <PageHeader
         title="隧道管理"
-        desc={tunnels.length > 0 ? `共 ${tunnels.length} 条隧道` : "管理端口转发拓扑"}
+        desc={tunnels.length > 0 ? `共 ${tunnels.length} 条隧道` : "管理端口转发与隧道转发拓扑"}
         actions={
           <Button variant="primary" size="sm" onClick={handleAdd}>
             <Plus size={15} /> 新增
@@ -576,7 +704,10 @@ export default function TunnelPage() {
                           </span>
                           <span className="text-slate-500">→</span>
                           <span className="whitespace-nowrap rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 font-medium text-emerald-200">
-                            {tunnel.inNodeId?.length || 0}出口
+                            {tunnel.type === 2
+                              ? tunnel.outNodeId?.length || 0
+                              : tunnel.inNodeId?.length || 0}
+                            出口
                           </span>
                         </div>
                       </td>
@@ -650,10 +781,15 @@ export default function TunnelPage() {
           </Field>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="隧道类型">
-              <div className="flex items-center gap-2">
-                <Badge tone="cyan">端口转发</Badge>
-              </div>
+            <Field label="隧道类型" hint={isEdit ? "编辑时无法修改隧道类型" : undefined}>
+              <Select
+                value={String(form.type)}
+                disabled={isEdit}
+                onChange={(e) => handleTypeChange(parseInt(e.target.value))}
+              >
+                <option value="1">端口转发</option>
+                <option value="2">隧道转发</option>
+              </Select>
             </Field>
             <Field label="状态">
               <Select
@@ -712,7 +848,7 @@ export default function TunnelPage() {
                 const n = nodeById(id);
                 const selected = inIds.includes(id);
                 if (n && n.status !== 1 && !selected) return { disabled: true, reason: "离线" };
-
+                if (outIds.includes(id)) return { disabled: true, reason: "已选为出口" };
                 return { disabled: false };
               }}
             />
@@ -735,6 +871,99 @@ export default function TunnelPage() {
               })}
             </div>
           </div>
+
+          {form.type === 2 && form.inNodeId.length > 0 && (
+            <div className="border-t border-white/[0.07] pt-4">
+              <h3 className="mb-1 text-sm font-semibold text-white">入口-出口绑定</h3>
+              <p className="mb-3 text-xs text-slate-500">
+                为每个入口节点指定它应该使用的出口节点。如果不指定，则使用所有出口节点。
+              </p>
+              <div className="space-y-3">
+                {form.inNodeId.map((entry, entryIndex) => {
+                  const entryNode = nodes.find((n) => n.id === entry.nodeId);
+                  if (!entryNode) return null;
+                  const sel = parseExitIds(entry);
+                  return (
+                    <div
+                      key={entry.nodeId}
+                      className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3"
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-200">{entryNode.name}</span>
+                        <Badge tone="cyan">入口</Badge>
+                      </div>
+                      <NodeChipMulti
+                        nodes={(form.outNodeId || []).map((o) => nodeById(o.nodeId)).filter(Boolean) as Node[]}
+                        selected={sel}
+                        onToggle={(id) => {
+                          setForm((prev) => {
+                            const next = [...prev.inNodeId];
+                            const cur = parseExitIds(next[entryIndex]);
+                            const has = cur.includes(id);
+                            const ids = has ? cur.filter((x) => x !== id) : [...cur, id];
+                            next[entryIndex] = {
+                              ...next[entryIndex],
+                              exitNodeIds: ids.length > 0 ? ids : undefined,
+                            };
+                            return { ...prev, inNodeId: next };
+                          });
+                        }}
+                        isDisabled={(id) => {
+                          const n = nodeById(id);
+                          if (n && n.status !== 1 && !sel.includes(id))
+                            return { disabled: true, reason: "离线" };
+                          return { disabled: false };
+                        }}
+                      />
+                      {sel.length === 0 && (
+                        <p className="mt-1.5 text-xs text-slate-500">未指定 = 使用全部出口节点</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {form.type === 2 && (
+            <div className="border-t border-white/[0.07] pt-4">
+              <h3 className="mb-1 text-sm font-semibold text-white">出口配置</h3>
+              <p className="mb-2 text-xs text-slate-500">勾选出口节点，入口已选节点不可重复</p>
+              <NodeChipMulti
+                nodes={nodes}
+                selected={outIds}
+                onToggle={toggleOutNode}
+                isDisabled={(id) => {
+                  const n = nodeById(id);
+                  const selected = outIds.includes(id);
+                  if (n && n.status !== 1 && !selected) return { disabled: true, reason: "离线" };
+                  if (!selected && inIds.includes(id)) return { disabled: true, reason: "已选为入口" };
+                  return { disabled: false };
+                }}
+              />
+              {errors.outNodeId && <p className="mt-1 text-xs text-red-400">{errors.outNodeId}</p>}
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Field label="协议">
+                  <Select value={outProto} onChange={(e) => setOutProtoStrategy("protocol", e.target.value)}>
+                    {PROTOCOLS.map((p) => (
+                      <option key={p} value={p}>
+                        {PROTOCOL_LABEL[p]}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="负载策略">
+                  <Select value={outStrategy} onChange={(e) => setOutProtoStrategy("strategy", e.target.value)}>
+                    {STRATEGIES.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            </div>
+          )}
 
           <Field label="启用状态">
             <div className="flex items-center gap-3">
@@ -777,8 +1006,8 @@ export default function TunnelPage() {
           currentDiagnosisTunnel ? (
             <span className="inline-flex items-center gap-2">
               {currentDiagnosisTunnel.name}
-              <Badge tone="cyan">
-                端口转发
+              <Badge tone={currentDiagnosisTunnel.type === 1 ? "cyan" : "violet"}>
+                {currentDiagnosisTunnel.type === 1 ? "端口转发" : "隧道转发"}
               </Badge>
             </span>
           ) : undefined
@@ -829,6 +1058,7 @@ export default function TunnelPage() {
               return (
                 <>
                   {renderDiagSection("入口测试", g.entry)}
+                  {renderDiagSection("出口测试", g.exit)}
                   {renderDiagSection("其他", g.rest)}
                 </>
               );

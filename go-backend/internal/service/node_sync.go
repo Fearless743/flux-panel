@@ -113,7 +113,34 @@ func (s *NodeSyncService) SyncNodeConfig(nodeID int64) {
 		}
 	}
 
-	// Forwards on this node (入口端口)：per-forward 并发重放
+	// 2-3) 按隧道重放 chain + tunnel service：per-tunnel 并发（读 DB + WS 下发）
+	parallelEach(len(tunnelIDs), 8, func(i int) string {
+		tid := tunnelIDs[i]
+		tunnel, err := s.Tunnel.GetByID(tid)
+		if err != nil || tunnel == nil {
+			slog.Warn("节点配置同步：隧道不存在", "nodeId", nodeID, "tunnelId", tid, "err", err)
+			return ""
+		}
+		all, err := s.Chain.ListByTunnelID(tid)
+		if err != nil {
+			slog.Warn("节点配置同步：加载拓扑失败", "nodeId", nodeID, "tunnelId", tid, "err", err)
+			return ""
+		}
+		nodes, err := s.loadNodesForChains(all)
+		if err != nil {
+			slog.Warn("节点配置同步：加载节点失败", "nodeId", nodeID, "tunnelId", tid, "err", err)
+			return ""
+		}
+		// 确保本节点在 map 中
+		nodes[nodeID] = node
+
+		if tunnel.Type == 2 {
+			s.syncTunnelTopology(nodeID, all, nodes, record)
+		}
+		return ""
+	})
+
+	// 4) Forwards on this node (入口端口)：per-forward 并发重放
 	ports, err := s.Port.ListByNodeID(nodeID)
 	if err != nil {
 		slog.Warn("节点配置同步：查询 forward_port 失败", "nodeId", nodeID, "err", err)
@@ -163,6 +190,53 @@ func (s *NodeSyncService) SyncNodeConfig(nodeID int64) {
 	slog.Info("节点配置同步完成", "nodeId", nodeID, "ok", okN, "fail", failN)
 }
 
+func (s *NodeSyncService) syncTunnelTopology(
+	nodeID int64,
+	all []model.ChainTunnel,
+	nodes map[int64]*model.Node,
+	record func(label, msg string),
+) {
+	entries, outs := splitTopology(all)
+
+	type topoTask struct {
+		label string
+		fn    func() string
+	}
+	tasks := make([]topoTask, 0, len(entries)+len(outs))
+
+	// 本节点作为入口：需要 chain 指向过滤后的出口（入口直连出口）
+	for _, entry := range entries {
+		if entry.NodeID != nodeID {
+			continue
+		}
+		target := filterExitsByEntry(outs, entry)
+		if len(target) == 0 {
+			continue
+		}
+		e, t := entry, target
+		tasks = append(tasks, topoTask{
+			label: fmt.Sprintf("chain:entry:tunnel=%d", e.TunnelID),
+			fn:    func() string { return pushChains(s.Hub, nodeID, t, nodes).Msg },
+		})
+	}
+
+	// 本节点作为出口
+	for _, ct := range outs {
+		if ct.NodeID != nodeID {
+			continue
+		}
+		ctCopy := ct
+		tasks = append(tasks, topoTask{
+			label: fmt.Sprintf("service:out:tunnel=%d", ctCopy.TunnelID),
+			fn:    func() string { return pushChainService(s.Hub, nodeID, ctCopy, nodes).Msg },
+		})
+	}
+
+	parallelEach(len(tasks), 8, func(i int) string {
+		record(tasks[i].label, tasks[i].fn())
+		return ""
+	})
+}
 
 func (s *NodeSyncService) ensureLimiter(nodeID int64, sl *model.SpeedLimit) string {
 	speed := convertBitsToMBps(sl.Speed)
@@ -206,3 +280,26 @@ func (s *NodeSyncService) listSpeedLimitsByTunnelIDs(tunnelIDs []int64) ([]model
 	return list, nil
 }
 
+func (s *NodeSyncService) loadNodesForChains(cts []model.ChainTunnel) (map[int64]*model.Node, error) {
+	ids := make([]int64, 0, len(cts))
+	seen := make(map[int64]struct{})
+	for _, ct := range cts {
+		if _, ok := seen[ct.NodeID]; ok {
+			continue
+		}
+		seen[ct.NodeID] = struct{}{}
+		ids = append(ids, ct.NodeID)
+	}
+	out := make(map[int64]*model.Node, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	list, err := s.Node.ListByIDs(ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		out[list[i].ID] = &list[i]
+	}
+	return out, nil
+}

@@ -615,6 +615,21 @@ async fn clean_orphaned_services(state: &AppState, items: &[ConfigItem], node: &
         }
         let last = parts[parts.len() - 1];
         match last {
+            "tls" => {
+                // {tunnelId}_tls
+                let Ok(tunnel_id) = parts[0].parse::<i64>() else {
+                    continue;
+                };
+                let cnt = sqlx::query_scalar::<_, i64>("SELECT COUNT(1) FROM tunnel WHERE id = ?")
+                    .bind(tunnel_id)
+                    .fetch_one(&state.db)
+                    .await
+                    .unwrap_or(0);
+                if cnt == 0 {
+                    delete_services(state, node.id, vec![gost::tunnel_tls(tunnel_id)]).await;
+                    tracing::info!(name = %name, node = node.id, "删除孤立的服务");
+                }
+            }
             "tcp" => {
                 // {forwardId}_{userId}_{userTunnelId}_tcp
                 if parts.len() < 4 {
