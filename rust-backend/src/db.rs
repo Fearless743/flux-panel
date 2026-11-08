@@ -23,7 +23,7 @@ pub async fn open(path: &str) -> AppResult<SqlitePool> {
         .pragma("cache_size", "-64000");
 
     let pool = SqlitePoolOptions::new()
-        .max_connections(1)
+        .max_connections(8)
         .min_connections(1)
         .connect_with(options)
         .await?;

@@ -25,7 +25,8 @@ pub async fn flow_upload(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let mut secret = q.secret;
+    // secret 优先走 Authorization 头（防 URL 落盘），兼容历史 query/form
+    let mut secret = extract_flow_secret(&headers, &q.secret);
     let mut raw: Vec<u8> = body.to_vec();
     if secret.is_empty() {
         let content_type = headers
@@ -39,11 +40,22 @@ pub async fn flow_upload(
         }
     }
 
-    if !svc::is_valid_node(&state, &secret).await {
+    if secret.is_empty() || secret.len() > 256 {
+        return "ok".into_response();
+    }
+    if raw.len() > 512 * 1024 {
+        return "ok".into_response();
+    }
+    if !crate::ratelimit::check_flow(&secret) {
         return "ok".into_response();
     }
 
-    let plain = match svc::decrypt_if_needed(&raw, &secret) {
+    let node = match svc::find_node_by_secret(&state, &secret).await {
+        Ok(Some(n)) => n,
+        _ => return "ok".into_response(),
+    };
+
+    let plain = match svc::decrypt_strict(&raw, &secret) {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!(err = %e, "flow upload decrypt");
@@ -59,7 +71,7 @@ pub async fn flow_upload(
         }
     };
     tracing::info!(count = items.len(), "节点上报流量数据");
-    svc::upload(&state, items).await;
+    svc::upload(&state, node.id, items).await;
     "ok".into_response()
 }
 
@@ -70,7 +82,7 @@ pub async fn flow_config(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let mut secret = q.secret;
+    let mut secret = extract_flow_secret(&headers, &q.secret);
     let mut raw: Vec<u8> = body.to_vec();
     if secret.is_empty() {
         let content_type = headers
@@ -83,12 +95,22 @@ pub async fn flow_config(
         }
     }
 
+    if secret.is_empty() || secret.len() > 256 {
+        return "ok".into_response();
+    }
+    if raw.len() > 1024 * 1024 {
+        return "ok".into_response();
+    }
+    if !crate::ratelimit::check_flow(&secret) {
+        return "ok".into_response();
+    }
+
     let node = match svc::find_node_by_secret(&state, &secret).await {
         Ok(Some(n)) => n,
         _ => return "ok".into_response(),
     };
 
-    let plain = match svc::decrypt_if_needed(&raw, &secret) {
+    let plain = match svc::decrypt_strict(&raw, &secret) {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!(err = %e, "flow config decrypt");
@@ -114,6 +136,18 @@ pub async fn flow_config(
 }
 
 /// 从 query/form 中取 secret：支持 urlencoded 与 multipart 表单。
+/// secret 优先走 Authorization 头（`Authorization: Bearer <secret>` 或裸 secret），
+/// 避免 secret 落入访问日志/浏览器历史；query 仅为兼容保留。
+fn extract_flow_secret(headers: &HeaderMap, query_secret: &str) -> String {
+    if let Some(v) = headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok()) {
+        let t = crate::middleware::extract_token(v);
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    query_secret.to_string()
+}
+
 fn secret_from_form(content_type: &str, body: &[u8]) -> Option<String> {
     if content_type.starts_with("application/x-www-form-urlencoded") {
         let text = String::from_utf8_lossy(body);

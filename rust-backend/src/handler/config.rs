@@ -19,7 +19,7 @@ pub async fn config_get(
     State(state): State<AppState>,
     AppJson(body): AppJson<NameBody>,
 ) -> Json<Value> {
-    match svc::get_by_name(&state.db, &body.name).await {
+    match svc::get_public_by_name(&state.db, &body.name).await {
         Ok(cfg) => response::ok(json!(cfg)),
         Err(e) => response::err(e.0),
     }

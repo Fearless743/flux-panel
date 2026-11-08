@@ -109,12 +109,22 @@ pub async fn update_password_and_username(
     pool: &SqlitePool,
     id: i64,
     username: &str,
-    pwd_md5: &str,
+    pwd_hash: &str,
 ) -> AppResult<()> {
     sqlx::query("UPDATE user SET user=?, pwd=?, updated_time=? WHERE id=?")
         .bind(username)
-        .bind(pwd_md5)
+        .bind(pwd_hash)
         .bind(now_ms())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_password_hash(pool: &SqlitePool, id: i64, pwd_hash: &str) -> AppResult<()> {
+    // 存量 MD5→Argon2 静默迁移：不碰 updated_time，避免刚签发的 token 即失效
+    sqlx::query("UPDATE user SET pwd=? WHERE id=?")
+        .bind(pwd_hash)
         .bind(id)
         .execute(pool)
         .await?;

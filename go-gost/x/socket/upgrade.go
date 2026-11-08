@@ -66,7 +66,12 @@ func (w *WebSocketReporter) handleUpgrade(data interface{}) error {
 	if arch == "" {
 		arch = runtime.GOARCH
 	}
-	arch = normalizeArch(arch)
+	norm, ok := normalizeArchStrict(arch)
+	if !ok {
+		upgradeMu.Unlock()
+		return fmt.Errorf("不支持的架构: %s", arch)
+	}
+	arch = norm
 
 	downloadURL, err := resolveUpgradeURL(req.URL, req.Version, arch)
 	if err != nil {
@@ -179,6 +184,17 @@ func normalizeArch(arch string) string {
 	}
 }
 
+func normalizeArchStrict(arch string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(arch)) {
+	case "x86_64", "amd64":
+		return "amd64", true
+	case "aarch64", "arm64":
+		return "arm64", true
+	default:
+		return "", false
+	}
+}
+
 func resolveUpgradeURL(rawURL, version, arch string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL != "" {
@@ -205,6 +221,10 @@ func validateUpgradeURL(raw string) error {
 	if u.Scheme != "https" {
 		return fmt.Errorf("升级地址仅允许 https")
 	}
+	// fragment 不参与 HTTP 请求，禁止携带以防白名单绕过
+	if u.Fragment != "" {
+		return fmt.Errorf("升级地址不合法")
+	}
 	host := strings.ToLower(u.Host)
 	path := u.Path
 	needle := strings.ToLower(fmt.Sprintf("%s/%s/releases/", defaultReleaseOwner, defaultReleaseRepo))
@@ -217,7 +237,8 @@ func validateUpgradeURL(raw string) error {
 		return fmt.Errorf("升级地址不在白名单内")
 	}
 	if host == "ghfast.top" || host == "ghproxy.net" || host == "mirror.ghproxy.com" {
-		if strings.Contains(strings.ToLower(raw), needle) {
+		// 仅按 path 判定（query 不得用于绕过）；加速 path 须包含官方 releases 前缀
+		if strings.Contains(strings.ToLower(path), needle) {
 			return nil
 		}
 		return fmt.Errorf("加速地址未指向官方 Release")

@@ -213,16 +213,31 @@ pub async fn upgrade(state: &AppState, req: NodeUpgradeReq) -> AppResult<String>
     if version.is_empty() {
         version = "latest".to_string();
     }
-    let mut payload = json!({ "version": version });
+    // 安全策略：禁止任意 URL + 必须校验 sha256，防止节点被诱导下载恶意二进制
     let url = req.url.trim();
     if !url.is_empty() {
-        payload["url"] = json!(url);
+        validate_upgrade_url(url)?;
     }
     let sha256 = req.sha256.trim();
     if !sha256.is_empty() {
-        payload["sha256"] = json!(sha256);
+        if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(AppError::new("sha256 格式不正确"));
+        }
+    } else if !url.is_empty() {
+        // 自定义 URL 必须带 sha256；默认官方地址由节点侧按版本校验
+        return Err(AppError::new("自定义升级地址必须提供 sha256 校验"));
     }
     let arch = req.arch.trim();
+    if !arch.is_empty() && arch != "amd64" && arch != "arm64" {
+        return Err(AppError::new("arch 仅支持 amd64/arm64"));
+    }
+    let mut payload = json!({ "version": version });
+    if !url.is_empty() {
+        payload["url"] = json!(url);
+    }
+    if !sha256.is_empty() {
+        payload["sha256"] = json!(sha256);
+    }
     if !arch.is_empty() {
         payload["arch"] = json!(arch);
     }
@@ -293,6 +308,37 @@ pub async fn mark_offline(state: &AppState, id: i64) -> AppResult<()> {
 
 /// agent 上报 IP 校验：只接受裸 IPv4/IPv6（agent 探测逻辑只产出 IP）。
 /// 域名/多 IP 场景如需手填，可走更新接口的 server_ip 字段覆盖。
+/// 升级地址白名单（与 agent 侧 validateUpgradeURL 同规则，面板先行拦截）：
+/// 仅允许官方 Release 与可信加速前缀，且 path 必须命中 owner/repo/releases/，
+/// 拒绝含 fragment 的地址（fragment 不参与 HTTP 请求，易被用于白名单绕过）。
+fn validate_upgrade_url(raw: &str) -> AppResult<()> {
+    let lower = raw.to_lowercase();
+    if !lower.starts_with("https://") {
+        return Err(AppError::new("升级地址仅允许 https"));
+    }
+    if raw.contains('#') {
+        return Err(AppError::new("升级地址不合法"));
+    }
+    // 切掉 scheme 后按 host/path 判定，避免 query/fragment 干扰
+    let no_scheme = raw.splitn(2, "://").nth(1).unwrap_or("");
+    let host_end = no_scheme.find('/').unwrap_or(no_scheme.len());
+    let host = no_scheme[..host_end].to_lowercase();
+    let path_and_query = &no_scheme[host_end..];
+    let path = path_and_query.split(['?', '#']).next().unwrap_or("");
+    let needle = "/fearless743/flux-panel/releases/";
+    if host == "github.com" {
+        if path.to_lowercase().starts_with(needle) {
+            return Ok(());
+        }
+    } else if host == "ghfast.top" || host == "ghproxy.net" || host == "mirror.ghproxy.com" {
+        // 加速域：path 形如 /https://github.com/owner/repo/releases/...
+        if path.to_lowercase().contains(needle) {
+            return Ok(());
+        }
+    }
+    Err(AppError::new("升级地址不在白名单内"))
+}
+
 pub fn is_valid_reported_ip(ip: &str) -> bool {
     let ip = ip.trim().trim_matches(|c| c == '[' || c == ']');
     if ip.is_empty() {

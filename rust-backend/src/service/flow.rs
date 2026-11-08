@@ -65,6 +65,24 @@ pub fn decrypt_if_needed(raw: &[u8], secret: &str) -> AppResult<Vec<u8>> {
     c.decrypt(&wrap.data)
 }
 
+/// 严格解密：/flow/* 必须使用加密信封，明文直接拒绝（防嗅探重放）
+pub fn decrypt_strict(raw: &[u8], secret: &str) -> AppResult<Vec<u8>> {
+    if raw.is_empty() {
+        return Err(crate::error::AppError::new("空上报"));
+    }
+    // 兼容 agent 加密失败回退的明文 JSON：仅允许解密器缺失时的极小窗口，
+    // 正常持有 secret 的节点一律走加密；此处要求信封存在
+    let wrap: EncryptedMessage = serde_json::from_slice(raw)
+        .map_err(|_| crate::error::AppError::new("上报需加密"))?;
+    if !wrap.encrypted || wrap.data.is_empty() {
+        return Err(crate::error::AppError::new("上报需加密"));
+    }
+    let Some(c) = crypto::get_or_create(secret) else {
+        return Err(crate::error::AppError::new("解密失败"));
+    };
+    c.decrypt(&wrap.data)
+}
+
 pub async fn find_node_by_secret(state: &AppState, secret: &str) -> AppResult<Option<Node>> {
     let node = sqlx::query_as::<_, Node>("SELECT * FROM node WHERE secret = ? LIMIT 1")
         .bind(secret)
@@ -95,7 +113,8 @@ fn placeholders(n: usize) -> String {
 
 /// Upload 处理流量上报数组：同批按解析结果聚合，转发/隧道一次查回算倍率，
 /// 同一转发/用户/权限的流量合并为一次原子更新，超限检测每类只做一次。
-pub async fn upload(state: &AppState, items: Vec<FlowDto>) {
+/// reporting_node_id 用于校验节点-隧道绑定：仅入口节点可上报其隧道的流量。
+pub async fn upload(state: &AppState, reporting_node_id: i64, items: Vec<FlowDto>) {
     struct Parsed {
         forward_id: i64,
         user_id: i64,
@@ -106,8 +125,20 @@ pub async fn upload(state: &AppState, items: Vec<FlowDto>) {
 
     let mut parsed_items: Vec<Parsed> = Vec::with_capacity(items.len());
     let mut fwd_set: HashSet<i64> = HashSet::new();
-    for item in &items {
+    // 单次上报上限 + 单值上限，防恶意/异常数据刷爆配额
+    const MAX_ITEMS: usize = 2000;
+    const MAX_SINGLE: i64 = 100 * 1024 * 1024 * 1024; // 100GiB
+    for item in items.iter().take(MAX_ITEMS) {
         if item.n.is_empty() || item.n == "web_api" {
+            continue;
+        }
+        if item.n.len() > 128 {
+            continue;
+        }
+        if item.d.abs() > MAX_SINGLE || item.u.abs() > MAX_SINGLE {
+            continue;
+        }
+        if item.d < 0 || item.u < 0 {
             continue;
         }
         let Some((f, u, ut)) = parse_flow_name(&item.n) else {
@@ -145,9 +176,41 @@ pub async fn upload(state: &AppState, items: Vec<FlowDto>) {
         }
     }
     let tun_set: HashSet<i64> = tunnel_of_forward.values().copied().collect();
-    let mut ratio_of_tunnel: HashMap<i64, f64> = HashMap::new();
-    if !tun_set.is_empty() {
+    // 节点-隧道绑定：仅当上报节点是该隧道入口链节点时才接受该条流量，
+    // 否则丢弃（防任一节点伪造全网流量刷爆配额）。
+    let allowed_tunnels: HashSet<i64> = if tun_set.is_empty() {
+        HashSet::new()
+    } else {
         let tun_ids: Vec<i64> = tun_set.iter().copied().collect();
+        let q = format!(
+            "SELECT tunnel_id, node_id FROM chain_tunnel WHERE tunnel_id IN ({}) AND (chain_type = '1' OR chain_type = 1)",
+            placeholders(tun_ids.len())
+        );
+        let mut query = sqlx::query_as::<_, (i64, i64)>(&q);
+        for id in &tun_ids {
+            query = query.bind(id);
+        }
+        let mut s = HashSet::new();
+        if let Ok(rows) = query.fetch_all(&state.db).await {
+            for (tid, nid) in rows {
+                if nid == reporting_node_id {
+                    s.insert(tid);
+                }
+            }
+        }
+        s
+    };
+    // 过滤掉上报节点无权上报的转发
+    let tunnel_of_forward: HashMap<i64, i64> = tunnel_of_forward
+        .into_iter()
+        .filter(|(_, tid)| allowed_tunnels.contains(tid))
+        .collect();
+    if tunnel_of_forward.is_empty() {
+        return;
+    }
+    let mut ratio_of_tunnel: HashMap<i64, f64> = HashMap::new();
+    if !allowed_tunnels.is_empty() {
+        let tun_ids: Vec<i64> = allowed_tunnels.iter().copied().collect();
         let q = format!(
             "SELECT id, traffic_ratio, flow FROM tunnel WHERE id IN ({})",
             placeholders(tun_ids.len())
@@ -177,11 +240,14 @@ pub async fn upload(state: &AppState, items: Vec<FlowDto>) {
     let mut check_users: HashSet<i64> = HashSet::new();
     let mut ut_users: HashMap<i64, i64> = HashMap::new();
     for p in &parsed_items {
+        // 非上报节点隧道的流量直接丢弃
+        let tid = match tunnel_of_forward.get(&p.forward_id) {
+            Some(t) => *t,
+            None => continue,
+        };
         let mut mult = 1.0;
-        if let Some(tid) = tunnel_of_forward.get(&p.forward_id) {
-            if let Some(m) = ratio_of_tunnel.get(tid) {
-                mult = *m;
-            }
+        if let Some(m) = ratio_of_tunnel.get(&tid) {
+            mult = *m;
         }
         let d = (p.d as f64 * mult) as i64;
         let u = (p.u as f64 * mult) as i64;
@@ -591,6 +657,10 @@ async fn pause_service_on_nodes(state: &AppState, tunnel_id: i64, base_name: &st
 
 /// 异步清理节点孤立配置
 pub async fn clean_node_configs(state: &AppState, node_id: i64, cfg: GostConfigDto) {
+    // 上报条目上限，防超大配置拖慢 DB
+    const MAX_CFG_ITEMS: usize = 5000;
+    let services: Vec<ConfigItem> = cfg.services.into_iter().take(MAX_CFG_ITEMS).collect();
+    let limiters: Vec<ConfigItem> = cfg.limiters.into_iter().take(MAX_CFG_ITEMS).collect();
     let node = match sqlx::query_as::<_, Node>("SELECT * FROM node WHERE id = ?")
         .bind(node_id)
         .fetch_optional(&state.db)
@@ -599,8 +669,8 @@ pub async fn clean_node_configs(state: &AppState, node_id: i64, cfg: GostConfigD
         Ok(Some(n)) => n,
         _ => return,
     };
-    clean_orphaned_services(state, &cfg.services, &node).await;
-    clean_orphaned_limiters(state, &cfg.limiters, &node).await;
+    clean_orphaned_services(state, &services, &node).await;
+    clean_orphaned_limiters(state, &limiters, &node).await;
 }
 
 async fn clean_orphaned_services(state: &AppState, items: &[ConfigItem], node: &Node) {

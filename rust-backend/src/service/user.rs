@@ -45,11 +45,31 @@ pub async fn login(state: &AppState, req: LoginReq) -> AppResult<LoginResp> {
     if u.status == 0 {
         return Err(AppError::new("账号被停用"));
     }
+    // 存量 MD5 登录时先升级为 Argon2id，再签发 token，
+    // 避免 updated_time 推进导致刚签发的 token 即失效
+    let mut pwd_for_check = u.pwd.clone();
+    if auth::needs_rehash(&u.pwd) {
+        if let Ok(new_hash) = auth::hash_password(&req.password) {
+            if repo::update_password_hash(&state.db, u.id, &new_hash)
+                .await
+                .is_ok()
+            {
+                pwd_for_check = new_hash;
+            }
+        }
+    }
+    let _ = pwd_for_check;
     let token = state
         .jwt
         .generate(u.id, &u.user, u.role_id)
         .map_err(AppError::new)?;
-    let require_change = req.username == "admin_user" || req.password == "admin_user";
+    // 默认口令仍可登录以便改密，但明确提示；启动日志另有警告
+    let require_change = req.username == "admin_user"
+        || req.password == "admin_user"
+        || u.pwd == auth::md5_hex("admin_user");
+    if require_change {
+        tracing::warn!("admin 使用默认口令登录，请立即修改");
+    }
     Ok(LoginResp {
         token,
         name: u.user,
@@ -80,17 +100,18 @@ pub async fn create(state: &AppState, req: CreateUserReq) -> AppResult<()> {
     if req.user.trim().is_empty() {
         return Err(AppError::new("用户名不能为空"));
     }
-    if req.pwd.trim().is_empty() {
-        return Err(AppError::new("密码不能为空"));
+    if let Err(e) = auth::validate_password_strength(&req.pwd) {
+        return Err(AppError::new(e));
     }
     if repo::count_by_username(&state.db, &req.user, 0).await? > 0 {
         return Err(AppError::new("用户名已存在"));
     }
     let now = crate::response::now_ms();
     let status = req.status.unwrap_or(1);
+    let pwd_hash = auth::hash_password(&req.pwd).map_err(AppError::new)?;
     let mut u = User {
         user: req.user,
-        pwd: auth::md5_hex(&req.pwd),
+        pwd: pwd_hash,
         role_id: 1,
         exp_time: req.exp_time,
         flow: req.flow,
@@ -150,7 +171,10 @@ pub async fn update(state: &AppState, req: UpdateUserReq) -> AppResult<()> {
     }
     let update_pwd = !req.pwd.trim().is_empty();
     if update_pwd {
-        u.pwd = auth::md5_hex(&req.pwd);
+        if let Err(e) = auth::validate_password_strength(&req.pwd) {
+            return Err(AppError::new(e));
+        }
+        u.pwd = auth::hash_password(&req.pwd).map_err(AppError::new)?;
     }
     repo::update(&state.db, &u, update_pwd).await
 }
@@ -252,6 +276,12 @@ pub async fn update_password(
     if !auth::check_password(&req.current_password, &u.pwd) {
         return Err(AppError::new("当前密码错误"));
     }
+    if let Err(e) = auth::validate_password_strength(&req.new_password) {
+        return Err(AppError::new(e));
+    }
+    if req.new_username.trim().is_empty() {
+        return Err(AppError::new("用户名不能为空"));
+    }
     if u.user != req.new_username
         && repo::count_by_username(&state.db, &req.new_username, u.id).await? > 0
     {
@@ -261,7 +291,7 @@ pub async fn update_password(
         &state.db,
         u.id,
         &req.new_username,
-        &auth::md5_hex(&req.new_password),
+        &auth::hash_password(&req.new_password).map_err(AppError::new)?,
     )
     .await
 }

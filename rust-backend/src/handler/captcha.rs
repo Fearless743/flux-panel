@@ -11,7 +11,10 @@ pub async fn captcha_check(State(state): State<AppState>) -> Json<Value> {
     response::ok(json!(svc::check_enabled(&state.db).await))
 }
 
-pub async fn captcha_generate() -> Json<Value> {
+pub async fn captcha_generate(headers: axum::http::HeaderMap) -> Json<Value> {
+    if !crate::ratelimit::check_captcha(&crate::ratelimit::client_ip(&headers)) {
+        return response::err("请求过于频繁，请稍后再试");
+    }
     match svc::generate() {
         Ok(res) => response::ok(json!({
             "id": res.id,
@@ -25,7 +28,14 @@ pub async fn captcha_generate() -> Json<Value> {
     }
 }
 
-pub async fn captcha_verify(State(_state): State<AppState>, body: Bytes) -> Json<Value> {
+pub async fn captcha_verify(
+    State(_state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Json<Value> {
+    if !crate::ratelimit::check_captcha(&crate::ratelimit::client_ip(&headers)) {
+        return response::err("请求过于频繁，请稍后再试");
+    }
     let Ok(m) = serde_json::from_slice::<Value>(&body) else {
         return response::err("参数错误");
     };

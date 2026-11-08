@@ -69,9 +69,13 @@ impl AesCrypto {
 
 static CACHE: LazyLock<Mutex<HashMap<String, Arc<AesCrypto>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static CACHE_ORDER: LazyLock<Mutex<std::collections::VecDeque<String>>> =
+    LazyLock::new(|| Mutex::new(std::collections::VecDeque::new()));
+/// 单 secret 缓存上限，防止 /flow/* 被随机 secret 打爆内存
+const CACHE_MAX: usize = 512;
 
 pub fn get_or_create(secret: &str) -> Option<Arc<AesCrypto>> {
-    if secret.is_empty() {
+    if secret.is_empty() || secret.len() > 256 {
         return None;
     }
     {
@@ -82,11 +86,19 @@ pub fn get_or_create(secret: &str) -> Option<Arc<AesCrypto>> {
     }
     let c = Arc::new(AesCrypto::new(secret).ok()?);
     let mut cache = CACHE.lock().unwrap();
+    let mut order = CACHE_ORDER.lock().unwrap();
+    if cache.len() >= CACHE_MAX {
+        if let Some(old) = order.pop_front() {
+            cache.remove(&old);
+        }
+    }
+    order.push_back(secret.to_string());
     Some(cache.entry(secret.to_string()).or_insert(c).clone())
 }
 
 pub fn clear(secret: &str) {
     CACHE.lock().unwrap().remove(secret);
+    CACHE_ORDER.lock().unwrap().retain(|s| s != secret);
 }
 
 #[cfg(test)]

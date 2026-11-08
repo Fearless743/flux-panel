@@ -23,8 +23,12 @@ fn default_tunnel() -> String {
 
 pub async fn open_api_sub_store(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Query(q): Query<OpenApiQuery>,
 ) -> Response {
+    if !crate::ratelimit::check_openapi(&crate::ratelimit::client_ip(&headers)) {
+        return response::err("请求过于频繁，请稍后再试").into_response();
+    }
     match svc::open_api_sub_store(&state, &q.user, &q.pwd, &q.tunnel).await {
         Ok(header_value) => {
             let mut res = (StatusCode::OK, header_value.clone()).into_response();

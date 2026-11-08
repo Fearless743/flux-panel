@@ -4,7 +4,19 @@ set -eu
 export PORT="${INTERNAL_PORT:-6365}"
 export DB_PATH="${DB_PATH:-/app/data/gost.db}"
 export LOG_DIR="${LOG_DIR:-/app/logs}"
-export JWT_SECRET="${JWT_SECRET:-flux-panel-dev-secret}"
+# JWT_SECRET 无默认值：未设置或过短则拒绝启动，由编排层显式注入强随机值
+if [ -z "${JWT_SECRET:-}" ]; then
+	echo "[entrypoint] JWT_SECRET 未设置，拒绝启动" >&2
+	exit 1
+fi
+if [ "${#JWT_SECRET}" -lt 32 ]; then
+	echo "[entrypoint] JWT_SECRET 过短（至少 32 字符），拒绝启动" >&2
+	exit 1
+fi
+if [ "$JWT_SECRET" = "flux-panel-dev-secret" ]; then
+	echo "[entrypoint] JWT_SECRET 仍为开发默认值，拒绝启动" >&2
+	exit 1
+fi
 # CVE-2026-98432：默认关闭 MPTCP 监听，避免受影响的宿主机内核暴露该攻击面
 export GODEBUG="${GODEBUG:-multipathtcp=0}"
 

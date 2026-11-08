@@ -889,6 +889,7 @@ func (w *WebSocketReporter) handleSetProtocol(data interface{}) error {
 }
 
 // updateLocalConfigJSON 将 http/tls/socks 写入工作目录下的 config.json
+// 含节点 secret，权限收紧为 0600
 func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int) error {
 	path := "config.json"
 
@@ -910,12 +911,12 @@ func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int) error {
 	cfg.Tls = tlsVal
 	cfg.Socks = socksVal
 
-	// 写回
+	// 写回（含 secret，仅 owner 可读写）
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 // handleCall 处理服务端的call回调消息
@@ -1208,12 +1209,18 @@ func (w *WebSocketReporter) handleTcpPing(data interface{}) (TcpPingResponse, er
 		}, nil
 	}
 
-	// 设置默认值
+	// 设置默认值并钳制上限，防面板侧被攻破后下发超大 count/timeout 打爆节点
 	if req.Count <= 0 {
+		req.Count = 4
+	}
+	if req.Count > 4 {
 		req.Count = 4
 	}
 	if req.Timeout <= 0 {
 		req.Timeout = 5000 // 默认5秒超时
+	}
+	if req.Timeout > 5000 {
+		req.Timeout = 5000
 	}
 
 	// 执行TCP ping操作

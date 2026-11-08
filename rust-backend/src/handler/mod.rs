@@ -64,7 +64,10 @@ pub fn router(state: AppState) -> Router {
         .route("/tunnel/user/list", post(tunnel::user_tunnel_list))
         .route("/tunnel/user/remove", post(tunnel::user_tunnel_remove))
         .route("/tunnel/user/update", post(tunnel::user_tunnel_update))
-        .route_layer(middleware::from_fn(admin_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            admin_middleware,
+        ));
 
     let auth = Router::new()
         .route("/user/package", post(user::user_package))
@@ -116,4 +119,5 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
         .layer(middleware::from_fn(cors_middleware))
         .layer(CatchPanicLayer::new())
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(2 * 1024 * 1024))
 }

@@ -12,8 +12,13 @@ use axum::Extension;
 
 pub async fn login(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     AppJson(req): AppJson<svc::LoginReq>,
 ) -> Json<Value> {
+    let ip = crate::ratelimit::client_ip(&headers);
+    if !crate::ratelimit::check_login(&ip) {
+        return response::err("登录尝试过于频繁，请稍后再试");
+    }
     match svc::login(&state, req).await {
         Ok(resp) => response::ok(json!(resp)),
         Err(e) => response::err(e.0),

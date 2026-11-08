@@ -400,12 +400,13 @@ pub async fn create(
     if req.name.trim().is_empty() {
         return Err(AppError::new("转发名称不能为空"));
     }
+    if req.name.chars().count() > 64 {
+        return Err(AppError::new("转发名称过长"));
+    }
     if req.tunnel_id == 0 {
         return Err(AppError::new("隧道ID不能为空"));
     }
-    if req.remote_addr.trim().is_empty() {
-        return Err(AppError::new("远程地址不能为空"));
-    }
+    validate_remote_addr(&req.remote_addr)?;
 
     let Some(tunnel) = repo::get_tunnel(&state.db, req.tunnel_id).await? else {
         return Err(AppError::new("隧道不存在"));
@@ -546,9 +547,10 @@ pub async fn update(
     if req.name.trim().is_empty() {
         return Err(AppError::new("转发名称不能为空"));
     }
-    if req.remote_addr.trim().is_empty() {
-        return Err(AppError::new("远程地址不能为空"));
+    if req.name.chars().count() > 64 {
+        return Err(AppError::new("转发名称过长"));
     }
+    validate_remote_addr(&req.remote_addr)?;
 
     let Some(mut exist) = validate_forward_exists(state, req.id, &user).await? else {
         return Err(AppError::new("转发不存在"));
@@ -844,9 +846,38 @@ pub async fn delete(state: &AppState, user: CurrentUser, id: i64) -> AppResult<(
 }
 
 pub async fn force_delete(state: &AppState, user: CurrentUser, id: i64) -> AppResult<()> {
-    let Some(_forward) = validate_forward_exists(state, id, &user).await? else {
+    let Some(forward) = validate_forward_exists(state, id, &user).await? else {
         return Err(AppError::new("端口转发不存在"));
     };
+    // force-delete 同样尽力清理节点侧残留服务，避免孤儿端口继续可连
+    if let Ok(Some(tunnel)) = repo::get_tunnel(&state.db, forward.tunnel_id).await {
+        if let Ok(user_tunnel) =
+            repo::get_user_tunnel(&state.db, forward.user_id, forward.tunnel_id).await
+        {
+            let service_name =
+                build_service_name(forward.id, forward.user_id, user_tunnel.as_ref());
+            let names = vec![
+                format!("{}_tcp", service_name),
+                format!("{}_udp", service_name),
+            ];
+            if let Ok(chain_tunnels) =
+                repo::list_chain_tunnels_by_tunnel(&state.db, tunnel.id, "1").await
+            {
+                let _ = for_each_chain_node_parallel(state, &chain_tunnels, move |node| {
+                    let names = names.clone();
+                    async move {
+                        let res = state
+                            .hub
+                            .send_msg(node.id, gost::delete_service_payload(names), "DeleteService")
+                            .await;
+                        let _ = gost::normalize_ok(&res.msg);
+                        Ok(())
+                    }
+                })
+                .await;
+            }
+        }
+    }
     repo::delete(&state.db, id).await?;
     let _ = port_repo::delete_by_forward_id(&state.db, id).await;
     Ok(())
@@ -985,12 +1016,17 @@ pub async fn diagnose(
     user: CurrentUser,
     id: i64,
 ) -> AppResult<Value> {
+    if !crate::ratelimit::check_diagnose(user.user_id) {
+        return Err(AppError::new("诊断请求过于频繁，请稍后再试"));
+    }
     let Some(forward) = validate_forward_exists(state, id, &user).await? else {
         return Err(AppError::new("转发不存在"));
     };
     let Some(tunnel) = repo::get_tunnel(&state.db, forward.tunnel_id).await? else {
         return Err(AppError::new("隧道不存在"));
     };
+    // 诊断同样要求隧道使用权限，防止用他人转发/过期权限做端口扫描
+    check_user_permissions(state, &user, &tunnel, None).await?;
 
     let chain_tunnels = repo::list_chain_tunnels_by_tunnel(&state.db, tunnel.id, "").await?;
     if chain_tunnels.is_empty() {
@@ -1056,7 +1092,13 @@ pub async fn diagnose(
     }
 
     let mut tasks: Vec<PingTask> = Vec::new();
-    let remote_addresses: Vec<String> = forward.remote_addr.split(',').map(|s| s.to_string()).collect();
+    // 单次诊断最多测 5 个目标，防 remote_addr 被塞入大量地址做批量扫描
+    let remote_addresses: Vec<String> = forward
+        .remote_addr
+        .split(',')
+        .map(|s| s.to_string())
+        .take(5)
+        .collect();
 
     if tunnel.r#type == 1 {
         for in_node in &in_nodes {
@@ -1254,6 +1296,9 @@ pub async fn update_order(
     if items.is_empty() {
         return Err(AppError::new("forwards参数不能为空"));
     }
+    if items.len() > 500 {
+        return Err(AppError::new("单次排序过多"));
+    }
     if user.role_id != 0 {
         let ids: Vec<i64> = items.iter().map(|it| it.id).collect();
         let n = repo::count_by_ids_and_user(&state.db, &ids, user.user_id).await?;
@@ -1395,6 +1440,9 @@ pub async fn batch_delete(
 ) -> (String, bool) {
     if ids.is_empty() {
         return ("请选择要删除的转发".to_string(), false);
+    }
+    if ids.len() > 200 {
+        return ("单次批量操作过多（最多200个）".to_string(), false);
     }
     if let Some(res) = batch_delete_fast(state, &user, &ids).await {
         return res;
@@ -1746,6 +1794,9 @@ async fn batch_change_status(
     if ids.is_empty() {
         return (empty_msg.to_string(), false);
     }
+    if ids.len() > 200 {
+        return ("单次批量操作过多（最多200个）".to_string(), false);
+    }
     if let Some(res) = batch_change_status_fast(
         state,
         user,
@@ -2079,6 +2130,12 @@ pub async fn batch_change_tunnel(
 ) -> (String, bool) {
     if tunnel_id == 0 {
         return ("请选择目标隧道".to_string(), false);
+    }
+    if ids.is_empty() {
+        return ("请选择要更改隧道的转发".to_string(), false);
+    }
+    if ids.len() > 200 {
+        return ("单次批量操作过多（最多200个）".to_string(), false);
     }
     let (forwards, ports_map, prefetch_ok) = prefetch_change_tunnel(state, &user, &ids).await;
     let state_ref = state;
@@ -2481,6 +2538,52 @@ async fn get_node_port(
 }
 
 // ---- small utils ----
+
+/// remote_addr 入库校验：逗号分隔 host:port，最多 10 个，总长 ≤1024，
+/// host 为 IP 或合规域名，port 1-65535。内网地址属转发业务正常需求，
+/// 不在此拦截；扫描风险由 diagnose 限频+权限收敛。
+fn validate_remote_addr(raw: &str) -> AppResult<()> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err(AppError::new("远程地址不能为空"));
+    }
+    if raw.len() > 1024 {
+        return Err(AppError::new("远程地址过长"));
+    }
+    let parts: Vec<&str> = raw.split(',').collect();
+    if parts.len() > 10 {
+        return Err(AppError::new("远程地址过多（最多10个）"));
+    }
+    for p in parts {
+        let a = p.trim();
+        if a.is_empty() || a.len() > 253 {
+            return Err(AppError::new("远程地址格式不正确"));
+        }
+        let ip = extract_ip_from_address(a);
+        let port = extract_port_from_address(a);
+        if ip.is_empty() || port < 1 || port > 65535 {
+            return Err(AppError::new("远程地址格式不正确"));
+        }
+        if !(ip.parse::<std::net::IpAddr>().is_ok() || is_valid_hostname(&ip)) {
+            return Err(AppError::new("远程地址格式不正确"));
+        }
+    }
+    Ok(())
+}
+
+fn is_valid_hostname(host: &str) -> bool {
+    if host.is_empty() || host.len() > 253 {
+        return false;
+    }
+    // 兼容 gost 变量占位（如 {{port}} 类模板不走此处，入库时已是具体地址）
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+    })
+}
 
 fn deref_int(p: Option<i32>) -> i32 {
     p.unwrap_or(0)

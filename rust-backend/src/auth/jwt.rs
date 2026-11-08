@@ -3,8 +3,11 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
+use subtle::ConstantTimeEq;
 
-const EXPIRE_SECONDS: i64 = 90 * 24 * 3600;
+// 会话有效期：7 天。改密/改权后旧 token 经 auth 中间件按 updated_time 失效，
+// 因此无需过长的离线有效期。
+const EXPIRE_SECONDS: i64 = 7 * 24 * 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
@@ -69,7 +72,13 @@ impl Jwt {
             return Err("invalid token format".to_string());
         }
         let expected = self.sign(parts[0], parts[1])?;
-        if expected != parts[2] {
+        // 常量时间比较，避免签名比对侧信道
+        let eq = expected
+            .as_bytes()
+            .ct_eq(parts[2].as_bytes())
+            .unwrap_u8()
+            == 1;
+        if !eq {
             return Err("invalid signature".to_string());
         }
         let raw = URL_SAFE_NO_PAD

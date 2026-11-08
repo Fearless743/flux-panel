@@ -70,13 +70,26 @@ pub async fn handle_websocket(
             }
         }
     } else {
-        // 管理员：JWT 在 secret 字段
+        // 管理员：JWT 在 secret 字段（兼容 query 传 token 的历史行为）
         if secret.is_empty() || !state.jwt.validate(&secret) {
             return StatusCode::UNAUTHORIZED.into_response();
         }
         let Ok(uid) = state.jwt.user_id(&secret) else {
             return StatusCode::UNAUTHORIZED.into_response();
         };
+        // 必须为管理员角色，且账号未停用；普通用户禁止注册 admin 频道
+        let role_ok = state
+            .jwt
+            .role_id(&secret)
+            .map(|r| r == 0)
+            .unwrap_or(false);
+        if !role_ok {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+        match crate::repo::user::find_by_id(&state.db, uid).await {
+            Ok(Some(u)) if u.role_id == 0 && u.status == 1 => {}
+            _ => return StatusCode::UNAUTHORIZED.into_response(),
+        }
         session_id = uid;
         node_secret = String::new();
         is_node = false;
