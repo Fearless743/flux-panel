@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 flux-panel（转发面板）管理多节点 GOST 代理：面板下发隧道/转发/限速配置，节点 agent 执行转发并上报流量。
 
-生产形态为**单一 Docker 镜像** `ghcr.io/fearless743/flux-panel`：Caddy(:80) + Rust 后端(内部 :6365) + Vite 静态前端。`springboot-backend/` 已弃用（仅作契约对照），`go-backend/` 为迁移对照/回滚参考，勿再作为生产入口。
+生产形态为**单一 Docker 镜像** `ghcr.io/fearless743/flux-panel`：Caddy(:80) + Rust 后端(内部 :6365) + Vite 静态前端。工作树仅保留 `rust-backend/` 生产后端；历史 Go/Java 实现已归档到分支 `archive/go-backend` / `archive/springboot-backend`，勿再作为生产入口。
 
 默认管理员：`admin_user` / `admin_user`（密码 MD5 入库）。
 
@@ -15,16 +15,15 @@ flux-panel（转发面板）管理多节点 GOST 代理：面板下发隧道/转
 | 路径 | 角色 |
 |------|------|
 | `rust-backend/` | **面板业务后端（生产）**（Axum + Tokio + sqlx + SQLite） |
-| `go-backend/` | 面板业务后端的历史 Go 实现（迁移对照 / 回滚参考） |
 | `vite-frontend/` | 管理后台（React 18 + Vite + HeroUI + Tailwind） |
 | `go-gost/` | **节点 agent**（基于 go-gost/x，含面板 WS 上报与指令执行） |
 | `docker/` | 一体镜像 Caddyfile + entrypoint |
-| `Dockerfile` | 前端 build → Go build → Caddy 运行时 |
+| `Dockerfile` | 前端 build → Rust build → Caddy 运行时 |
 | `install.sh` | 节点安装/更新（拉 Release 中的 `gost-amd64`/`gost-arm64`） |
 | `panel_install.sh` | 面板 Docker Compose 安装（`docker-compose-v4/v6.yml`） |
-| `springboot-backend/` | 历史 Java 实现，只读对照 |
 | `android-app/`、`ios-app/` | 移动端客户端（与 Web 共用 `/api/v1`） |
-| `gost-rs/` | 实验性 Rust 节点（若本地存在；**不参与当前发布**） |
+
+历史后端对照请看归档分支：`archive/go-backend`（Go）、`archive/springboot-backend`（Java），例如 `git show archive/go-backend:go-backend/internal/config/config.go`。
 
 ## 运行时架构
 
@@ -63,7 +62,7 @@ cargo test                        # 单元测试
 
 环境变量：`PORT`（默认 6365）、`DB_PATH`、`JWT_SECRET`、`LOG_DIR`。
 
-历史 Go 实现（仅对照/回滚）：`cd go-backend && go build ./... && go run ./cmd/server`。
+历史 Go 实现（仅对照/回滚，见归档分支 `archive/go-backend`）：`git show archive/go-backend:go-backend/cmd/server/main.go`。
 
 ### 前端（`vite-frontend/`）
 
@@ -121,7 +120,7 @@ src/
   db.rs         # schema embed、WAL
 ```
 
-硬规则（详见 `rust-backend/PORTING.md` 与 `go-backend/SPEC_*.md`）：
+硬规则（详见 `rust-backend/PORTING.md`；Go 版 SPEC 已随 `archive/go-backend` 归档）：
 
 1. **禁止改 API 路径**（`src/handler/mod.rs` 与 Java 1:1）。
 2. JWT Header：`Authorization: <token>`（**无** `Bearer` 前缀）。
@@ -163,7 +162,7 @@ src/
 
 ## 开发时注意
 
-- 分支：`main` 稳定；`beta` 开发版安装脚本默认拉 beta compose。
+- 分支：`beta` 为默认/主分支（`main` 已删除）；历史后端版本见归档分支 `archive/go-backend`、`archive/springboot-backend`。
 - 面板「网站配置 → ip」须填 `主机:映射端口`（默认宿主机 6366→容器 80），节点与浏览器共用该入口。
-- 对照旧行为时优先读 `go-backend/` 或 `springboot-backend/` 对应 Service，但**新代码只改 `rust-backend/` / `vite-frontend/` / `go-gost/`**。
+- 对照旧行为时优先读归档分支（`git show archive/go-backend:...` / `git show archive/springboot-backend:...`）对应 Service，但**新代码只改 `rust-backend/` / `vite-frontend/` / `go-gost/`**。
 - 不要假设存在完整自动化测试套件；回归以编译 + 契约/SPEC + 真机联调为主。

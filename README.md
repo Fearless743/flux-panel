@@ -15,8 +15,8 @@
 本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
 
 **面板**为 **单一 Docker 镜像**（Caddy + Rust 后端 + 前端静态资源）：`ghcr.io/fearless743/flux-panel`。
-- 后端实现：`rust-backend/`（Axum + Tokio + sqlx，契约与旧 Go 版 1:1）
-- `go-backend/` 保留为迁移对照与回滚参考，不再进入生产镜像；`springboot-backend/`、`vite-frontend` 独立镜像均已弃用构建路径（前端源码仍在 `vite-frontend/`，由根 `Dockerfile` 一并构建）
+- 后端实现：`rust-backend/`（Axum + Tokio + sqlx）
+- 历史实现已归档到分支，不再保留于工作树：`archive/go-backend`（Go 版，对照/回滚参考）、`archive/springboot-backend`（Java 版，只读对照）；均不再进入生产镜像（前端源码仍在 `vite-frontend/`，由根 `Dockerfile` 一并构建）
 
 ---
 ## 特性
@@ -34,21 +34,11 @@
 ---
 ### Docker Compose部署
 #### 快速部署
-面板端(稳定版)：
-```bash
-curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-```
-节点端(稳定版)：
-```bash
-curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
-
-```
-
-面板端(开发版)：
+面板端：
 ```bash
 curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
-节点端(开发版)：
+节点端：
 ```bash
 curl -L https://raw.githubusercontent.com/Fearless743/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 

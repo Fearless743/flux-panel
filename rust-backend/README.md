@@ -1,7 +1,6 @@
 # rust-backend（生产后端）
 
-`go-backend/` 的 Rust 一比一实现：Axum + Tokio + sqlx/SQLite。生产一体镜像默认使用本实现，
-`go-backend/` 仅保留为迁移对照与回滚参考。
+Go 后端（已归档到分支 `archive/go-backend`）的 Rust 一比一实现：Axum + Tokio + sqlx/SQLite。生产一体镜像默认使用本实现。
 
 - API：`/api/v1/*`、`/flow/*`、`/system-info`
 - 契约：响应 `{code,msg,ts,data}`；JWT Header `Authorization: <token>`；密码 MD5；AES-256-GCM；SQLite schema 与 Go 版完全一致

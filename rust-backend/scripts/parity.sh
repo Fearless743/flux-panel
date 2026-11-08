@@ -20,6 +20,11 @@ cleanup() {
 trap cleanup EXIT
 
 echo "== build =="
+if [[ ! -d "$ROOT/go-backend" ]]; then
+  echo "Go 对照已归档到分支 archive/go-backend，本地无 go-backend/，跳过对照。"
+  echo "如需运行：git worktree add /tmp/go-backend archive/go-backend"
+  exit 0
+fi
 (cd "$ROOT/go-backend" && go build -o "$TMP/go-backend" ./cmd/server)
 (cd "$ROOT/rust-backend" && cargo build --quiet)
 cp "$ROOT/rust-backend/target/debug/flux-panel-backend" "$TMP/rust-backend"

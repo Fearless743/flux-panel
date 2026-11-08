@@ -1,8 +1,0 @@
-data/
-logs/
-*.md
-AGENTS_SPEC.md
-SPEC_*.md
-migrations/
-.git
-.gitignore

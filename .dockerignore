@@ -21,17 +21,9 @@
 
 # 与面板镜像无关的子项目（减小 build context）
 go-gost
-gost-rs
 android-app
 ios-app
-springboot-backend
 doc
-
-# 本地/脚本产物
-go-backend/data
-go-backend/logs
-go-backend/server
-go-backend/**/*_test.go
 vite-frontend/dist
 vite-frontend/node_modules
 vite-frontend/bun.lock

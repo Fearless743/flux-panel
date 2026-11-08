@@ -1,6 +1,6 @@
 # Go → Rust 一比一迁移约定
 
-本目录是 `go-backend/` 的 Rust（Axum + Tokio + sqlx/SQLite）一比一实现，生产一体镜像默认使用本实现。
+本目录是 Go 后端（已归档到分支 `archive/go-backend`）的 Rust（Axum + Tokio + sqlx/SQLite）一比一实现，生产一体镜像默认使用本实现。
 目标：API 路径、请求/响应 JSON、SQLite schema、JWT、AES-GCM、Gost 指令、定时任务行为与 Go 版一致。
 
 ## 已有基础设施（不要改）
